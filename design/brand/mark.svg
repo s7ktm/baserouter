@@ -1,0 +1,7 @@
+<!-- BaseRouter mark: the socket face. Generated from design/prototype/skins/socket/mascot.js -->
+<svg width="64" height="64" role="img" aria-label="BaseRouter" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect x="2" y="2" width="28" height="28" rx="8.5" fill="#FBFBF8" stroke="#1C2030" stroke-width="2.5"/>
+  <circle cx="16" cy="16" r="9.3" fill="#EEEFEA" stroke="#1C2030" stroke-width="1.8"/>
+  <circle cx="12.4" cy="14.4" r="2.1" fill="#1C2030"/><circle cx="19.6" cy="14.4" r="2.1" fill="#1C2030"/>
+  <path d="M12.4 19.2q3.6 3.2 7.2 0" fill="none" stroke="#1C2030" stroke-width="1.9" stroke-linecap="round"/>
+</svg>
