@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BaseRouter — mascots</title>
+<style>
+/* Every mascot in every mood, in both themes and at small sizes. Deliberately plain. */
+:root{--bg:#F1F1EF;--fg:#1B1B1F;--mute:#63636B;--line:#CFCFD4}
+:root[data-theme="dark"]{--bg:#111114;--fg:#F2F2F4;--mute:#A0A0AA;--line:#34343C}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,sans-serif;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;max-width:1100px;margin:0 auto 8px}
+h1{font-size:20px;font-weight:650;margin-right:auto}
+header button{font:inherit;font-size:13px;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+section{max-width:1100px;margin:28px auto 0}
+h2{font-size:17px;font-weight:650;margin-bottom:10px}
+.strip{display:grid;grid-template-columns:repeat(4,1fr) 1.1fr;gap:1px;border-radius:18px;overflow:hidden;margin-bottom:10px}
+.cell{display:grid;justify-items:center;align-content:center;gap:10px;padding:26px 8px 14px;min-width:0}
+.cell .mascot{width:min(124px,100%);height:124px;overflow:visible}
+.cell small{font-size:12.5px;opacity:.72}
+.small{display:flex;align-items:flex-end;justify-content:center;flex-wrap:wrap;gap:12px}
+.small .mascot{width:64px;height:64px}
+.small .mascot + .mascot{width:32px;height:32px}
+.small .icon svg{display:block;width:32px;height:32px}
+.small .icon + .icon svg{width:16px;height:16px}
+@media (max-width:700px){.strip{grid-template-columns:1fr 1fr}.cell:last-child{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<header><h1 id="title"></h1><button id="lang"></button></header>
+<div id="sheet"></div>
+<script type="module">
+import { registry } from "./skins/registry.js";
+import { MOODS } from "./core/contract.js";
+
+const words = {
+  en: { title: "Mascots", happy: "happy", busy: "busy", worried: "worried", sleepy: "sleepy", sizes: "64, 32, and the icon at 32 and 16", light: "light", dark: "dark" },
+  tr: { title: "Maskotlar", happy: "mutlu", busy: "çalışıyor", worried: "endişeli", sleepy: "uykulu", sizes: "64, 32 ve simge 32 ile 16", light: "açık", dark: "koyu" },
+};
+let lang = new URLSearchParams(location.search).get("lang") || ((navigator.language || "").startsWith("tr") ? "tr" : "en");
+const skins = await Promise.all(registry.map(async (id) => ({
+  skin: (await import(`./skins/${id}/skin.js`)).default,
+  palette: (await import(`./skins/${id}/mascot.js`)).palette,
+})));
+
+// Each strip carries its own skin's colours, so three skins can sit on one page.
+function strip({ skin, palette }, theme) {
+  const p = palette[theme];
+  const vars = Object.entries(p.vars).map(([k, v]) => `${k}:${v}`).join(";");
+  const dark = theme === "dark";
+  const text = dark && skin.id !== "display" ? "#F2F2F4" : "#1B1B1F";
+  const cells = MOODS.map((mood) => `<div class="cell" style="background:${p.bg}">${skin.mascot(mood)}<small>${words[lang][mood]}</small></div>`).join("");
+  return `<div class="strip" style="${vars};color:${text}">${cells}
+    <div class="cell" style="background:${p.bg}"><div class="small">${skin.mascot("happy")}${skin.mascot("happy")}<span class="icon">${skin.icon}</span><span class="icon">${skin.icon}</span></div>
+    <small>${words[lang].sizes}</small></div></div>`;
+}
+function paint() {
+  document.documentElement.lang = lang;
+  document.getElementById("title").textContent = words[lang].title;
+  document.getElementById("lang").textContent = lang === "tr" ? "EN" : "TR";
+  document.getElementById("sheet").innerHTML = skins.map((s) =>
+    `<section><h2>${s.skin.name[lang]}</h2>${strip(s, "light")}${strip(s, "dark")}</section>`).join("");
+}
+document.getElementById("lang").onclick = () => { lang = lang === "tr" ? "en" : "tr"; paint(); };
+paint();
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+/* Direction A · Socket
+   BaseRouter is a power strip: providers plug in at the top, every route is
+   an outlet with its own rocker switch. Over budget = the breaker trips. */
+:root{
+  --bench:#E6E9EE;      /* workbench: page background */
+  --plastic:#FBFBF8;    /* strip body */
+  --recess:#EEEFEA;     /* sunken parts */
+  --ink:#1C2030;
+  --ink-2:#565C6E;
+  --line:#D3D7DE;
+  --rocker:#F0432B;     /* the lit rocker switch: "on" */
+  --cable:#FFC531;      /* cable yellow: working */
+  --led:#189D56;        /* healthy */
+  --stop:#C4301A;       /* rocker red, dark enough to read as text */
+  --hi:rgba(255,255,255,.9);
+  --shade:rgba(28,32,48,.28);
+  --display:"Bricolage Grotesque",system-ui,sans-serif;
+  --body:"Instrument Sans",system-ui,sans-serif;
+  --mono:"Martian Mono",ui-monospace,Menlo,monospace;
+}
+:root[data-theme="dark"]{
+  --bench:#121419; --plastic:#262932; --recess:#1A1C23;
+  --ink:#F3F4F6; --ink-2:#A6ABB8; --line:#3A3E4A;
+  --hi:rgba(255,255,255,.07); --shade:rgba(0,0,0,.6); --stop:#FF7A62;
+}
+*{box-sizing:border-box;margin:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bench);color:var(--ink);font:500 15px/1.4 var(--body);min-height:100dvh;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* mock-up toolbar: not part of the design */
+.mockbar{display:flex;gap:8px;align-items:center;padding:8px 14px;font:500 12px/1 system-ui,sans-serif;
+  color:var(--ink-2);border-bottom:1px dashed var(--line)}
+.mockbar b{color:var(--ink);font-weight:600;margin-right:auto}
+.mockbar button{padding:6px 10px;border:1px solid var(--line);border-radius:6px}
+
+.bench{max-width:1120px;margin:0 auto;padding:18px 16px 56px}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.top svg.mascot{width:52px;height:52px;flex:none}
+.word{font:800 24px/1 var(--display);letter-spacing:-.02em}
+.word small{display:block;font:500 13px/1.3 var(--body);color:var(--ink-2);letter-spacing:0;margin-top:3px}
+.key{margin-left:auto;display:flex;gap:8px}
+.key button{width:48px;height:48px;border-radius:14px;background:var(--plastic);display:grid;place-items:center;
+  box-shadow:inset 0 1px 0 var(--hi),0 2px 0 var(--line)}
+.key svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* providers: plugs with cables running into the strip */
+.feed-h{font:600 13px/1 var(--body);color:var(--ink-2);margin:0 4px 8px}
+.plugs{display:grid;grid-template-columns:repeat(3,1fr) 56px;gap:8px;padding:0 10px;position:relative;z-index:1}
+.plug{display:flex;flex-direction:column;align-items:center;min-width:0}
+.plug .head{width:100%;min-height:58px;border-radius:14px 14px 8px 8px;background:var(--ink);color:var(--bench);
+  padding:9px 4px 8px;text-align:center;font:600 12.5px/1.15 var(--body);position:relative;overflow-wrap:anywhere;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 2px 0 var(--shade)}
+.plug .head em{display:flex;align-items:center;justify-content:center;gap:4px;font:500 10.5px/1 var(--body);white-space:nowrap;
+  font-style:normal;opacity:.78;margin-top:6px}
+.plug .head em::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--led);
+  box-shadow:0 0 6px var(--led)}
+.plug .wire{width:7px;height:26px;background:var(--cable);box-shadow:inset -2px 0 0 rgba(0,0,0,.14)}
+.plug.out .head{background:var(--recess);color:var(--ink-2);transform:translateY(-8px) rotate(-4deg);
+  box-shadow:inset 0 0 0 2px var(--line)}
+.plug.out .head em::before{background:var(--ink-2);box-shadow:none}
+.plug.out .wire{height:18px;background:repeating-linear-gradient(var(--line) 0 4px,transparent 4px 8px);box-shadow:none}
+.plug.add .head{background:none;color:var(--ink);box-shadow:none;border:2px dashed var(--ink-2);border-radius:14px;
+  display:grid;place-items:center;font:700 24px/1 var(--body);padding:0}
+.plug.add .wire{background:none;box-shadow:none}
+
+/* the strip */
+.strip{background:var(--plastic);border-radius:30px;padding:18px 16px 16px;position:relative;
+  box-shadow:inset 0 2px 0 var(--hi),inset 0 -3px 0 rgba(0,0,0,.05),0 26px 46px -26px var(--shade),0 3px 0 var(--line)}
+.plate{display:grid;gap:16px}
+.addr label{display:block;font:600 13px/1 var(--body);color:var(--ink-2);margin:0 0 8px 4px}
+.addr .win{display:flex;align-items:center;gap:8px;background:var(--recess);border-radius:16px;padding:6px 6px 6px 14px;
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.12),0 1px 0 var(--hi)}
+.addr code{font:500 13px/1.2 var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.addr button{flex:none;min-width:48px;height:44px;padding:0 14px;border-radius:11px;background:var(--ink);color:var(--plastic);
+  font:700 13px/1 var(--body);box-shadow:0 2px 0 var(--shade)}
+.addr button:active{transform:translateY(2px);box-shadow:none}
+.read{display:flex;align-items:flex-end;gap:14px;padding:0 4px}
+.read .big{font:800 68px/.86 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.read .big sup{font-size:.42em;vertical-align:top;position:relative;top:.12em;margin-right:2px;letter-spacing:0}
+.read .cap{font:600 13px/1.25 var(--body);color:var(--ink-2);margin-bottom:6px}
+.read .cap b{display:block;color:var(--ink);font:700 15px/1.2 var(--body)}
+.week{margin-left:auto;display:flex;align-items:flex-end;gap:4px;height:44px;margin-bottom:6px}
+.week i{width:8px;border-radius:3px;background:var(--line)}
+.week i:last-child{background:var(--rocker)}
+.groove{height:6px;border-radius:3px;background:var(--recess);box-shadow:inset 0 1px 2px rgba(0,0,0,.14);margin:18px 0 6px}
+
+/* outlets = routes */
+.outlets{display:grid}
+.outlet{display:grid;grid-template-columns:56px 1fr 46px;gap:12px;align-items:center;padding:12px 4px;
+  border-bottom:1px solid var(--line)}
+.sock{width:56px;height:56px;border-radius:50%;background:var(--recess);position:relative;
+  box-shadow:inset 0 2px 5px rgba(0,0,0,.2),0 1px 0 var(--hi)}
+.sock::before,.sock::after{content:"";position:absolute;top:20px;width:9px;height:9px;border-radius:50%;
+  background:var(--ink);transition:all .18s ease}
+.sock::before{left:15px}.sock::after{right:15px}
+.sock span{position:absolute;left:50%;top:35px;width:14px;height:7px;margin-left:-7px;
+  border:3px solid var(--ink);border-top:0;border-radius:0 0 14px 14px;transition:all .18s ease}
+.sock i{position:absolute;right:-1px;top:-1px;width:12px;height:12px;border-radius:50%;background:var(--led);
+  border:2px solid var(--plastic);box-shadow:0 0 8px var(--led)}
+.outlet.busy .sock i{background:var(--cable);box-shadow:0 0 10px var(--cable);animation:blink 1s ease-in-out infinite}
+.outlet.busy .sock span{width:9px;height:9px;margin-left:-4.5px;border:3px solid var(--ink);border-radius:50%;top:33px}
+.outlet.off .sock::before,.outlet.off .sock::after,
+.outlet.trip .sock::before,.outlet.trip .sock::after{height:3px;top:24px;border-radius:2px}
+.outlet.off .sock span{height:0;border-radius:2px;border-width:0 0 3px;width:10px;margin-left:-5px;top:36px}
+.outlet.off .sock i{background:var(--line);box-shadow:none}
+.outlet.trip .sock span{border:3px solid var(--ink);border-bottom:0;border-radius:14px 14px 0 0;top:34px}
+.outlet.trip .sock i{background:var(--rocker);box-shadow:0 0 8px var(--rocker)}
+@keyframes blink{50%{opacity:.35}}
+
+.who{min-width:0}
+.tape{display:inline-block;max-width:100%;padding:5px 9px 4px;border-radius:4px;background:var(--t,#1C2030);color:#fff;
+  font:700 12px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 1px 0 rgba(0,0,0,.2)}
+.outlet.off .tape{background:var(--ink-2);color:var(--plastic)}
+.nums{display:flex;justify-content:space-between;gap:10px;font:500 13px/1.3 var(--body);color:var(--ink-2);margin-top:7px;white-space:nowrap}
+.nums b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.meter{height:6px;border-radius:3px;background:var(--recess);margin-top:6px;overflow:hidden;
+  box-shadow:inset 0 1px 1px rgba(0,0,0,.14)}
+.meter u{display:block;height:100%;border-radius:3px;background:var(--ink);width:var(--p)}
+.outlet.trip .meter u{background:var(--rocker)}
+.outlet.off .meter u{background:var(--ink-2)}
+.trip-note{display:flex;flex-wrap:wrap;align-items:center;gap:0 12px;margin-top:6px;font:700 13px/1.2 var(--body);color:var(--stop)}
+.trip-note button{white-space:nowrap;font:700 13px/1 var(--body);color:var(--ink);text-decoration:underline;text-underline-offset:3px;padding:6px 0}
+
+.rocker{width:46px;height:68px;border-radius:13px;background:#101217;padding:4px;
+  box-shadow:0 1px 0 var(--hi),inset 0 0 0 1px #000}
+.rocker b{display:block;height:100%;border-radius:9px;position:relative;transition:background .15s,box-shadow .15s;
+  background:linear-gradient(#2c2f38 0 49%,#16181d 49% 51%,#3d414c 51%)}
+.rocker b::before{content:"";position:absolute;left:50%;top:11px;width:3px;height:12px;margin-left:-1.5px;border-radius:2px;background:#8b90a0}
+.rocker b::after{content:"";position:absolute;left:50%;bottom:10px;width:11px;height:11px;margin-left:-5.5px;border-radius:50%;
+  border:2.5px solid #8b90a0}
+.rocker[aria-pressed="true"] b{background:linear-gradient(#ff7a5e 0,#f0432b 49%,#8f2212 49% 51%,#c93520 51%);
+  box-shadow:0 0 16px rgba(240,67,43,.6)}
+.rocker[aria-pressed="true"] b::before{background:#fff}
+.rocker[aria-pressed="true"] b::after{border-color:rgba(255,255,255,.55)}
+
+.new{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:64px;margin-top:14px;
+  border:2px dashed var(--ink-2);border-radius:18px;font:700 16px/1 var(--body)}
+.new i{width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--plastic);display:grid;place-items:center;
+  font:700 18px/1 var(--body);font-style:normal}
+.last{display:flex;gap:10px;align-items:center;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--recess);
+  font:500 13px/1.35 var(--body);color:var(--ink-2);width:100%;text-align:left}
+.last b{color:var(--ink);font-weight:700}
+.last span{flex:1;min-width:0}
+.last svg{width:18px;height:18px;flex:none;stroke:var(--ink);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+@media (min-width:980px){
+  .bench{padding-top:34px}
+  .top svg.mascot{width:72px;height:72px}
+  .word{font-size:34px}
+  .plugs{grid-template-columns:repeat(3,190px) 64px;padding-left:44px;gap:18px}
+  .plug .head{font-size:14px;min-height:64px;padding-top:12px}
+  .strip{display:grid;grid-template-columns:330px 1fr;gap:0 34px;padding:30px}
+  .plate{align-content:start;gap:26px}
+  .read{flex-wrap:wrap}
+  .read .big{font-size:96px}
+  .week{margin-left:0;width:100%;height:56px;gap:8px}
+  .week i{flex:1}
+  .groove{display:none}
+  .outlets{grid-template-columns:1fr 1fr;gap:0 30px;border-left:6px solid var(--recess);padding-left:30px}
+  .outlet{padding:16px 4px}
+  .rest{grid-column:2;border-left:6px solid var(--recess);padding-left:30px;display:grid;grid-template-columns:1fr 1fr;gap:0 30px}
+  .new{margin-top:18px}.last{margin-top:18px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* prototype: any number of providers, not exactly three */
+.plugs{display:flex;overflow-x:auto}
+.plug{flex:1 0 84px;max-width:190px}
+.plug.add{flex:0 0 56px}
+.outlet.trip .tape{background:#B4301D}
+/* a near-black label would vanish into the dark strip */
+:root[data-theme="dark"] .tape{box-shadow:inset 0 0 0 1px rgba(255,255,255,.24)}
+@media (min-width:980px){.plug{flex:0 0 190px}.plug.add{flex:0 0 64px}}
+
+/* Shared tokens: the common screens are drawn with these. See DESIGN.md. */
+:root{
+  --br-bg:var(--bench);--br-surface:var(--plastic);--br-sunken:var(--recess);--br-on-sunken:var(--ink);
+  --br-ink:var(--ink);--br-ink-2:var(--ink-2);--br-line:var(--line);
+  --br-action:var(--ink);--br-on-action:var(--plastic);
+  --br-on:var(--rocker);--br-busy:var(--cable);--br-ok:var(--led);--br-stop:var(--stop);--br-on-stop:#fff;
+  --br-radius-s:11px;--br-radius-m:16px;--br-radius-l:30px;--br-stroke:0px;
+  --br-font-display:var(--display);--br-font-body:var(--body);--br-font-code:var(--mono);
+  --br-code-size:12.5px;--br-case:none;
+}
+:root[data-theme="dark"]{--br-on-stop:#1A1C23}
+
+/* the outlet opens the route; its switch and its "raise budget" sit above that */
+.outlet{position:relative}
+.outlet .rocker,.trip-note button{position:relative;z-index:1}
+.outlet .br-stretch:focus-visible{outline-offset:-2px;border-radius:14px}
+
+/* ---- holding up under worst-case data ---- */
+.read .big{font-size:min(68px,calc(330px / var(--len,5)))}
+.nums{flex-wrap:wrap;row-gap:2px}
+.plug .head span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.trip-note button{min-height:44px;padding:0}
+@media (min-width:980px){.read .big{font-size:min(96px,calc(560px / var(--len,5)))}}
+/* a long name or address must shrink inside its column, not widen the column */
+.plate{grid-template-columns:minmax(0,1fr)}
+.outlet{grid-template-columns:56px minmax(0,1fr) 46px}
+@media (min-width:980px){.strip{grid-template-columns:330px minmax(0,1fr)}.outlets,.rest{grid-template-columns:repeat(2,minmax(0,1fr))}}
