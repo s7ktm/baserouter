@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BaseRouter — design directions</title>
+<style>
+/* Comparison sheet for the three directions. Deliberately plain: it is not part of any design. */
+:root{--bg:#F1F1EF;--fg:#1B1B1F;--mute:#63636B;--line:#CFCFD4}
+:root[data-theme="dark"]{--bg:#111114;--fg:#F2F2F4;--mute:#A0A0AA;--line:#34343C}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,sans-serif;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;max-width:1260px;margin:0 auto 22px}
+h1{font-size:20px;font-weight:650;margin-right:auto}
+header button{font:inherit;font-size:13px;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+.sheet{display:grid;grid-template-columns:repeat(auto-fit,minmax(375px,1fr));gap:28px 24px;max-width:1260px;margin:0 auto;justify-items:center}
+.dir{width:375px;max-width:100%}
+h2{font-size:17px;font-weight:650}
+.dir p{color:var(--mute);font-size:14px;margin:4px 0 12px;min-height:4.3em}
+iframe{display:block;width:100%;height:780px;border:1px solid var(--line);border-radius:28px;background:#fff}
+.dir a{display:inline-block;margin-top:10px;color:inherit;font-size:14px;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1 data-tr="BaseRouter ana ekranı için üç tasarım yönü">Three design directions for the BaseRouter home screen</h1>
+  <button id="lang">TR</button><button id="theme">Dark</button>
+</header>
+<div class="sheet">
+  <section class="dir">
+    <h2 data-tr="A · Priz">A · Socket</h2>
+    <p data-tr="BaseRouter bir uzatma prizi. Sağlayıcılar üstten takılır, her rota kendi anahtarı olan bir priz. Bütçe dolunca sigorta atar.">BaseRouter is a power strip. Providers plug in at the top, every route is an outlet with its own switch. When a budget runs out, the breaker trips.</p>
+    <iframe data-src="a-priz.html" title="A"></iframe>
+    <a data-href="a-priz.html" target="_blank" data-tr="Tam ekranda aç">Open full screen</a>
+  </section>
+  <section class="dir">
+    <h2 data-tr="B · Dijital ekran">B · Display</h2>
+    <p data-tr="BaseRouter küçük bir masa cihazı. Her şeyi söyleyen tek bir ekran, her rota için kalın bir tuş ve ekranda yaşayan piksel bir yaratık.">BaseRouter is a small desk device. One screen that tells you everything, a chunky key per route, and a pixel creature living on the display.</p>
+    <iframe data-src="b-ekran.html" title="B"></iframe>
+    <a data-href="b-ekran.html" target="_blank" data-tr="Tam ekranda aç">Open full screen</a>
+  </section>
+  <section class="dir">
+    <h2 data-tr="C · Ev paneli">C · Home</h2>
+    <p data-tr="BaseRouter evin kendisi. Posta güvercini istekleri taşır, tek adres kapıdaki levhadır, her rota ışığı açık ya da kapalı bir oda.">BaseRouter is home base. A homing pigeon carries the requests, the one address is the plate on the door, and every route is a room with its lights on or off.</p>
+    <iframe data-src="c-ev.html" title="C"></iframe>
+    <a data-href="c-ev.html" target="_blank" data-tr="Tam ekranda aç">Open full screen</a>
+  </section>
+</div>
+<script>
+const q=new URLSearchParams(location.search), root=document.documentElement;
+const els=[...document.querySelectorAll('[data-tr]')]; els.forEach(e=>e.dataset.en=e.textContent);
+let lang=q.get('lang')||((navigator.language||'').startsWith('tr')?'tr':'en');
+let theme=q.get('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+function paint(){
+  root.lang=lang; root.dataset.theme=theme;
+  els.forEach(e=>e.textContent=e.dataset[lang]);
+  const qs=`?lang=${lang}&theme=${theme}`;
+  document.querySelectorAll('iframe').forEach(f=>f.src=f.dataset.src+qs);
+  document.querySelectorAll('a[data-href]').forEach(a=>a.href=a.dataset.href+qs);
+  document.getElementById('lang').textContent=lang==='tr'?'EN':'TR';
+  document.getElementById('theme').textContent=theme==='dark'?'Light':'Dark';
+}
+document.getElementById('lang').onclick=()=>{lang=lang==='tr'?'en':'tr';paint()};
+document.getElementById('theme').onclick=()=>{theme=theme==='dark'?'light':'dark';paint()};
+paint();
+</script>
+</body>
+</html>

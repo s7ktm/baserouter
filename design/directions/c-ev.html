@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BaseRouter — Direction C · Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500..900&family=Onest:wght@400..700&display=swap" rel="stylesheet">
+<style>
+/* Direction C · Home
+   BaseRouter is home base. A homing pigeon carries every request out and
+   back; the one address is the plate on the door. Each route is a room:
+   lights on means it is running. Flat colour, one plum outline. */
+:root{
+  --sky:#D6E6F6;        /* page */
+  --paper:#FFFFFF;      /* a room with the lights off */
+  --plum:#33213F;       /* outlines and text */
+  --plum-2:#6B5A78;
+  --lamp:#FFD23F;       /* lights on */
+  --tomato:#EE5A42;     /* stopped, needs attention */
+  --leaf:#2FAE6B;       /* healthy */
+  --on-lamp:#33213F;
+  --wing:#9DB0D8; --down:#EEF2FA;
+  --display:"Gabarito",system-ui,sans-serif;
+  --body:"Onest",system-ui,sans-serif;
+}
+:root[data-theme="dark"]{
+  --sky:#191428; --paper:#2A2240; --plum:#F3ECFA; --plum-2:#B3A6C4;
+  --wing:#8496C4; --down:#E4E9F5;
+}
+*{box-sizing:border-box;margin:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--sky);color:var(--plum);font:500 15px/1.4 var(--body);min-height:100dvh;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;text-align:inherit}
+button:focus-visible{outline:3px solid var(--plum);outline-offset:3px}
+
+.mockbar{display:flex;gap:8px;align-items:center;padding:8px 14px;font:500 12px/1 system-ui,sans-serif;
+  color:var(--plum-2);border-bottom:1px dashed var(--plum-2)}
+.mockbar b{color:var(--plum);font-weight:600;margin-right:auto}
+.mockbar button{padding:6px 10px;border:1px solid var(--plum-2);border-radius:6px}
+
+.home{max-width:1120px;margin:0 auto;padding:18px 16px 120px}
+
+/* greeting: the state of the house in one sentence */
+.hello{display:grid;grid-template-columns:1fr 112px;align-items:center;gap:8px}
+.hello h1{font:800 34px/1.02 var(--display);letter-spacing:-.02em}
+.hello p{font:500 16px/1.35 var(--body);color:var(--plum-2);margin-top:8px;max-width:26ch}
+.hello p b{color:var(--plum);font-weight:700}
+.bird{width:112px;height:104px;overflow:visible}
+.bird .o{stroke:#33213F;stroke-width:4;stroke-linejoin:round;stroke-linecap:round}
+:root[data-theme="dark"] .bird .o{stroke:#120D1E}
+
+/* the door plate: the one address */
+.door{display:flex;align-items:center;gap:10px;margin-top:16px;padding:12px 10px 12px 18px;border-radius:22px;
+  background:#33213F;color:#fff;position:relative}
+:root[data-theme="dark"] .door{background:#0F0A19;box-shadow:inset 0 0 0 2.5px #4A3D63}
+.door::before,.door::after{content:"";position:absolute;left:8px;width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.4)}
+.door::before{top:8px}.door::after{bottom:8px}
+.door div{flex:1;min-width:0}
+.door small{display:block;font:500 13px/1.25 var(--body);opacity:.75}
+.door code{display:block;font:700 19px/1.25 var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.door button{flex:none;height:48px;padding:0 18px;border-radius:16px;background:var(--lamp);color:var(--on-lamp);font:800 15px/1 var(--display)}
+
+h2{font:800 20px/1 var(--display);margin:26px 4px 12px}
+
+/* rooms = routes */
+.rooms{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.room{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr auto;gap:10px;min-height:172px;padding:14px;border-radius:28px;min-width:0;
+  background:var(--lamp);color:var(--on-lamp);border:2.5px solid #33213F;transition:background .15s}
+:root[data-theme="dark"] .room{border-color:#120D1E;box-shadow:0 0 34px -12px var(--lamp)}
+.room .hd{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
+.ico{flex:none}
+.ico{width:44px;height:44px;border-radius:50%;background:#fff;display:grid;place-items:center;border:2.5px solid #33213F}
+.ico svg{width:24px;height:24px;fill:none;stroke:#33213F;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.sw{width:54px;height:32px;border-radius:16px;background:#33213F;border:2.5px solid #33213F;position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:24px;width:23px;height:23px;border-radius:50%;background:#fff;transition:left .15s}
+.room h3{font:800 19px/1.1 var(--display);overflow-wrap:anywhere;align-self:end}
+.room h3 small{display:block;font:500 14px/1.3 var(--body);margin-top:4px;opacity:.82}
+.room h3 small b{font-weight:700}
+.bud{font:600 13px/1.2 var(--body)}
+.bud i{display:block;height:10px;border-radius:5px;background:rgba(51,33,63,.18);margin-bottom:6px;overflow:hidden}
+.bud i u{display:block;height:100%;width:var(--p);border-radius:5px;background:#33213F}
+.dots{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
+.dots s{width:5px;height:5px;border-radius:50%;background:currentColor;animation:hop .9s ease-in-out infinite}
+.dots s:nth-child(2){animation-delay:.15s}.dots s:nth-child(3){animation-delay:.3s}
+@keyframes hop{30%{transform:translateY(-4px)}60%{transform:none}}
+
+.room.off,.room.stop{background:var(--paper);color:var(--plum);box-shadow:none}
+.room.off .ico,.room.stop .ico{background:var(--sky)}
+:root[data-theme="dark"] .room.off .ico svg,:root[data-theme="dark"] .room.stop .ico svg{stroke:var(--plum)}
+.room.off .sw{background:var(--paper)}
+.room.off .sw::after{left:2px;background:var(--plum-2)}
+.room.off h3,.room.off .bud{color:var(--plum-2)}
+.room.off .bud i,.room.stop .bud i{background:color-mix(in srgb,var(--plum) 16%,transparent)}
+.room.off .bud i u{background:var(--plum-2)}
+.room.stop{border-color:var(--tomato)!important}
+.room.stop .bud i u{background:var(--tomato)}
+.room.stop .tag{font:800 12.5px/1 var(--display);background:var(--tomato);color:#fff;padding:8px 9px;border-radius:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.room.stop .bud button{display:block;margin-top:8px;font:700 14px/1 var(--body);text-decoration:underline;text-underline-offset:3px;padding:6px 0}
+.room.add{background:none;border-style:dashed;border-color:var(--plum-2)!important;color:var(--plum);box-shadow:none;
+  place-items:center;grid-template-rows:1fr;font:800 18px/1.2 var(--display);text-align:center}
+.room.add b{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:var(--plum);color:var(--sky);
+  font:800 28px/1 var(--display);margin:0 auto 10px}
+
+/* providers */
+.prov{display:flex;gap:10px;flex-wrap:wrap}
+.prov span,.prov button{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 16px;border-radius:24px;
+  background:var(--paper);border:2.5px solid #33213F;font:700 15px/1 var(--display)}
+:root[data-theme="dark"] .prov span{border-color:#120D1E}
+.prov span::before{content:"";width:11px;height:11px;border-radius:50%;background:var(--leaf)}
+.prov span.down{color:var(--plum-2)}
+.prov span.down::before{background:none;box-shadow:inset 0 0 0 2.5px var(--tomato)}
+.prov span small{font:500 13px/1 var(--body);color:var(--plum-2)}
+.prov button{background:none;border-style:dashed;border-color:var(--plum-2)}
+
+/* bottom bar */
+.bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:4px;padding:6px;border-radius:32px;
+  background:#33213F;z-index:5;box-shadow:0 10px 24px -10px rgba(20,10,30,.6)}
+:root[data-theme="dark"] .bar{background:#0F0A19;box-shadow:inset 0 0 0 2px #4A3D63}
+.bar button{display:flex;align-items:center;gap:8px;height:52px;padding:0 16px;border-radius:26px;color:#fff;font:700 15px/1 var(--display);white-space:nowrap}
+.bar button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.bar button[aria-current]{background:var(--lamp);color:var(--on-lamp)}
+
+@media (min-width:980px){
+  .home{display:grid;grid-template-columns:400px 1fr;gap:0 48px;padding-top:44px;align-items:start}
+  .side{position:sticky;top:44px}
+  .hello{grid-template-columns:1fr;gap:18px}
+  .bird{width:190px;height:176px;order:-1}
+  .hello h1{font-size:52px}
+  .hello p{font-size:18px}
+  .door{margin-top:26px}
+  .main h2:first-child{margin-top:6px}
+  .rooms{grid-template-columns:repeat(3,1fr);gap:16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="mockbar"><b>C · Home / Ev paneli</b>
+  <button id="lang">TR</button><button id="theme">Dark</button></div>
+
+<main class="home">
+  <div class="side">
+    <header class="hello">
+      <div>
+        <h1 data-tr="Her şey yolunda.">Everything is running.</h1>
+        <p data-tr-html="3 rota açık. Bugün <b>$1.24</b>, bu ay <b>$18.60</b> harcandı."><b>$1.24</b> spent today, <b>$18.60</b> this month. 3 routes are on.</p>
+      </div>
+      <svg class="bird" viewBox="0 0 124 112" aria-hidden="true">
+        <path class="o" d="M26 70 6 78l18 10z" fill="var(--wing)"/>
+        <path class="o" d="M58 92v13m-7 0h13M74 91v14m-7 0h13" fill="none"/>
+        <path class="o" d="M22 66c0-22 20-36 44-34 10 1 16-12 30-10 12 2 18 14 14 26-3 9-10 12-12 20-4 18-22 28-42 26-20-2-34-12-34-28z" fill="var(--down)"/>
+        <path class="o" d="M38 62c8-14 30-14 38 2-6 14-30 16-38-2z" fill="var(--wing)"/>
+        <path class="o" d="M110 40l12 5-13 5z" fill="var(--lamp)"/>
+        <circle cx="98" cy="38" r="4.2" fill="#33213F"/><circle cx="99.5" cy="36.5" r="1.4" fill="#fff"/>
+        <circle cx="90" cy="50" r="4.5" fill="var(--tomato)" opacity=".55"/>
+        <path class="o" d="M80 30 60 86" fill="none"/>
+        <rect class="o" x="46" y="74" width="24" height="17" rx="4" fill="var(--lamp)"/>
+        <path class="o" d="M47 77l11 7 11-7" fill="none" style="stroke-width:3"/>
+      </svg>
+    </header>
+
+    <div class="door">
+      <div><small data-tr="Kapıdaki adres: bütün ajanların buraya bağlanır">The address on the door: every agent connects here</small>
+        <code>localhost:4141/v1</code></div>
+      <button id="copy" data-tr="Kopyala">Copy</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <h2 data-tr="Rotalar">Routes</h2>
+    <div class="rooms">
+      <div class="room">
+        <div class="hd"><span class="ico"><svg viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg></span><button class="sw" aria-label="Coding agent"></button></div>
+        <h3><span data-tr="Kod ajanı">Coding agent</span><small><b>$0.51</b> <span data-tr="bugün, şimdi çalışıyor">today, working now</span><span class="dots"><s></s><s></s><s></s></span></small></h3>
+        <div class="bud"><i><u style="--p:45%"></u></i><span data-tr="$11.30 / $25 bütçe">$11.30 of $25 budget</span></div>
+      </div>
+      <div class="room">
+        <div class="hd"><span class="ico"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg></span><button class="sw" aria-label="Home assistant"></button></div>
+        <h3><span data-tr="Ev asistanı">Home assistant</span><small><b>$0.42</b> <span data-tr="bugün">today</span></small></h3>
+        <div class="bud"><i><u style="--p:62%"></u></i><span data-tr="$6.20 / $10 bütçe">$6.20 of $10 budget</span></div>
+      </div>
+      <div class="room">
+        <div class="hd"><span class="ico"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5M9.5 13v.5M14.5 13v.5M10 16.5h4"/><circle cx="12" cy="4" r="1"/></svg></span><button class="sw" aria-label="Robot arm"></button></div>
+        <h3><span data-tr="Robot kol">Robot arm</span><small><b>$0.31</b> <span data-tr="bugün">today</span></small></h3>
+        <div class="bud"><i><u style="--p:22%"></u></i><span data-tr="$1.10 / $5 bütçe">$1.10 of $5 budget</span></div>
+      </div>
+      <div class="room stop">
+        <div class="hd"><span class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M4 8l8 6 8-6"/></svg></span><span class="tag" data-tr="Doldu">Full</span></div>
+        <h3><span data-tr="Bülten botu">Newsletter bot</span><small data-tr="Bütçe doldu, durduruldu">Budget used up, stopped</small></h3>
+        <div class="bud"><i><u style="--p:100%"></u></i><span data-tr="$3 / $3 bütçe">$3 of $3 budget</span><button data-tr="Bütçeyi artır">Raise budget</button></div>
+      </div>
+      <div class="room off">
+        <div class="hd"><span class="ico"><svg viewBox="0 0 24 24"><path d="M5 19c0-9 5-14 14-14 0 9-5 14-14 14zM5 19l8-8"/></svg></span><button class="sw" aria-label="Garden watcher"></button></div>
+        <h3><span data-tr="Bahçe gözcüsü">Garden watcher</span><small data-tr="Kapalı">Off</small></h3>
+        <div class="bud"><i><u style="--p:16%"></u></i><span data-tr="$0.80 / $5 bütçe">$0.80 of $5 budget</span></div>
+      </div>
+      <button class="room add"><span><b>+</b><span data-tr="Yeni rota">New route</span></span></button>
+    </div>
+
+    <h2 data-tr="Sağlayıcılar">Providers</h2>
+    <div class="prov">
+      <span>OpenRouter</span><span>OpenAI</span>
+      <span class="down">Ollama <small data-tr="ulaşılamıyor">unreachable</small></span>
+      <button data-tr="+ Sağlayıcı ekle">+ Add provider</button>
+    </div>
+  </div>
+</main>
+
+<nav class="bar">
+  <button aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg><span data-tr="Ev">Home</span></button>
+  <button><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg><span data-tr="Hareketler">Activity</span></button>
+  <button><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span data-tr="Ayarlar">Settings</span></button>
+</nav>
+
+<script>
+const q=new URLSearchParams(location.search), root=document.documentElement;
+const els=[...document.querySelectorAll('[data-tr]')]; els.forEach(e=>e.dataset.en=e.textContent);
+const hels=[...document.querySelectorAll('[data-tr-html]')]; hels.forEach(e=>e.dataset.enHtml=e.innerHTML);
+let lang=q.get('lang')||((navigator.language||'').startsWith('tr')?'tr':'en');
+let theme=q.get('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+function paint(){
+  root.lang=lang; root.dataset.theme=theme;
+  els.forEach(e=>e.textContent=e.dataset[lang]);
+  hels.forEach(e=>e.innerHTML=lang==='tr'?e.dataset.trHtml:e.dataset.enHtml);
+  document.getElementById('lang').textContent=lang==='tr'?'EN':'TR';
+  document.getElementById('theme').textContent=theme==='dark'?'Light':'Dark';
+}
+document.getElementById('lang').onclick=()=>{lang=lang==='tr'?'en':'tr';paint()};
+document.getElementById('theme').onclick=()=>{theme=theme==='dark'?'light':'dark';paint()};
+document.querySelectorAll('.room .sw').forEach(s=>s.onclick=()=>s.closest('.room').classList.toggle('off'));
+document.getElementById('copy').onclick=e=>{
+  navigator.clipboard?.writeText('http://localhost:4141/v1').catch(()=>{});
+  e.currentTarget.textContent=lang==='tr'?'Kopyalandı':'Copied'; setTimeout(paint,1200);
+};
+paint();
+</script>
+</body>
+</html>
