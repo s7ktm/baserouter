@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { imagesIn, MediaKeeper, pcmFormat, promptOf, sniff } from "../src/media.ts";
+import { imagesIn, MediaKeeper, pcmFormat, promptOf, publicUrl, sniff } from "../src/media.ts";
 import { migrate, MIGRATIONS, openDb, Store } from "../src/store.ts";
 import { fixtureBytes, PCM } from "./fake-openrouter.ts";
 import { startGateway, until, type Gateway } from "./harness.ts";
@@ -158,7 +158,10 @@ test("deleting an image removes its file only when no other image has the same b
 test("images stay when their route is removed, and can be filtered by route", async () => {
   const one = gw.addRoute();
   const two = gw.addRoute();
+  gw.clock.now = 1_000; // one after the other, so the order is fixed
   await (await images()(one.key)).arrayBuffer();
+  await gw.settled();
+  gw.clock.now = 2_000;
   await (await images()(two.key)).arrayBuffer();
   await gw.settled();
   expect((await listed(`?route=${one.id}`)).images.map((i) => i.route)).toEqual([one.id]);
@@ -213,14 +216,30 @@ test("only real images are kept: the type comes from the bytes, not from what th
 });
 
 test("an image given as a link is fetched once and kept; a link that fails keeps nothing", async () => {
-  const server = Bun.serve({ port: 0, fetch: (req) => (new URL(req.url).pathname === "/a.png" ? new Response(pngBytes) : new Response("gone", { status: 404 })) });
-  try {
-    const { store, keeper, made } = keeperIn(1 << 20);
-    await keeper.keepImages(made, [{ url: `http://127.0.0.1:${server.port}/a.png` }, { url: `http://127.0.0.1:${server.port}/missing.png` }]);
-    expect(store.media({ limit: 10 })).toHaveLength(1);
-  } finally {
-    await server.stop(true);
-  }
+  const asked: { url: string; redirect?: string }[] = [];
+  const fetcher = (async (url: string, init?: RequestInit) => {
+    asked.push({ url, redirect: init?.redirect });
+    return url.endsWith("/a.png") ? new Response(pngBytes) : new Response("gone", { status: 404 });
+  }) as unknown as typeof fetch;
+  const { store, keeper, made } = keeperIn(1 << 20, fetcher);
+  await keeper.keepImages(made, [{ url: "https://images.example/a.png" }, { url: "https://images.example/missing.png" }]);
+  expect(store.media({ limit: 10 })).toHaveLength(1);
+  expect(asked.map((a) => a.redirect)).toEqual(["error", "error"]); // a redirect is not followed
+});
+
+test("a link to this machine or the local network is not fetched", async () => {
+  const asked: string[] = [];
+  const fetcher = (async (url: string) => (asked.push(url), new Response(pngBytes))) as unknown as typeof fetch;
+  const { store, keeper, made } = keeperIn(1 << 20, fetcher);
+  const links = [
+    "http://images.example/a.png", "https://localhost/a.png", "https://127.0.0.1/a.png", "https://10.0.0.5/a.png", "https://192.168.1.2/a.png",
+    "https://172.20.0.1/a.png", "https://169.254.169.254/latest", "https://[::1]/a.png", "https://[fd00::1]/a.png", "https://[::ffff:127.0.0.1]/a.png", "https://0.0.0.0/a.png",
+  ];
+  await keeper.keepImages(made, links.map((url) => ({ url })));
+  expect(asked).toEqual([]);
+  expect(store.media({ limit: 10 })).toEqual([]);
+  expect(publicUrl("https://images.example/a.png")).toBe(true);
+  expect(publicUrl("https://8.8.8.8/a.png")).toBe(true);
 });
 
 test("images are found where OpenRouter puts them, and only https links are followed", () => {

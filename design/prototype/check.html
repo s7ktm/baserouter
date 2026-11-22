@@ -41,8 +41,9 @@ const words = {
   tr: { providers: "Sağlayıcılar", add: "Sağlayıcı ekleme: reddedilen anahtar", made: "Yeni rota, ilk istek geldi", activity: "Hareketler", images: "Saklanan görseller", sounds: "Saklanan sesler", image: "Bir görsel, silinmek üzere", sound: "Bir ses", settings: "Ayarlar", signin: "Giriş: yanlış parola", newkey: "Rotanın yeni anahtarı, bir kez", delete: "Rota silme", password: "Parola değiştirme", route: "Açılmış bir rota", over: "Bütçesi dolmuş bir rota", title: "Her görünüm, her durum", ok: "Sözleşmeyi karşılıyor", bad: "Sözleşmeyi karşılamıyor:", tokens: "{n} ortak değişkenin hepsi tanımlı", noTokens: "Tanımlanmamış ortak değişkenler:", default: "Sıradan bir gün", calm: "Her şey yolunda", empty: "İlk açılış" },
 };
 const query = new URLSearchParams(location.search);
-let lang = query.get("lang") || ((navigator.language || "").startsWith("tr") ? "tr" : "en");
-let theme = query.get("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+// Only known values: these go into the page's markup.
+let lang = ["en", "tr"].includes(query.get("lang")) ? query.get("lang") : (navigator.language || "").startsWith("tr") ? "tr" : "en";
+let theme = ["light", "dark"].includes(query.get("theme")) ? query.get("theme") : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 const skins = await Promise.all(registry.map(async (id) => (await import(`./skins/${id}/skin.js`)).default));
 
 function paint() {

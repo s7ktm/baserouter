@@ -4,6 +4,17 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Security
+
+- The gateway serves only the panel and the files it loads. The design pages beside it, one of which could be made to run a script from a link, are no longer served, and they accept only known values.
+- A model id must look like one; anything else is refused. The panel's home screen escapes the last model shown.
+- A request's own `models` fallback list may only name the route's models.
+- A transcription form with more than one `model` is refused.
+- Passwords are checked one at a time, so the five-try lock holds against guesses sent at once.
+- The panel and `/api` answer only to known host names (`BASEROUTER_ALLOWED_HOSTS`, `BASEROUTER_DOMAIN`), against DNS rebinding.
+- Image links in answers are fetched only over HTTPS, never by following a redirect, and never to this machine or the local network by address.
+- The data folder and its files are readable by BaseRouter's own user only; the session cookie is `Secure` over HTTPS; very long stream lines that are not needed are not held in memory.
+
 ## [0.2.0] — 2026-11-22
 
 Images and sound, a history of what routes made, and a way to run it for good.

@@ -87,20 +87,40 @@ export class StreamScanner implements Reading {
   // base64), so pieces are joined once, when the line ends, not on every chunk.
   #rest: string[] = [];
 
+  // A line longer than this is not read (it still reaches the client): only an image is
+  // that long, and when images are not being kept nothing in it is needed.
+  #longest = 0;
+  #restSize = 0;
+  #skipping = false;
+
   feed(chunk: Uint8Array, now: number): void {
     const text = this.#decoder.decode(chunk, { stream: true });
+    this.#longest ||= this.collectImages ? 96 * 1024 * 1024 : 4 * 1024 * 1024;
     let start = 0;
     for (let end = text.indexOf("\n"); end !== -1; end = text.indexOf("\n", start)) {
-      this.#rest.push(text.slice(start, end));
-      this.#line(this.#rest.join(""), now);
+      if (!this.#skipping) {
+        this.#rest.push(text.slice(start, end));
+        this.#line(this.#rest.join(""), now);
+      }
       this.#rest = [];
+      this.#restSize = 0;
+      this.#skipping = false;
       start = end + 1;
     }
-    if (start < text.length) this.#rest.push(text.slice(start));
+    if (start < text.length && !this.#skipping) {
+      this.#rest.push(text.slice(start));
+      if ((this.#restSize += text.length - start) > this.#longest) {
+        this.#rest = [];
+        this.#restSize = 0;
+        this.#skipping = true;
+        this.firstTokenAt ??= now; // a line this long carries something: an image
+      }
+    }
   }
 
   // Call when the stream is over, so a last line without a line break is still read.
   end(now: number): void {
+    if (this.#skipping) return;
     this.#rest.push(this.#decoder.decode());
     const tail = this.#rest.join("");
     this.#rest = [];

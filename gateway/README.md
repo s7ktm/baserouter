@@ -61,7 +61,7 @@ Anything that speaks the OpenAI API works the same way: point its base URL at th
 
 **The one address.** `POST /v1/chat/completions`, `POST /v1/images/generations`, `POST /v1/audio/speech`, `POST /v1/audio/transcriptions` and `GET /v1/models`, opened with a route's key. The request body goes to OpenRouter as the client wrote it and the answer comes back as OpenRouter sent it. A stream is passed on byte for byte, keep-alive lines included. If the client goes away, the request to OpenRouter is cancelled. A request body may be up to 64 MB (`BASEROUTER_MAX_REQUEST_MB`); a larger one is refused with HTTP 413 before anything is sent.
 
-**Budgets.** A budget is monthly and starts again on the first day of the month, at midnight in the local time of the machine the gateway runs on. A route that has used up its budget is refused with HTTP 402 before anything is sent to the provider; a switched-off route is refused with HTTP 403. The check happens when a request starts, so requests already running can take a route a little past its budget.
+**Budgets.** A budget is monthly and starts again on the first day of the month, at midnight in the local time of the machine the gateway runs on. A route that has used up its budget is refused with HTTP 402 before anything is sent to the provider; a switched-off route is refused with HTTP 403. The check happens when a request starts and counts what finished requests cost, so requests running at the same time all pass it: many requests sent at once can take a route past its budget by as much as they cost together. A request whose cost stays unknown counts as nothing.
 
 **A row per request.** Route, what it made (`chat`, `image`, `speech` or `transcription`), the model asked for and the model that answered, tokens, cost, where the cost came from, time to the first token, total time, and what went wrong if something did. The cost is the `usage.cost` OpenRouter reports, read from the stream as it passes. When an answer ends without it (a stream that broke off, a client that left), the gateway asks OpenRouter for that request's cost a few seconds later. A request whose cost stays unknown counts as nothing towards the budget.
 
@@ -104,8 +104,8 @@ Errors from the gateway itself have the shape OpenAI clients expect: `{"error": 
 | 401 | `unknown_key` | The key is missing or is not a route's key |
 | 402 | `budget_used_up` | The route has used up its monthly budget; `metadata` has the amounts and the date it starts again |
 | 403 | `route_off` | The route is switched off |
-| 403 | `model_not_allowed` | The route may not use that model |
-| 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either) or names no model |
+| 403 | `model_not_allowed` | The route may not use that model, or a model in the request's own `models` list |
+| 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either), names no model, names something that is not a model id, or (in a form) names more than one |
 | 413 | `request_too_large` | The body is larger than `BASEROUTER_MAX_REQUEST_MB`; `metadata.max_bytes` has the limit. The management API (`/api`) takes up to 1 MB |
 | 503 | `no_provider` | No provider has been added |
 | 502 | `provider_unreachable` | OpenRouter could not be reached |
@@ -113,7 +113,7 @@ Errors from the gateway itself have the shape OpenAI clients expect: `{"error": 
 
 ## Management API
 
-Everything under `/api` except `status`, `setup` and `login` needs a session: the `token` from `setup` or `login`, sent as `Authorization: Bearer <token>`, or the cookie those two answers set. A session lasts thirty days. Five wrong passwords in a row close sign-in for a minute.
+Everything under `/api` except `status`, `setup` and `login` needs a session: the `token` from `setup` or `login`, sent as `Authorization: Bearer <token>`, or the cookie those two answers set. A session lasts thirty days. Passwords are checked one at a time; five wrong ones in a row close sign-in for a minute, for everyone (a session already open stays open). The panel and `/api` answer only to the names in `BASEROUTER_ALLOWED_HOSTS` (and this machine's), and refuse a request from a page on another site. Over HTTPS the session cookie is `Secure`.
 
 | Request | Does |
 |---|---|
@@ -145,6 +145,7 @@ Everything is in `gateway/data/`, which git ignores.
 - `baserouter.sqlite` holds providers, routes, requests, settings and sessions.
 - A route's key is never stored. Only its SHA-256 hash and its last four characters are. A lost key cannot be recovered.
 - A provider's key is stored encrypted (AES-256-GCM) and is never given back by the API.
+- The folder and everything in it can be read by BaseRouter's own user only (it sets this on every start).
 - `secret.key` is the key that encryption uses. It is made on the first start and only its owner can read it. Back it up together with the database: without it, providers have to be added again. Keeping it beside the database protects a copied or backed-up database file; it does not protect against someone who can read the whole folder.
 - The admin password is stored as an Argon2 hash.
 - `media/` holds the images and sound routes made, unless switched off (see "Kept images and sound" above). The words that asked for each are kept with it. Before sound was kept this folder was `images/`; it is renamed on the first start.
@@ -159,7 +160,9 @@ All optional, as environment variables.
 | `BASEROUTER_PORT` | `4141` | |
 | `BASEROUTER_HOST` | `127.0.0.1` | Only this machine can reach it. Set `0.0.0.0` to let other machines on your network connect, and set the admin password before you do: the first one to reach a fresh gateway sets it. |
 | `BASEROUTER_DATA_DIR` | `gateway/data` | |
-| `BASEROUTER_PANEL_DIR` | `design/prototype` | The folder the panel is served from |
+| `BASEROUTER_ALLOWED_HOSTS` | | The names the panel and `/api` may be reached by, comma-separated, besides `localhost`, `127.0.0.1` and `BASEROUTER_HOST`: the machine's name or address on your network (`baserouter.home.arpa,192.168.1.20`). Any other name is refused with HTTP 403, so a web page cannot point a name of its own at the gateway (DNS rebinding). |
+| `BASEROUTER_DOMAIN` | | The name the gateway is reached by through Caddy; counted as an allowed name. |
+| `BASEROUTER_PANEL_DIR` | `design/prototype` | The folder the panel is served from. Only `index.html` and the `core/`, `skins/` and `fonts/` folders in it are served; the design pages beside them are not. |
 | `BASEROUTER_MAX_REQUEST_MB` | `64` | The largest request body the one address takes, in megabytes. Files travel inside requests as base64, which is a third larger than the file. |
 | `BASEROUTER_MEDIA_MAX_MB` | `1024` | The most room kept images and sound may take together, in megabytes; past it the oldest go first. `0` keeps none. |
 | `BASEROUTER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | For trying the gateway without a real key, below |

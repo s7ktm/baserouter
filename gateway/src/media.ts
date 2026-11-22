@@ -132,6 +132,23 @@ const FETCH_MS = 30_000;
 const FETCH_MAX = 50 * 1024 * 1024;
 const TEMP = ".part-";
 
+// An https link whose host is a name or a public address: not localhost, not a loopback,
+// private, link-local or unspecified address. (A name that resolves to such an address is
+// not caught here; what is fetched is kept only if it is an image.)
+export function publicUrl(link: string): boolean {
+  const url = URL.parse(link);
+  if (!url || url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host === "") return false;
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host)?.slice(1).map(Number);
+  if (v4) {
+    const [a, b] = v4 as [number, number];
+    return !(a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224);
+  }
+  if (host.includes(":")) return !(host === "::" || host === "::1" || /^(fc|fd|fe8|fe9|fea|feb)/.test(host) || host.startsWith("::ffff:"));
+  return true;
+}
+
 export interface Made {
   requestId: number;
   routeId: string;
@@ -258,7 +275,10 @@ export class MediaKeeper {
   }
 
   async #fetchInto(url: string, file: MediaFile): Promise<void> {
-    const res = await this.deps.upstream.fetch(url, { signal: AbortSignal.timeout(FETCH_MS) });
+    // The link comes from the provider's answer. It is fetched only as it is, never by
+    // following a redirect, and never to this machine or the local network by address.
+    if (!publicUrl(url)) return file.drop();
+    const res = await this.deps.upstream.fetch(url, { signal: AbortSignal.timeout(FETCH_MS), redirect: "error" });
     if (!res.ok || !res.body || Number(res.headers.get("content-length") ?? 0) > FETCH_MAX) {
       await res.body?.cancel();
       return file.drop();

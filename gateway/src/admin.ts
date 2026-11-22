@@ -67,6 +67,27 @@ export function admin(deps: Deps) {
   const app = new Hono<Env>();
   let wrong = 0;
   let lockedUntil = 0;
+  // Passwords are checked one at a time, so a burst of guesses sent at once is counted
+  // like the same guesses sent one after another, and the lock closes after the fifth.
+  let checking: Promise<unknown> = Promise.resolve();
+  function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+    const run = checking.then(work, work);
+    checking = run.catch(() => {});
+    return run;
+  }
+  // Right or wrong; a wrong one counts towards the lock.
+  async function passwordIs(password: unknown, hash: string): Promise<"right" | "wrong" | "locked"> {
+    return oneAtATime(async () => {
+      if (deps.now() < lockedUntil) return "locked";
+      if (typeof password === "string" && (await Bun.password.verify(password, hash))) {
+        wrong = 0;
+        return "right";
+      }
+      if (++wrong >= MAX_WRONG) (lockedUntil = deps.now() + LOCK_MS), (wrong = 0);
+      return "wrong";
+    });
+  }
+  const tooMany = (c: Context) => fail(c, 429, "too_many_tries", "Too many wrong passwords. Wait a minute, then try again.");
 
   function routeView(r: RouteRow, spend: Map<string, { used: number; today: number }>) {
     const spent = spend.get(r.id) ?? { used: 0, today: 0 };
@@ -95,7 +116,10 @@ export function admin(deps: Deps) {
     const token = newToken();
     const seconds = SESSION_DAYS * 24 * 60 * 60;
     store.addSession(hashKey(token), deps.now() + seconds * 1000);
-    setCookie(c, COOKIE, token, { httpOnly: true, sameSite: "Strict", path: "/api", maxAge: seconds });
+    // Secure when the panel is reached over HTTPS (directly, or through Caddy), so the
+    // browser never sends the cookie over plain HTTP to the same name.
+    const https = new URL(c.req.url).protocol === "https:" || c.req.header("x-forwarded-proto") === "https";
+    setCookie(c, COOKIE, token, { httpOnly: true, sameSite: "Strict", path: "/api", maxAge: seconds, secure: https });
     return token;
   }
 
@@ -103,6 +127,17 @@ export function admin(deps: Deps) {
     const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1]?.trim();
     return bearer ?? getCookie(c, COOKIE) ?? null;
   }
+
+  // Only the names this gateway is reached by. A web page that points a name of its own
+  // at this machine (DNS rebinding) would otherwise pass the origin check below, and could
+  // set the password of a fresh gateway or guess at it.
+  app.use(async (c, next) => {
+    const host = (URL.parse(`http://${c.req.header("host") ?? ""}`)?.hostname ?? "").toLowerCase().replace(/^\[|\]$/g, "");
+    if (!deps.allowedHosts.includes(host)) {
+      return fail(c, 403, "unknown_host", `BaseRouter is not set up to be reached as "${host.slice(0, 100)}". Add it to BASEROUTER_ALLOWED_HOSTS.`);
+    }
+    await next();
+  });
 
   // A browser page on another origin must not be able to use the session cookie.
   app.use(async (c, next) => {
@@ -130,13 +165,10 @@ export function admin(deps: Deps) {
   app.post("/login", async (c) => {
     const hash = store.setting("admin_password");
     if (hash === null) return fail(c, 409, "not_set_up", "No password is set yet. Set one first.");
-    if (deps.now() < lockedUntil) return fail(c, 429, "too_many_tries", "Too many wrong passwords. Wait a minute, then try again.");
     const { password } = await jsonBody(c);
-    if (typeof password !== "string" || !(await Bun.password.verify(password, hash))) {
-      if (++wrong >= MAX_WRONG) (lockedUntil = deps.now() + LOCK_MS), (wrong = 0);
-      return fail(c, 401, "wrong_password", "That password is not right.");
-    }
-    wrong = 0;
+    const answer = await passwordIs(password, hash);
+    if (answer === "locked") return tooMany(c);
+    if (answer === "wrong") return fail(c, 401, "wrong_password", "That password is not right.");
     return c.json({ token: startSession(c) });
   });
 
@@ -149,12 +181,9 @@ export function admin(deps: Deps) {
   // Changes the password. Every other session ends; this one stays signed in.
   app.post("/password", async (c) => {
     const { current, password } = await jsonBody(c);
-    if (deps.now() < lockedUntil) return fail(c, 429, "too_many_tries", "Too many wrong passwords. Wait a minute, then try again.");
-    if (typeof current !== "string" || !(await Bun.password.verify(current, store.setting("admin_password")!))) {
-      if (++wrong >= MAX_WRONG) (lockedUntil = deps.now() + LOCK_MS), (wrong = 0);
-      return fail(c, 401, "wrong_password", "That password is not right.");
-    }
-    wrong = 0;
+    const answer = await passwordIs(current, store.setting("admin_password")!);
+    if (answer === "locked") return tooMany(c);
+    if (answer === "wrong") return fail(c, 401, "wrong_password", "That password is not right.");
     if (typeof password !== "string" || password.length < MIN_PASSWORD) {
       return fail(c, 400, "password_too_short", `Choose a password of at least ${MIN_PASSWORD} characters.`);
     }
