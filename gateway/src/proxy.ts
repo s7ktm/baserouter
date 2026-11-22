@@ -187,10 +187,11 @@ const saveRefused = (value: string | undefined) => /^(no|false|0|off)$/i.test(va
 
 // What the playground adds to the end of a stream: bytes made from the request's row.
 export type Tail = (rowId: number) => Uint8Array | null;
-// A chat request sent for a route by the panel, which holds a session and not the route's key.
-export type ChatAs = (c: Context<Env>, route: RouteRow, tail?: Tail) => Promise<Response>;
+// A request sent for a route by the panel, which holds a session and not the route's key:
+// a chat, or an image (what /v1/images/generations takes).
+export type SendAs = (c: Context<Env>, route: RouteRow, what: "chat" | "image", tail: Tail) => Promise<Response>;
 
-export function proxy(deps: Deps): { app: Hono<Env>; chatAs: ChatAs } {
+export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
   const videos = new VideoWatcher(deps, keeper);
@@ -214,8 +215,8 @@ export function proxy(deps: Deps): { app: Hono<Env>; chatAs: ChatAs } {
 
   // Every request that is sent on goes through here: the budget, the body, the model,
   // the provider, and one row in the request log. "path" is OpenRouter's. "tail" is for the
-  // panel's playground only (see chatAs below): what to add to the end of a stream, once the
-  // request's row is written.
+  // panel's playground only (see sendAs below): what to add to the end of a stream, once the
+  // request's row is written. An answer that is not a stream names its row in a header instead.
   async function forward(c: Context<Env>, path: string, prepare: Prepare, tail?: Tail): Promise<Response> {
     const started = deps.now();
     const route = c.get("route");
@@ -393,7 +394,9 @@ export function proxy(deps: Deps): { app: Hono<Env>; chatAs: ChatAs } {
         const answer = startedVideo(c, bytes, rowId, route, model, prepared.prompt ?? null, keepVideo, provider);
         if (answer) return answer;
       }
-      return new Response(bytes, { status: upstream.status, headers: passHeaders(upstream) });
+      const headers = passHeaders(upstream);
+      if (tail && rowId !== null) headers.set("X-BaseRouter-Request", String(rowId));
+      return new Response(bytes, { status: upstream.status, headers });
     }
 
     // Every chunk goes to the client exactly as it arrived; events are scanned on the way past.
@@ -611,12 +614,12 @@ export function proxy(deps: Deps): { app: Hono<Env>; chatAs: ChatAs } {
   }
 
   app.post("/chat/completions", (c) => forward(c, "/chat/completions", json("chat-modalities")));
-  // The same request, for the panel's playground: the management API has checked the session
+  // The same requests, for the panel's playground: the management API has checked the session
   // and names the route. From here on it is that route's request like any other: its budget,
-  // its models, its one row.
-  const chatAs: ChatAs = (c, route, tail) => {
+  // its models, its one row, and an image kept if the route keeps what it makes.
+  const sendAs: SendAs = (c, route, what, tail) => {
     c.set("route", route);
-    return forward(c, "/chat/completions", json("chat-modalities"), tail);
+    return what === "image" ? forward(c, "/images", json("image"), tail) : forward(c, "/chat/completions", json("chat-modalities"), tail);
   };
   // OpenAI's name for it; OpenRouter's own is /images.
   app.post("/images/generations", (c) => forward(c, "/images", json("image")));
@@ -678,5 +681,5 @@ export function proxy(deps: Deps): { app: Hono<Env>; chatAs: ChatAs } {
     return new Response(upstream.body, { status: upstream.status, headers });
   });
 
-  return { app, chatAs };
+  return { app, sendAs };
 }

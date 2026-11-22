@@ -9,7 +9,7 @@ import type { CatalogueModel, ModelProvider } from "./catalogue.ts";
 import { MODEL_NAME, namesOf, parseNames, parsePlaces, type Model } from "./models.ts";
 import { MediaKeeper } from "./media.ts";
 import * as providers from "./providers.ts";
-import type { ChatAs } from "./proxy.ts";
+import type { SendAs } from "./proxy.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
 import type { MediaKind, MediaListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
 
@@ -63,7 +63,7 @@ function requestView(r: RequestRow) {
   };
 }
 
-export function admin(deps: Deps, chatAs: ChatAs) {
+export function admin(deps: Deps, sendAs: SendAs) {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
   const space = () => ({ ...store.mediaSpace(), keeping: keeper.on, max: deps.mediaMaxBytes });
@@ -108,6 +108,11 @@ export function admin(deps: Deps, chatAs: ChatAs) {
       color: r.color,
       keepMedia: r.keep_media === 1,
     };
+  }
+
+  // One request, with the name of the provider that answered it.
+  function rowView(r: RequestRow) {
+    return { ...requestView(r), provider: r.provider_id === null ? null : (store.provider(r.provider_id)?.name ?? null) };
   }
 
   function spendNow() {
@@ -332,22 +337,25 @@ export function admin(deps: Deps, chatAs: ChatAs) {
     return c.json({ route: routeView(store.route(id)!, spendNow()), key });
   });
 
-  // The playground: a chat request sent as this route, with the panel's session in place of
-  // the route's key, which nobody holds (only its hash is kept). The body is what an app would
-  // send to /v1/chat/completions, and everything that holds for the route holds here: its
-  // switch, its budget, its models, one row in its requests. Nothing of the conversation is
-  // kept. A stream ends with one event more than the provider sent, the request's row, so the
-  // panel can say what answered, what it cost and how long it took.
-  app.post("/routes/:id/try", async (c) => {
-    const route = store.route(c.req.param("id"));
-    if (!route) return fail(c, 404, "not_found", "There is no such route.");
-    return chatAs(c, route, (rowId) => {
-      const row = store.request(rowId);
-      if (!row) return null;
-      const provider = row.provider_id === null ? null : (store.provider(row.provider_id)?.name ?? null);
-      return new TextEncoder().encode(`\nevent: baserouter.request\ndata: ${JSON.stringify({ ...requestView(row), provider })}\n\n`);
+  // The playground: a request sent as this route, with the panel's session in place of the
+  // route's key, which nobody holds (only its hash is kept). The body is what an app would
+  // send to /v1/chat/completions (try) or /v1/images/generations (try/images), and everything
+  // that holds for the route holds here: its switch, its budget, its models, one row in its
+  // requests, an image kept if the route keeps what it makes. Nothing of a conversation is
+  // kept. So the panel can say what answered, what it cost and how long it took, a stream
+  // ends with one event more than the provider sent, the request's row; an answer that is not
+  // a stream names its row in the header X-BaseRouter-Request (see GET /requests/:id).
+  const told = (rowId: number) => {
+    const row = store.request(rowId);
+    return row ? new TextEncoder().encode(`\nevent: baserouter.request\ndata: ${JSON.stringify(rowView(row))}\n\n`) : null;
+  };
+  for (const [path, what] of [["/routes/:id/try", "chat"], ["/routes/:id/try/images", "image"]] as const) {
+    app.post(path, async (c) => {
+      const route = store.route(c.req.param("id"));
+      if (!route) return fail(c, 404, "not_found", "There is no such route.");
+      return sendAs(c, route, what, told);
     });
-  });
+  }
 
   // Its requests stay in the activity list, without a route.
   app.delete("/routes/:id", (c) => {
@@ -483,6 +491,15 @@ export function admin(deps: Deps, chatAs: ChatAs) {
     const before = Number(c.req.query("before")) || undefined;
     const rows = store.requests({ route: c.req.query("route") || undefined, before, limit });
     return c.json({ requests: rows.map(requestView) });
+  });
+
+  // One request, as the list above gives it, with the name of the provider that answered and
+  // what it made that the gateway kept. An image is kept a moment after its answer has gone.
+  app.get("/requests/:id", (c) => {
+    const id = Number(c.req.param("id"));
+    const row = Number.isInteger(id) && id > 0 ? store.request(id) : null;
+    if (!row) return fail(c, 404, "not_found", "There is no such request.");
+    return c.json({ request: { ...rowView(row), media: store.mediaOfRequest(row.id).map(mediaView) } });
   });
 
   // Kept images, sound and video, newest first. ?kind=image|audio|video and ?route=<id> filter;

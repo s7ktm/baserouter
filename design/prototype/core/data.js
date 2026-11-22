@@ -3,7 +3,7 @@
 
 const routes = [
   { id: "coding", name: { en: "Coding agent", tr: "Kod ajanı" }, icon: "code", color: "#2B62D9", enabled: true, busy: true, today: 0.51, used: 11.3, budget: 25, keyHint: "4f2a", models: ["anthropic/claude-sonnet-5.5", "gpt-5-mini", "smart"] },
-  { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["gpt-5-mini", "hexgrad/kokoro-82m"] },
+  { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["gpt-5-mini", "hexgrad/kokoro-82m", "google/gemini-3.1-flash-lite-image"] },
   { id: "arm", name: { en: "Robot arm", tr: "Robot kol" }, icon: "robot", color: "#1C2030", enabled: true, busy: false, today: 0.31, used: 1.1, budget: 5, keyHint: "b07d", models: ["google/gemini-2.5-flash"] },
   { id: "news", name: { en: "Newsletter bot", tr: "Bülten botu" }, icon: "mail", color: "#8A4B08", enabled: true, busy: false, today: 0, used: 3, budget: 3, keyHint: "e3a8", models: ["gpt-5-mini", "google/gemini-3.1-flash-lite-image", "google/veo-3.1-lite"] },
   { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: [], keepMedia: false },
@@ -209,6 +209,10 @@ export const playSample = {
     tr: "Bu önizlemenin arkasında gateway yok, bu yüzden bu yanıt uydurma. Gateway'den sunulduğunda mesajın seçtiğin modele bu rota adına gider ve yanıtı yazıldıkça buraya gelir.",
   },
   facts: { promptTokens: 21, completionTokens: 44, cost: 0.00041, firstMs: 620, totalMs: 1840 },
+  // an image asked for, the made-up picture that answers it, and what is known about it
+  imageAsk: { en: "A floor plan sketch of a living room, top view.", tr: "Bir oturma odasının üstten görünüşlü kat planı eskizi." },
+  image: picture(2, 768, 512),
+  imageFacts: { cost: 0.034, totalMs: 4200 },
   error: "429 rate limited: too many requests, try again in 20 seconds",
 };
 

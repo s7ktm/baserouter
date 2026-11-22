@@ -24,7 +24,7 @@ export function createApp(deps: Deps) {
   );
   const gate = proxy(deps);
   app.route("/v1", gate.app);
-  app.route("/api", admin(deps, gate.chatAs));
+  app.route("/api", admin(deps, gate.sendAs));
   if (deps.panelDir) {
     const files = panel(deps.panelDir);
     app.on(["GET", "HEAD"], "/*", (c) => (/^\/(v1|api)(\/|$)/.test(c.req.path) ? c.notFound() : files(c)));

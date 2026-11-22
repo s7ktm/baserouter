@@ -1,6 +1,9 @@
-// The playground's request: a chat sent as a route, with the panel's session in place of the
+// The playground's requests: a chat or an image sent as a route, with the panel's session in place of the
 // route's key. Over real HTTP, against the fake OpenRouter.
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { FAKE_KEY, fixtureBytes } from "./fake-openrouter.ts";
 import { startGateway, until, type Gateway } from "./harness.ts";
 
@@ -163,4 +166,109 @@ test("nothing of the conversation is kept", async () => {
   const everything = JSON.stringify(gw.store.db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => gw.store.db.query(`SELECT * FROM "${(t as { name: string }).name}"`).all()));
   expect(everything).not.toContain(secret);
   expect(everything).not.toContain("Merhaba"); // the answer's first word
+});
+
+// ---- images ----
+
+const picture = (extra: object = {}) => ({ model: "recraft/recraft-v4.1-flash", prompt: "A small blue circle on white.", ...extra });
+function attemptImage(routeId: string, body: unknown, headers: Record<string, string> = auth) {
+  return fetch(`${gw.url}/api/routes/${routeId}/try/images`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+}
+const requestOf = async (id: string | null, headers = auth) => {
+  const res = await fetch(`${gw.url}/api/requests/${id}`, { headers });
+  return { status: res.status, body: (await res.json()) as { request?: Record<string, unknown> } };
+};
+
+test("an image asked for as a route comes back unchanged, and names its row", async () => {
+  const route = gw.addRoute();
+  const sent = picture({ size: "1024x1024", something_only_this_provider_knows: { a: 1 } });
+  const res = await attemptImage(route.id, sent);
+  expect(res.status).toBe(200);
+  expect(new Uint8Array(await res.arrayBuffer())).toEqual(await fixtureBytes("images.json"));
+
+  // The provider saw its own key and the body as written, parameters BaseRouter knows nothing of included.
+  const post = gw.fake.posts.at(-1)!;
+  expect(post).toMatchObject({ path: "/images", key: FAKE_KEY });
+  expect(new TextDecoder().decode(post.body)).toBe(JSON.stringify(sent));
+
+  const row = gw.lastRequest()!;
+  expect(row).toMatchObject({ route_id: route.id, kind: "image", cost_usd: 0.007, failure: null });
+  expect(res.headers.get("x-baserouter-request")).toBe(String(row.id));
+
+  const { status, body } = await requestOf(res.headers.get("x-baserouter-request"));
+  expect(status).toBe(200);
+  expect(body.request).toMatchObject({ id: row.id, route: route.id, kind: "image", model: "recraft/recraft-v4.1-flash", cost: 0.007, totalMs: row.total_ms, ok: true, provider: "OpenRouter" });
+});
+
+test("one request's row needs the session, and an id that exists", async () => {
+  const route = gw.addRoute();
+  const res = await attemptImage(route.id, picture());
+  const id = res.headers.get("x-baserouter-request");
+  expect((await requestOf(id, {})).status).toBe(401);
+  for (const unknown of ["999", "0", "abc", "1.5"]) expect((await requestOf(unknown)).status).toBe(404);
+});
+
+test("an image is refused as the route's requests are: session, switch, budget, models", async () => {
+  const route = gw.addRoute();
+  expect((await attemptImage(route.id, picture(), {})).status).toBe(401);
+  expect((await attemptImage("nope", picture())).status).toBe(404);
+
+  const off = gw.addRoute({ enabled: 0 });
+  expect(await codeOf(await attemptImage(off.id, picture()))).toBe("route_off");
+
+  const full = gw.addRoute({ budget_usd: 1 });
+  gw.spend(full.id, 1);
+  expect(await codeOf(await attemptImage(full.id, picture()))).toBe("budget_used_up");
+
+  const narrow = gw.addRoute({ allow: ["openai/gpt-5-mini"] });
+  expect(await codeOf(await attemptImage(narrow.id, picture()))).toBe("model_not_allowed");
+
+  expect(gw.fake.posts).toHaveLength(0);
+});
+
+test("a provider's refusal of an image comes back as it is, with its row", async () => {
+  const route = gw.addRoute();
+  const res = await attemptImage(route.id, picture({ model: "fixture/429" }));
+  expect(res.status).toBe(429);
+  const { body } = await requestOf(res.headers.get("x-baserouter-request"));
+  expect(body.request).toMatchObject({ kind: "image", ok: false, failure: "upstream_error", status: 429 });
+});
+
+test("the image is kept when the route keeps what it makes, and not when it does not", async () => {
+  await gw.stop();
+  const dir = mkdtempSync(join(tmpdir(), "baserouter-play-"));
+  gw = startGateway({ mediaDir: dir });
+  try {
+    const res = await fetch(`${gw.url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "a test password" }) });
+    auth = { Authorization: `Bearer ${((await res.json()) as { token: string }).token}` };
+
+    const keeps = gw.addRoute();
+    const made = await attemptImage(keeps.id, picture());
+    await made.arrayBuffer();
+    await gw.settled();
+    const kept = gw.store.media({ kind: "image", limit: 10 });
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ route_id: keeps.id, request_id: Number(made.headers.get("x-baserouter-request")), prompt: "A small blue circle on white." });
+    // The request's row names what it kept, so the panel can show the kept copy.
+    const { body } = await requestOf(made.headers.get("x-baserouter-request"));
+    expect(body.request!.media).toEqual([expect.objectContaining({ id: kept[0]!.id, kind: "image", src: `/api/media/${kept[0]!.id}` })]);
+
+    const forgets = gw.addRoute({ keep_media: 0 });
+    const shown = await attemptImage(forgets.id, picture());
+    await shown.arrayBuffer();
+    await gw.settled();
+    expect(gw.store.media({ kind: "image", limit: 10 })).toHaveLength(1);
+    expect((await requestOf(shown.headers.get("x-baserouter-request"))).body.request!.media).toEqual([]);
+  } finally {
+    await gw.settled();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an answer from the one address carries no such header", async () => {
+  const route = gw.addRoute();
+  const res = await fetch(`${gw.url}/v1/images/generations`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${route.key}` }, body: JSON.stringify(picture()) });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("x-baserouter-request")).toBeNull();
+  expect((await gw.chat(route.key, hello())).headers.get("x-baserouter-request")).toBeNull();
 });
