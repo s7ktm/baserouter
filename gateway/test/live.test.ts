@@ -3,6 +3,9 @@
 //   bun --env-file=../.env test live
 // The key is only ever handed to the gateway; it is never printed.
 import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startGateway, until } from "./harness.ts";
 
 const key = process.env.OPENROUTER_API_KEY;
@@ -118,3 +121,55 @@ media("/audio/speech answers with sound, and its cost is asked for afterwards", 
   expect(gw.lastRequest()).toMatchObject({ cost_source: "provider", failure: null });
   expect(gw.lastRequest()!.cost_usd).toBeGreaterThan(0);
 }, 120_000);
+
+// A video costs more than the requests above, so it only runs when asked (one second at 480p):
+//   BASEROUTER_LIVE_VIDEO=1 bun --env-file=../.env test live
+// BASEROUTER_LIVE_VIDEO_MODEL picks the model; it must take "duration" 1 and "480p".
+const video = test.skipIf(!key || !process.env.BASEROUTER_LIVE_VIDEO);
+const videoModel = process.env.BASEROUTER_LIVE_VIDEO_MODEL ?? "x-ai/grok-imagine-video-1.5-lite";
+
+video("a video job is started, asked about until it is done, fetched, kept, and its cost recorded", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "baserouter-live-video-"));
+  const vg = startGateway({ upstream: { baseUrl: "https://openrouter.ai/api/v1", fetch }, providerKey: key ?? null, mediaDir: dir });
+  vg.deps.videoPollDelays = [5_000];
+  try {
+    const route = vg.addRoute({ allow: [videoModel] });
+    const auth = { Authorization: `Bearer ${route.key}` };
+    const started = await fetch(`${vg.url}/v1/videos`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: videoModel, prompt: "A paper boat drifting on a calm pond, morning light.", duration: 1, resolution: "480p", generate_audio: false }),
+    });
+    expect(started.status).toBe(202);
+    const job = (await started.json()) as { id: string; polling_url: string };
+    expect(job.id).toStartWith("gen-vid-");
+    expect(job.polling_url).toBe(`${vg.url}/v1/videos/${job.id}`);
+
+    // Asked about the way a client would, through the gateway.
+    let done: { status: string; unsigned_urls?: string[]; urls?: unknown; usage?: { cost: number } } = { status: "pending" };
+    const deadline = Date.now() + 240_000;
+    while (!["completed", "failed", "cancelled", "expired"].includes(done.status) && Date.now() < deadline) {
+      await Bun.sleep(4_000);
+      done = (await (await fetch(job.polling_url, { headers: auth })).json()) as typeof done;
+    }
+    expect(done.status).toBe("completed");
+    expect(done.urls).toBeUndefined();
+    expect(done.usage!.cost).toBeGreaterThan(0);
+    const link = done.unsigned_urls![0]!;
+    expect(link).toStartWith(`${vg.url}/v1/videos/${job.id}/content`);
+
+    const res = await fetch(link, { headers: auth });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("video/mp4");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(new TextDecoder().decode(bytes.subarray(4, 8))).toBe("ftyp");
+
+    await vg.settled();
+    expect(vg.lastRequest()).toMatchObject({ kind: "video", cost_usd: done.usage!.cost, cost_source: "provider", failure: null, upstream_id: job.id });
+    const [kept] = vg.store.media({ kind: "video", limit: 1 });
+    expect(kept).toMatchObject({ media_type: "video/mp4", bytes: bytes.length, route_id: route.id });
+  } finally {
+    await vg.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 300_000);

@@ -286,6 +286,7 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the five screens after it needed no more.
 - **A route's name cannot be changed** after it is made.
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
+- **Kept videos are not shown in the panel.** The gateway keeps the videos routes make and lists them (`/api/media?kind=video`, `videos` in `/api/state`); activity names a video request "Video" but has no Videos tab beside Images and Sounds. How a video is shown and played in three skins is a design change still to be made.
 - **No screen for a single request.** A row in activity does not open. An image or a sound does, since it can only be seen or heard by opening it.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.
 - **The list of providers to add** shows six kinds on made-up data. A panel served by a gateway offers only what that gateway can add, which today is OpenRouter, and says so once it is added.

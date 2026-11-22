@@ -12,6 +12,10 @@ export interface Deps {
   // How long to wait before each attempt to ask the provider what a request cost,
   // when its response ended without saying.
   costLookupDelays: number[];
+  // How long to wait before each question to the provider about a video job it is making;
+  // the last one repeats. And how long after it started a job is given up on.
+  videoPollDelays: number[];
+  videoGiveUpMs: number;
   // Requests running right now, per route.
   running: Map<string, number>;
   // Work that outlives a response. Tests wait for it.
@@ -20,7 +24,7 @@ export interface Deps {
   allowedHosts: string[];
   // The largest request body the one address takes.
   maxRequestBytes: number;
-  // Where the images and sound routes make are kept, or null to keep none; and how much room they may take.
+  // Where the images, sound and video routes make are kept, or null to keep none; and how much room they may take.
   mediaDir: string | null;
   mediaMaxBytes: number;
   // The folder the panel is served from, or null for no panel.

@@ -59,11 +59,11 @@ Anything that speaks the OpenAI API works the same way: point its base URL at th
 
 ## What it does
 
-**The one address.** `POST /v1/chat/completions`, `POST /v1/images/generations`, `POST /v1/audio/speech`, `POST /v1/audio/transcriptions` and `GET /v1/models`, opened with a route's key. The request body goes to OpenRouter as the client wrote it and the answer comes back as OpenRouter sent it. A stream is passed on byte for byte, keep-alive lines included. If the client goes away, the request to OpenRouter is cancelled. A request body may be up to 64 MB (`BASEROUTER_MAX_REQUEST_MB`); a larger one is refused with HTTP 413 before anything is sent.
+**The one address.** `POST /v1/chat/completions`, `POST /v1/images/generations`, `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`, `POST /v1/videos` (with `GET /v1/videos/:id`, `GET /v1/videos/:id/content` and `GET /v1/videos/models`) and `GET /v1/models`, opened with a route's key. The request body goes to OpenRouter as the client wrote it and the answer comes back as OpenRouter sent it. A stream is passed on byte for byte, keep-alive lines included. If the client goes away, the request to OpenRouter is cancelled. A request body may be up to 64 MB (`BASEROUTER_MAX_REQUEST_MB`); a larger one is refused with HTTP 413 before anything is sent.
 
 **Budgets.** A budget is monthly and starts again on the first day of the month, at midnight in the local time of the machine the gateway runs on. A route that has used up its budget is refused with HTTP 402 before anything is sent to the provider; a switched-off route is refused with HTTP 403. The check happens when a request starts and counts what finished requests cost, so requests running at the same time all pass it: many requests sent at once can take a route past its budget by as much as they cost together. A request whose cost stays unknown counts as nothing.
 
-**A row per request.** Route, what it made (`chat`, `image`, `speech` or `transcription`), the model asked for and the model that answered, tokens, cost, where the cost came from, time to the first token, total time, and what went wrong if something did. The cost is the `usage.cost` OpenRouter reports, read from the stream as it passes. When an answer ends without it (a stream that broke off, a client that left), the gateway asks OpenRouter for that request's cost a few seconds later. A request whose cost stays unknown counts as nothing towards the budget.
+**A row per request.** Route, what it made (`chat`, `image`, `speech`, `transcription` or `video`), the model asked for and the model that answered, tokens, cost, where the cost came from, time to the first token, total time, and what went wrong if something did. The cost is the `usage.cost` OpenRouter reports, read from the stream as it passes. When an answer ends without it (a stream that broke off, a client that left), the gateway asks OpenRouter for that request's cost a few seconds later. A request whose cost stays unknown counts as nothing towards the budget.
 
 **Images, sound and files.** All through OpenRouter, all with the route's key, checked against its budget and its models, and recorded with their cost.
 
@@ -80,17 +80,31 @@ The `kind` of a chat request comes from the `modalities` it asks for: `image` wh
 
 Where a cost is filled in afterwards it is still OpenRouter's own figure, so `cost_source` is `provider` either way; until it is known it is `unknown`. That is a gap in the budget for speech: its cost arrives a few seconds after the sound, so a route making many speech requests at once can go further past its budget than one making chat requests, and a speech request whose cost OpenRouter never gives counts as nothing.
 
-A route with several models sends them as a fallback list only on chat requests; OpenRouter's image and audio endpoints do not take one.
+A route with several models sends them as a fallback list only on chat requests; OpenRouter's image, audio and video endpoints do not take one.
 
-**Kept images and sound.** The images and speech a route makes are kept, so they can be looked at and listened to again in the panel (activity, Images and Sounds). The answer still goes to the client unchanged and at once.
+**Video.** OpenRouter makes a video as a job: it is started, asked about until it is done, and its video fetched. The gateway passes on all four steps with the route's key.
+
+| Request | Does |
+|---|---|
+| `POST /v1/videos` | Starts a job: checked against the route's budget and models, sent to OpenRouter's `/videos` as written, answered with HTTP 202 and the job's `id`. The request's row is written now, with its cost unknown |
+| `GET /v1/videos/:id` | OpenRouter's answer about the job: `status` (`pending`, `in_progress`, then `completed`, `failed`, `cancelled` or `expired`), and once it is completed `unsigned_urls` and `usage.cost` |
+| `GET /v1/videos/:id/content?index=0` | The video itself (`video/mp4`), passed on as it arrives |
+| `GET /v1/videos/models` | The models that make video, with their resolutions, lengths and prices; a route limited to some models sees only those |
+
+- Only the route that started a job can ask about it, fetch its video, or continue it (`previous_job_id`); to any other route it does not exist (HTTP 404). Asking and fetching are free, are not recorded, and work when the route is over its budget.
+- In the answers, `polling_url` and `unsigned_urls` lead to the gateway, at the address the client used (HTTPS behind Caddy), so they open with the route's key. OpenRouter's `urls` and `expires_at` are left out: those signed links open the video with no key at all, around the gateway, and carry the OpenRouter account's id. The rest of the answer is as OpenRouter wrote it.
+- The cost of a video is known only when its job is done: it is not in the first answer, and OpenRouter's `/generation` does not know video jobs. So the gateway asks about every job itself (after 5, 10, 20, 35 seconds, then every 30 seconds) until it ends, whether or not the client does, and records its cost on the request's row then; whichever learns first that the job ended records it, once. The row's total time becomes the time from start to end. A job that fails is recorded as failed. Jobs still open when the gateway stops are asked about again when it starts; one still not done three hours after it started is given up on, with its cost unknown.
+- Until a job is done its cost counts as nothing towards the budget, so a route can start several videos before the first one's cost is counted.
+
+**Kept images, sound and video.** The images, speech and video a route makes are kept, so they can be looked at and listened to again in the panel (activity, Images and Sounds). Videos are kept and listed by the management API, but the panel does not show them yet. The answer still goes to the client unchanged and at once.
 
 - Each one is a file in `gateway/data/media/`, named after the SHA-256 of its bytes, so the same image or sound made twice is stored once. The database has a row each: request, route, model, the words that asked for it (the `prompt` of `/images/generations`, the `input` of `/audio/speech`, or the last thing the user said in a chat; up to 2,000 characters), type and size.
 - Files are written as they arrive, through a temporary file in the same folder, and are never held in memory whole: the sound of `/audio/speech` is written while it streams to the client, and an image given as a link (`response_format: "url"`) is fetched once, in pieces, within 30 seconds and up to 50 MB. A file that is cut off (the client left, the provider broke off) or would pass the room allowed is dropped. Parts left by a gateway that stopped mid-write are removed when it starts.
-- Which: the finished images of a request that worked, from `/v1/images/generations` (plain or streamed; partial images of a stream are not kept) and from chat requests that ask for images; and the sound of `/v1/audio/speech`.
-- What a file is comes from its first bytes, not from what the answer says. Kept are PNG, JPEG, WebP, GIF and SVG images, and MP3, WAV, Ogg, FLAC, AAC, MP4 and WebM sound. Raw PCM (`response_format: "pcm"`, the default of `/audio/speech`, and the only format of Google's Gemini voices) has no header saying how to play it; OpenRouter names its format in the content type (`audio/pcm;rate=24000;channels=1`), and the gateway writes a WAV header in front of it, so it is kept as a WAV file that plays anywhere. The client still gets the raw PCM. PCM whose content type does not name its rate is not kept. Not kept either: the sound of a chat answer (`modalities: ["text", "audio"]`), which comes as base64 PCM spread over the stream's events, without its format.
+- Which: the finished images of a request that worked, from `/v1/images/generations` (plain or streamed; partial images of a stream are not kept) and from chat requests that ask for images; the sound of `/v1/audio/speech`; and the videos of a job that completed, fetched by the gateway once it is done, within ten minutes each.
+- What a file is comes from its first bytes, not from what the answer says. Kept are PNG, JPEG, WebP, GIF and SVG images, MP3, WAV, Ogg, FLAC, AAC, MP4 and WebM sound, and MP4, WebM and QuickTime video (MP4 and WebM can hold either; what was asked for decides). Raw PCM (`response_format: "pcm"`, the default of `/audio/speech`, and the only format of Google's Gemini voices) has no header saying how to play it; OpenRouter names its format in the content type (`audio/pcm;rate=24000;channels=1`), and the gateway writes a WAV header in front of it, so it is kept as a WAV file that plays anywhere. The client still gets the raw PCM. PCM whose content type does not name its rate is not kept. Not kept either: the sound of a chat answer (`modalities: ["text", "audio"]`), which comes as base64 PCM spread over the stream's events, without its format.
 - The panel gets them through `/api`, with the session, in ranges for playing and seeking sound, and with headers that stop a browser from running anything inside them (an SVG can hold a script).
 - A route can switch keeping off (in the panel, or `PATCH /api/routes/:id {"keepMedia": false}`). One request can say no with the header `X-BaseRouter-Save: no` (also `false`, `0`, `off`). A header and not a body field, so the body still goes to OpenRouter exactly as written; OpenAI clients send one with `extra_headers`. The header is not sent on to OpenRouter.
-- Images and sound together may take `BASEROUTER_MEDIA_MAX_MB`, 1 GB by default. When that is passed, the oldest are removed first. `0` keeps none.
+- Images, sound and video together may take `BASEROUTER_MEDIA_MAX_MB`, 1 GB by default. When that is passed, the oldest are removed first. `0` keeps none.
 - When a route is removed, what it made stays, without a route. Deleting one removes its file once no other row has the same bytes.
 
 **A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model. When a route has more than one model, the request is sent with OpenRouter's `models` fallback list: the model asked for first, then the route's other models in order, so OpenRouter tries the next one when a model fails (rate limit, outage, a request it cannot take). A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
@@ -105,7 +119,8 @@ Errors from the gateway itself have the shape OpenAI clients expect: `{"error": 
 | 402 | `budget_used_up` | The route has used up its monthly budget; `metadata` has the amounts and the date it starts again |
 | 403 | `route_off` | The route is switched off |
 | 403 | `model_not_allowed` | The route may not use that model, or a model in the request's own `models` list |
-| 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either), names no model, names something that is not a model id, or (in a form) names more than one |
+| 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either), names no model, names something that is not a model id, or (in a form) names more than one; a video job with `callback_url`, or a bad `index` |
+| 404 | `not_found` | A video job id this route did not start |
 | 413 | `request_too_large` | The body is larger than `BASEROUTER_MAX_REQUEST_MB`; `metadata.max_bytes` has the limit. The management API (`/api`) takes up to 1 MB |
 | 503 | `no_provider` | No provider has been added |
 | 502 | `provider_unreachable` | OpenRouter could not be reached |
@@ -124,7 +139,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/providers` `{kind: "openrouter", key}` | Tests the key, then adds the provider |
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
-| `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, the last 60 kept images and the last 60 kept sounds |
+| `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, and the last 60 kept images, sounds and videos each |
 | `GET /api/models` | The provider's model ids, for choosing a route's model |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
@@ -132,7 +147,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/routes/:id/key` | Replaces its key; the old one stops working at once. Gives the new key, once |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
-| `GET /api/media?kind=&route=&limit=&before=` | Lists kept images (`kind=image`) and sounds (`kind=audio`), newest first, with what each request cost, and the room they take (`space`) |
+| `GET /api/media?kind=&route=&limit=&before=` | Lists kept images (`kind=image`), sounds (`kind=audio`) and videos (`kind=video`), newest first, with what each request cost, and the room they take (`space`) |
 | `GET /api/media/:id` | One file's bytes, or a `Range` of them; `?download=1` to save it |
 | `DELETE /api/media/:id` | Deletes it |
 | `POST /api/password` `{current, password}` | Changes the password; every other session ends |
@@ -142,13 +157,13 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 
 Everything is in `gateway/data/`, which git ignores.
 
-- `baserouter.sqlite` holds providers, routes, requests, settings and sessions.
+- `baserouter.sqlite` holds providers, routes, requests, video jobs, settings and sessions.
 - A route's key is never stored. Only its SHA-256 hash and its last four characters are. A lost key cannot be recovered.
 - A provider's key is stored encrypted (AES-256-GCM) and is never given back by the API.
 - The folder and everything in it can be read by BaseRouter's own user only (it sets this on every start).
 - `secret.key` is the key that encryption uses. It is made on the first start and only its owner can read it. Back it up together with the database: without it, providers have to be added again. Keeping it beside the database protects a copied or backed-up database file; it does not protect against someone who can read the whole folder.
 - The admin password is stored as an Argon2 hash.
-- `media/` holds the images and sound routes made, unless switched off (see "Kept images and sound" above). The words that asked for each are kept with it. Before sound was kept this folder was `images/`; it is renamed on the first start.
+- `media/` holds the images, sound and video routes made, unless switched off (see "Kept images and sound" above). The words that asked for each are kept with it. Before sound was kept this folder was `images/`; it is renamed on the first start.
 - Other prompts and answers are not stored or logged, and neither are sound or files, sent or generated.
 
 ## Settings
@@ -164,7 +179,7 @@ All optional, as environment variables.
 | `BASEROUTER_DOMAIN` | | The name the gateway is reached by through Caddy; counted as an allowed name. |
 | `BASEROUTER_PANEL_DIR` | `design/prototype` | The folder the panel is served from. Only `index.html` and the `core/`, `skins/` and `fonts/` folders in it are served; the design pages beside them are not. |
 | `BASEROUTER_MAX_REQUEST_MB` | `64` | The largest request body the one address takes, in megabytes. Files travel inside requests as base64, which is a third larger than the file. |
-| `BASEROUTER_MEDIA_MAX_MB` | `1024` | The most room kept images and sound may take together, in megabytes; past it the oldest go first. `0` keeps none. |
+| `BASEROUTER_MEDIA_MAX_MB` | `1024` | The most room kept images, sound and video may take together, in megabytes; past it the oldest go first. `0` keeps none. |
 | `BASEROUTER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | For trying the gateway without a real key, below |
 
 ## Tests
@@ -181,7 +196,7 @@ To test against the real OpenRouter, put a key in `.env` at the top of the repos
 bun --env-file=../.env test live
 ```
 
-That sends three short requests, one of them through a fallback, and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model. With `BASEROUTER_LIVE_MEDIA=1` it also makes an image in a chat stream, an image through `/images/generations` and a sentence of speech, for about four cents.
+That sends three short requests, one of them through a fallback, and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model. With `BASEROUTER_LIVE_MEDIA=1` it also makes an image in a chat stream, an image through `/images/generations` and a sentence of speech, for about four cents. With `BASEROUTER_LIVE_VIDEO=1` it makes a one-second 480p video through `/videos` and follows it to the end (`BASEROUTER_LIVE_VIDEO_MODEL` picks the model).
 
 `bun run typecheck` checks the types.
 
@@ -197,7 +212,8 @@ This starts the gateway and its panel in front of the stand-in, with a new, empt
 
 - Providers other than OpenRouter. There is no provider interface on purpose; it will grow out of the second provider.
 - Changing a route's name after it is made.
-- Video. OpenRouter makes video as a job that is started, asked about until it is done, and fetched from a link that expires; that is next.
+- Videos in the panel. They are kept and listed by the management API; showing and playing them in the three skins is still to be designed.
+- Webhooks for video jobs. A request with `callback_url` is refused (HTTP 400), since OpenRouter would send the job's end, signed links included, straight to it; ask `GET /v1/videos/:id` instead.
 - Embeddings, image edits (`/images/edits`), and OpenRouter's own `/responses` API.
 - With your own provider keys inside OpenRouter (BYOK), `usage.cost` is what OpenRouter charged, not what the provider behind it charged. Only the first is counted.
 - A cost lookup that is still waiting when the gateway stops is not picked up again on the next start.

@@ -340,6 +340,7 @@ export function admin(deps: Deps) {
       last,
       images: store.media({ kind: "image", limit: 60 }).map(mediaView),
       sounds: store.media({ kind: "audio", limit: 60 }).map(mediaView),
+      videos: store.media({ kind: "video", limit: 60 }).map(mediaView),
       mediaSpace: space(),
       budgetsStartAgainOn: localDate(nextMonthStart(date)),
     });
@@ -374,16 +375,16 @@ export function admin(deps: Deps) {
     return c.json({ requests: rows.map(requestView) });
   });
 
-  // Kept images and sound, newest first. ?kind=image|audio and ?route=<id> filter;
+  // Kept images, sound and video, newest first. ?kind=image|audio|video and ?route=<id> filter;
   // ?before=<id> gets the next page.
   app.get("/media", (c) => {
     const limit = Math.min(Math.max(Number(c.req.query("limit")) || 60, 1), 200);
-    const kind = (["image", "audio"] as const).find((k) => k === c.req.query("kind"));
+    const kind = (["image", "audio", "video"] as const).find((k) => k === c.req.query("kind"));
     const rows = store.media({ kind, route: c.req.query("route") || undefined, before: c.req.query("before") || undefined, limit });
     return c.json({ media: rows.map(mediaView), space: space() });
   });
 
-  // One file's bytes, or a range of them (browsers ask for ranges to play and seek sound;
+  // One file's bytes, or a range of them (browsers ask for ranges to play and seek sound and video;
   // Safari will not play it otherwise). Its type was decided from its bytes when it was kept.
   // It is sent so that the browser cannot run anything in it (an SVG can hold a script).
   app.get("/media/:id", async (c) => {

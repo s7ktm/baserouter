@@ -27,6 +27,8 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     upstream: options.upstream ?? { baseUrl: fake.url, fetch: options.fetch ?? fetch },
     now: () => clock.now ?? Date.now(),
     costLookupDelays: [0],
+    videoPollDelays: [10],
+    videoGiveUpMs: 60_000,
     running: new Map(),
     background: new Set(),
     maxRequestBytes: options.maxRequestBytes ?? 64 * 1024 * 1024,

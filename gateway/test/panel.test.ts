@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "../src/store.ts";
+import { MIGRATIONS, openDb } from "../src/store.ts";
 import { FAKE_KEY } from "./fake-openrouter.ts";
 import { startGateway, type Gateway } from "./harness.ts";
 
@@ -78,7 +78,8 @@ test("the state is everything the panel draws, in the prototype's shape", async 
   ]);
   expect(state.images).toEqual([]);
   expect(state.sounds).toEqual([]);
-  expect(state.mediaSpace).toEqual({ images: 0, sounds: 0, bytes: 0, keeping: false, max: 1024 * 1024 * 1024 });
+  expect(state.videos).toEqual([]);
+  expect(state.mediaSpace).toEqual({ images: 0, sounds: 0, videos: 0, bytes: 0, keeping: false, max: 1024 * 1024 * 1024 });
   expect(state.requests).toHaveLength(7);
   expect(state.requests[0]).toMatchObject({ route: arm.id, cost: null, costSource: "unknown", ok: true, at: day(22, 11) });
   expect(state.last).toEqual(state.requests[0]);
@@ -124,27 +125,54 @@ test("the model list is the provider's, sorted, and asked for once in ten minute
   expect(await asked()).toEqual({ models: [] });
 });
 
-test("a database from the first version gains the route's icon, colour and image switch, and its requests a kind", () => {
+test("making room for video rebuilds requests and media without losing a row or the link between them", () => {
+  const dir = mkdtempSync(join(tmpdir(), "baserouter-test-"));
+  try {
+    const path = join(dir, "v5.sqlite");
+    const old = new Database(path);
+    old.exec("PRAGMA foreign_keys = ON");
+    for (const step of MIGRATIONS.slice(0, 5)) old.exec(step);
+    old.exec(`INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, created_at) VALUES ('r1', 'Old route', 'h', '0000', 5, 0);
+      INSERT INTO requests (route_id, started_at, streamed, cost_usd, cost_source, total_ms, kind) VALUES ('r1', 0, 0, 0.007, 'provider', 10, 'image');
+      INSERT INTO media (id, request_id, route_id, created_at, media_type, bytes, file, kind) VALUES ('m1', 1, 'r1', 0, 'image/png', 9, 'a.png', 'image');
+      PRAGMA user_version = 5;`);
+    old.close();
+
+    const db = openDb(path);
+    expect(db.query("SELECT id, kind, cost_usd FROM requests").all()).toEqual([{ id: 1, kind: "image", cost_usd: 0.007 }]);
+    expect(db.query("SELECT id, request_id, route_id, kind FROM media").all()).toEqual([{ id: "m1", request_id: 1, route_id: "r1", kind: "image" }]);
+    // Video may now be recorded, and foreign keys still hold.
+    db.exec("INSERT INTO requests (route_id, started_at, streamed, cost_source, total_ms, kind) VALUES ('r1', 1, 0, 'unknown', 1, 'video')");
+    expect(() => db.exec("INSERT INTO media (id, request_id, created_at, media_type, bytes, file, kind) VALUES ('m2', 99, 0, 'video/mp4', 1, 'b.mp4', 'video')")).toThrow();
+    db.exec("DELETE FROM routes");
+    expect(db.query("SELECT route_id FROM media").get()).toEqual({ route_id: null });
+    db.close();
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test("a database from the first version gains the route's icon, colour and media switch, and its requests a kind, and keeps its rows", () => {
   const dir = mkdtempSync(join(tmpdir(), "baserouter-test-"));
   try {
     const path = join(dir, "old.sqlite");
     const old = new Database(path);
-    old.exec(`CREATE TABLE routes (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE, key_hint TEXT NOT NULL,
-      budget_usd REAL NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, models TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL) STRICT;
-      INSERT INTO routes VALUES ('r1', 'Old route', 'h', '0000', 5, 1, '[]', 0);
-      CREATE TABLE requests (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT, started_at INTEGER NOT NULL) STRICT;
-      INSERT INTO requests (route_id, started_at) VALUES ('r1', 0);
+    old.exec(`${MIGRATIONS[0]}
+      INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, created_at) VALUES ('r1', 'Old route', 'h', '0000', 5, 0);
+      INSERT INTO requests (route_id, started_at, streamed, cost_usd, cost_source, total_ms) VALUES ('r1', 0, 0, 0.5, 'provider', 10);
       PRAGMA user_version = 1;`);
     old.close();
 
     const db = openDb(path);
     expect(db.query("SELECT icon, color FROM routes").get()).toEqual({ icon: "code", color: "#2B62D9" });
-    expect(db.query("SELECT kind FROM requests").get()).toEqual({ kind: "chat" });
+    expect(db.query("SELECT route_id, kind, cost_usd FROM requests").get()).toEqual({ route_id: "r1", kind: "chat", cost_usd: 0.5 });
     expect(db.query("SELECT keep_media FROM routes").get()).toEqual({ keep_media: 1 });
     expect(db.query("SELECT COUNT(*) AS n FROM media").get()).toEqual({ n: 0 });
-    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+    expect(db.query("SELECT COUNT(*) AS n FROM video_jobs").get()).toEqual({ n: 0 });
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length });
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     db.close();
-    expect(openDb(path).query("PRAGMA user_version").get()).toEqual({ user_version: 5 }); // opening again changes nothing
+    expect(openDb(path).query("PRAGMA user_version").get()).toEqual({ user_version: MIGRATIONS.length }); // opening again changes nothing
 
     const newer = new Database(path);
     newer.exec("PRAGMA user_version = 99");

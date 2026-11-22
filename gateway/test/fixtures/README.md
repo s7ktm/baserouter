@@ -25,5 +25,13 @@ The media fixtures were made on 2026-11-22 from real answers, shortened: every i
 | `speech.mp3` | Stands in for the bytes of `POST /audio/speech`; not real audio |
 | `generation-speech.json` | `GET /generation?id=` for that speech |
 | `transcription.json` | `POST /audio/transcriptions`: `text`, and `usage` with `input_tokens`, `output_tokens` and `cost` |
+| `video-start.json` | `POST /videos`: HTTP 202, white space first, then `id`, an absolute `polling_url` and `status: "pending"` |
+| `video-in-progress.json` | `GET /videos/:id` while the job runs: `status_detail` and `progress` |
+| `video-completed.json` | `GET /videos/:id` once done: `unsigned_urls`, signed storage `urls` with `expires_at`, and `usage.cost` |
+| `video-failed.json` | `GET /videos/:id` for a job that failed: `status: "failed"` and `error` |
+| `video.mp4` | Stands in for `GET /videos/:id/content`: the real answer's `ftyp` box, then made-up bytes; not a playable video |
+| `videos-models.json` | `GET /videos/models`, two models, shortened |
+
+The video fixtures were made on 2026-11-22 from real answers of three video models, with fixture ids and the signed link's signature and account replaced: the white space before the first answer, the absolute links, `status_detail`, `generation_id` and `usage` are as seen. The finished video came as `video/mp4` with no `Content-Length` and no support for ranges. `video-failed.json` and `videos-models.json` follow the reference; a failed job was not seen live.
 
 Raw PCM from `/audio/speech` (`response_format: "pcm"`) comes with the content type `audio/pcm;rate=24000;channels=1`, chunked, as real answers showed; the stand-in answers the same way (`test/fake-openrouter.ts`, `PCM`). Google's Gemini voices, which offer only PCM, have not been compared with real answers yet.

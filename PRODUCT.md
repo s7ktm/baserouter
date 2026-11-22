@@ -40,7 +40,7 @@ Users, teams and organisations; routing strategies; guardrails; MCP; caching; SS
 
 ## What is kept
 
-Every request leaves a row: route, model, tokens, cost, timings, what went wrong. Prompts and answers are not stored. The one exception is what a route makes that cannot be seen again otherwise: generated images and speech are kept, with the words that asked for them, so they can be looked at and listened to in activity. This is on by default; a route can switch it off, and a single request can say no. Everything is kept on the machine BaseRouter runs on, and nowhere else.
+Every request leaves a row: route, model, tokens, cost, timings, what went wrong. Prompts and answers are not stored. The one exception is what a route makes that cannot be seen again otherwise: generated images, speech and video are kept, with the words that asked for them, so they can be looked at and listened to in activity (video is kept, but not shown there yet). This is on by default; a route can switch it off, and a single request can say no. Everything is kept on the machine BaseRouter runs on, and nowhere else.
 
 ## Principles
 
