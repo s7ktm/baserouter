@@ -306,3 +306,12 @@ test("the export has routes, providers and every request, and no key or key hash
   expect(data.requests).toEqual([expect.objectContaining({ route: route.id, cost: 0.0000205, ok: true })]);
   expect((await api("GET", "/export")).status).toBe(401);
 });
+
+test("the management API refuses a body over 1 MB with its own error, signed in or not", async () => {
+  const big = JSON.stringify({ password: "x".repeat(1100 * 1024) });
+  for (const path of ["/api/login", "/api/setup"]) {
+    const res = await fetch(`${gw.url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: big });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("request_too_large");
+  }
+});

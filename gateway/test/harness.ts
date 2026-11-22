@@ -2,7 +2,7 @@
 // port, and the fake OpenRouter behind it.
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { createApp } from "../src/app.ts";
+import { BUN_BODY_LIMIT, createApp } from "../src/app.ts";
 import type { Deps } from "../src/deps.ts";
 import type { Upstream } from "../src/openrouter.ts";
 import { hashKey, keyHint, newRouteKey, seal } from "../src/secrets.ts";
@@ -35,7 +35,8 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     panelDir: join(import.meta.dir, "..", "..", "design", "prototype"),
   };
   const app = createApp(deps);
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request, server) => app.fetch(request, { server }) });
+  // The same body limit as the real server (index.ts).
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", maxRequestBodySize: BUN_BODY_LIMIT, fetch: (request, server) => app.fetch(request, { server }) });
   const url = `http://127.0.0.1:${server.port}`;
 
   const providerKey = options.providerKey === undefined ? FAKE_KEY : options.providerKey;

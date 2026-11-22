@@ -30,22 +30,24 @@ Version 0.1.0, the first release. It is young: try it, but do not bet a business
 
 ## Get started
 
-You need [Bun](https://bun.sh) 1.4 or newer.
+With Docker:
 
 ```bash
 git clone https://github.com/s7ktm/baserouter.git
-cd baserouter/gateway
-bun install
-bun start
+cd baserouter
+docker compose up -d
 ```
 
-Open http://localhost:4141/. The panel asks you to choose a password, then walks you through adding your OpenRouter key, making a route and connecting to it. The [gateway README](gateway/README.md) has the same steps with `curl`, the full API and every setting.
+Or with [Bun](https://bun.sh) 1.4 or newer: `cd baserouter/gateway && bun install && bun start`.
+
+Open http://localhost:4141/. The panel asks you to choose a password, then walks you through adding your OpenRouter key, making a route and connecting to it. The [gateway README](gateway/README.md) has the same steps with `curl`, the full API and every setting. [INSTALL.md](INSTALL.md) covers running it for good: Docker, HTTPS for other machines, systemd on a Raspberry Pi, backups and updates.
 
 To try it without an OpenRouter key, run `bun run demo` instead of `bun start`: the same gateway and panel in front of a stand-in OpenRouter, with a fresh database each time. Add OpenRouter with the key `fixture-openrouter-key`.
 
 ## What is in here
 
 - `gateway/` — the gateway. See [its README](gateway/README.md).
+- `Dockerfile`, `compose.yaml`, `deploy/` — running it with Docker, behind Caddy for HTTPS, or as a systemd service. See [INSTALL.md](INSTALL.md).
 - `design/prototype/` — the panel, in three skins running on one shared state. Served by the gateway it shows the real thing; on its own it runs on made-up data. See [its README](design/prototype/README.md) for how skins work and how to add one. The design rules are in [DESIGN.md](DESIGN.md).
 - `design/directions/` — the first three stand-alone mock-ups the skins grew out of.
 

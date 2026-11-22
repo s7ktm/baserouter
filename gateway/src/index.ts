@@ -1,7 +1,7 @@
 // Starts the gateway: bun src/index.ts
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createApp } from "./app.ts";
+import { BUN_BODY_LIMIT, createApp } from "./app.ts";
 import type { Deps } from "./deps.ts";
 import { loadMasterKey } from "./secrets.ts";
 import { openDb, Store } from "./store.ts";
@@ -40,11 +40,27 @@ const app = createApp(deps);
 const server = Bun.serve({
   hostname: host,
   port,
-  // Bun's own limit sits above BaseRouter's, so a request that is too large gets BaseRouter's error.
-  maxRequestBodySize: maxRequestBytes + 1024 * 1024,
+  maxRequestBodySize: BUN_BODY_LIMIT,
   fetch: (request, server) => app.fetch(request, { server }),
 });
 
 const shown = ["127.0.0.1", "0.0.0.0", "::", "::1"].includes(host) ? "localhost" : host;
 console.log(`BaseRouter is running. Panel: http://${shown}:${server.port}/  One address: http://${shown}:${server.port}/v1`);
 if (store.setting("admin_password") === null) console.log("No admin password yet. Open the panel to set one.");
+
+// Stopping (docker stop, systemctl stop, Ctrl-C): take no new requests, give running ones
+// and pending cost lookups a few seconds, then close the database cleanly. Without this,
+// a gateway running as the first process in a container would ignore the signal and be killed.
+let stopping = false;
+async function stop(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`${signal}: stopping.`);
+  const grace = Bun.sleep(5_000);
+  await Promise.race([Promise.all([server.stop(), ...deps.background]), grace]);
+  server.stop(true);
+  store.db.close();
+  process.exit(0);
+}
+process.on("SIGTERM", () => void stop("SIGTERM"));
+process.on("SIGINT", () => void stop("SIGINT"));

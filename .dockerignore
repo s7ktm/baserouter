@@ -1,0 +1,6 @@
+# Only gateway/ and design/prototype/ go into the image.
+*
+!gateway/package.json
+!gateway/bun.lock
+!gateway/src/
+!design/prototype/
