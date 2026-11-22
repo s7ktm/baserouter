@@ -19,7 +19,7 @@ export function activitySheet(ctx, ui) {
       : `<div class="br-chips">${chip("", t("allRoutes"))}${data.routes.map((r) => chip(r.id, ctx.name(r))).join("")}</div>
          ${rows.length
            ? `<ul class="br-list">${rows.map((q) => `<li><i class="br-dot${q.ok ? "" : " stop"}"></i>
-               <span><strong class="br-keep">${nameOf(q.route)}</strong><code class="br-keep">${esc(q.model)}</code><small>${ctx.ago(q.ago)}, ${ctx.secs(q.seconds)}</small></span>
+               <span><strong class="br-keep">${nameOf(q.route)}</strong><code class="br-keep">${esc(q.model)}</code><small>${ctx.when(q)}</small></span>
                <b>${q.ok ? money(q.cost) : t("failed")}</b></li>`).join("")}</ul>`
            : `<p class="br-lead">${t("actNoneFor")}</p>`}`,
   });

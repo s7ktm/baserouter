@@ -17,7 +17,7 @@ export async function until(condition: () => boolean, ms = 2000): Promise<void> 
   }
 }
 
-export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetch; providerKey?: string | null } = {}) {
+export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetch; providerKey?: string | null; maxRequestBytes?: number } = {}) {
   const fake = startFake();
   const store = new Store(openDb(":memory:"));
   const clock = { now: null as number | null }; // set it to freeze time
@@ -29,6 +29,7 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     costLookupDelays: [0],
     running: new Map(),
     background: new Set(),
+    maxRequestBytes: options.maxRequestBytes ?? 64 * 1024 * 1024,
     panelDir: join(import.meta.dir, "..", "..", "design", "prototype"),
   };
   const app = createApp(deps);
@@ -58,7 +59,7 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
   // Adds a finished request straight to the database, to set up spend.
   function spend(routeId: string, cost: number | null, at = deps.now()) {
     store.addRequest({
-      route_id: routeId, provider_id: null, started_at: at, model_requested: "openai/gpt-5-mini", model_served: "openai/gpt-5-mini", streamed: false,
+      route_id: routeId, provider_id: null, started_at: at, kind: "chat", model_requested: "openai/gpt-5-mini", model_served: "openai/gpt-5-mini", streamed: false,
       prompt_tokens: 1, completion_tokens: 1, cost_usd: cost, cost_source: cost === null ? "unknown" : "provider", first_token_ms: null, total_ms: 1,
       status: 200, failure: null, upstream_id: null,
     });

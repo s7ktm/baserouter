@@ -23,6 +23,7 @@ export const words = {
     modelToAdd: "Model to add", add: "Add", anyModel: "Any model the provider has.",
     deleteAsk: "Delete {name}? Its key stops working at once. Its requests stay in activity.",
     agoS: "{n} s ago", agoM: "{n} min ago", agoH: "{n} h ago", agoD: "{n} d ago",
+    kind_image: "Image", kind_speech: "Speech", kind_transcription: "Transcription",
 
     // providers
     provNone: "No providers yet. Add one to start.",
@@ -86,6 +87,7 @@ export const words = {
     modelToAdd: "Eklenecek model", add: "Ekle", anyModel: "Sağlayıcının her modeli kullanılabilir.",
     deleteAsk: "Silinsin mi: {name}? Anahtarı hemen çalışmaz olur. İstekleri hareketlerde kalır.",
     agoS: "{n} sn önce", agoM: "{n} dk önce", agoH: "{n} sa önce", agoD: "{n} gün önce",
+    kind_image: "Görsel", kind_speech: "Ses", kind_transcription: "Yazıya döküm",
 
     provNone: "Henüz sağlayıcı yok. Başlamak için bir tane ekle.",
     provUp: "Çalışıyor. {n} model kullanılabilir.", provDown: "Ulaşılamıyor. Son yanıt: {error}.",

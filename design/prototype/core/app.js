@@ -161,6 +161,10 @@ function context() {
       ? new Intl.NumberFormat(lang === "tr" ? "tr-TR" : "en-US", { maximumSignificantDigits: 2 }).format(n)
       : num(n, digits ?? (Number.isInteger(n) ? 0 : n < 0.01 ? 3 : 2))),
     secs: (n) => `${num(n, 1)} ${lang === "tr" ? "sn" : "s"}`,
+    // what a request made, when it was more than text: "Image · 2 min ago, 3.4 s"
+    when(q) {
+      return `${q.kind && q.kind !== "chat" ? t(`kind_${q.kind}`) + " · " : ""}${this.ago(q.ago)}, ${this.secs(q.seconds)}`;
+    },
     ago: (s) => (s < 60 ? t("agoS", { n: s }) : s < 3600 ? t("agoM", { n: Math.round(s / 60) }) : s < 86400 ? t("agoH", { n: Math.round(s / 3600) }) : t("agoD", { n: Math.round(s / 86400) })),
     resetDate: new Intl.DateTimeFormat(lang, { day: "numeric", month: "long" }).format(new Date(now.getFullYear(), now.getMonth() + 1, 1)),
     name: (r) => esc(r.name[lang] ?? r.name.en),

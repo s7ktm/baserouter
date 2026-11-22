@@ -72,7 +72,7 @@ test("switched off is said before over budget", () => {
 
 function request(over: Partial<NewRequest>): NewRequest {
   return {
-    route_id: "home", provider_id: null, started_at: now.getTime(), model_requested: "m", model_served: "m", streamed: false, prompt_tokens: 1,
+    route_id: "home", provider_id: null, started_at: now.getTime(), kind: "chat", model_requested: "m", model_served: "m", streamed: false, prompt_tokens: 1,
     completion_tokens: 1, cost_usd: 1, cost_source: "provider", first_token_ms: null, total_ms: 1, status: 200, failure: null, upstream_id: null, ...over,
   };
 }

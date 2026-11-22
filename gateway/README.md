@@ -57,11 +57,30 @@ Anything that speaks the OpenAI API works the same way: point its base URL at th
 
 ## What it does
 
-**The one address.** `POST /v1/chat/completions` and `GET /v1/models`, opened with a route's key. The request body goes to OpenRouter as the client wrote it and the answer comes back as OpenRouter sent it. A stream is passed on byte for byte, keep-alive lines included. If the client goes away, the request to OpenRouter is cancelled.
+**The one address.** `POST /v1/chat/completions`, `POST /v1/images/generations`, `POST /v1/audio/speech`, `POST /v1/audio/transcriptions` and `GET /v1/models`, opened with a route's key. The request body goes to OpenRouter as the client wrote it and the answer comes back as OpenRouter sent it. A stream is passed on byte for byte, keep-alive lines included. If the client goes away, the request to OpenRouter is cancelled. A request body may be up to 64 MB (`BASEROUTER_MAX_REQUEST_MB`); a larger one is refused with HTTP 413 before anything is sent.
 
 **Budgets.** A budget is monthly and starts again on the first day of the month, at midnight in the local time of the machine the gateway runs on. A route that has used up its budget is refused with HTTP 402 before anything is sent to the provider; a switched-off route is refused with HTTP 403. The check happens when a request starts, so requests already running can take a route a little past its budget.
 
-**A row per request.** Route, the model asked for and the model that answered, tokens, cost, where the cost came from, time to the first token, total time, and what went wrong if something did. The cost is the `usage.cost` OpenRouter reports, read from the stream as it passes. When an answer ends without it (a stream that broke off, a client that left), the gateway asks OpenRouter for that request's cost a few seconds later. A request whose cost stays unknown counts as nothing towards the budget.
+**A row per request.** Route, what it made (`chat`, `image`, `speech` or `transcription`), the model asked for and the model that answered, tokens, cost, where the cost came from, time to the first token, total time, and what went wrong if something did. The cost is the `usage.cost` OpenRouter reports, read from the stream as it passes. When an answer ends without it (a stream that broke off, a client that left), the gateway asks OpenRouter for that request's cost a few seconds later. A request whose cost stays unknown counts as nothing towards the budget.
+
+**Images, sound and files.** All through OpenRouter, all with the route's key, checked against its budget and its models, and recorded with their cost.
+
+| Request | Goes to OpenRouter's | Cost from |
+|---|---|---|
+| Images, PDFs and sound *inside* a chat request (`image_url`, `file`, `input_audio` parts) | `/chat/completions`, unchanged | `usage.cost` in the answer |
+| A chat request with `modalities: ["image", "text"]`: the images come back in `message.images` (plain) or `delta.images` (streamed), as base64 data URLs | `/chat/completions` | `usage.cost`, in the stream's last chunk when streamed |
+| A chat request with `modalities: ["text", "audio"]` (sound out; OpenRouter streams it) | `/chat/completions` | `usage.cost` |
+| `POST /v1/images/generations` (OpenAI's name; OpenRouter calls it `/images`), plain or `stream: true` | `/images`, unchanged | `usage.cost` in the answer, or in the stream's `image_generation.completed` event |
+| `POST /v1/audio/speech`: the answer is the sound itself (`audio/mpeg`, `audio/pcm`) | `/audio/speech`, unchanged | Not in the answer. The gateway asks `GET /generation?id=` with the answer's `X-Generation-Id` once it has ended |
+| `POST /v1/audio/transcriptions`, as JSON (`input_audio` in base64) or as a form with a `file`, the way OpenAI clients send it | `/audio/transcriptions`, unchanged, the form's boundary included | `usage.cost` in the answer |
+
+The `kind` of a chat request comes from the `modalities` it asks for: `image` when it asks for images, `speech` when it asks for sound, `chat` otherwise. The panel's activity list and route page say which requests were images or sound.
+
+Where a cost is filled in afterwards it is still OpenRouter's own figure, so `cost_source` is `provider` either way; until it is known it is `unknown`. That is a gap in the budget for speech: its cost arrives a few seconds after the sound, so a route making many speech requests at once can go further past its budget than one making chat requests, and a speech request whose cost OpenRouter never gives counts as nothing.
+
+A route with several models sends them as a fallback list only on chat requests; OpenRouter's image and audio endpoints do not take one.
+
+**What BaseRouter keeps of generated media: nothing.** Images and sound pass through to the client, the way answers do, and are not written to disk, logged or cached. Only the request's row is kept. Nothing here needs storage: OpenRouter sends images as base64 by default, and with `response_format: "url"` sends links that it keeps for up to 24 hours, which the client must fetch in that time; the gateway passes them on as they are. A video job, which has to be asked about again later, may change this; see below.
 
 **A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model. When a route has more than one model, the request is sent with OpenRouter's `models` fallback list: the model asked for first, then the route's other models in order, so OpenRouter tries the next one when a model fails (rate limit, outage, a request it cannot take). A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
 
@@ -75,7 +94,8 @@ Errors from the gateway itself have the shape OpenAI clients expect: `{"error": 
 | 402 | `budget_used_up` | The route has used up its monthly budget; `metadata` has the amounts and the date it starts again |
 | 403 | `route_off` | The route is switched off |
 | 403 | `model_not_allowed` | The route may not use that model |
-| 400 | `invalid_request` | The body is not JSON or names no model |
+| 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either) or names no model |
+| 413 | `request_too_large` | The body is larger than `BASEROUTER_MAX_REQUEST_MB`; `metadata.max_bytes` has the limit |
 | 503 | `no_provider` | No provider has been added |
 | 502 | `provider_unreachable` | OpenRouter could not be reached |
 | 502 | `provider_refused_key` | OpenRouter did not accept the key BaseRouter holds for it |
@@ -113,7 +133,7 @@ Everything is in `gateway/data/`, which git ignores.
 - A provider's key is stored encrypted (AES-256-GCM) and is never given back by the API.
 - `secret.key` is the key that encryption uses. It is made on the first start and only its owner can read it. Back it up together with the database: without it, providers have to be added again. Keeping it beside the database protects a copied or backed-up database file; it does not protect against someone who can read the whole folder.
 - The admin password is stored as an Argon2 hash.
-- Prompts and answers are not stored or logged.
+- Prompts and answers are not stored or logged, and neither are images, sound or files, sent or generated.
 
 ## Settings
 
@@ -125,6 +145,7 @@ All optional, as environment variables.
 | `BASEROUTER_HOST` | `127.0.0.1` | Only this machine can reach it. Set `0.0.0.0` to let other machines on your network connect, and set the admin password before you do: the first one to reach a fresh gateway sets it. |
 | `BASEROUTER_DATA_DIR` | `gateway/data` | |
 | `BASEROUTER_PANEL_DIR` | `design/prototype` | The folder the panel is served from |
+| `BASEROUTER_MAX_REQUEST_MB` | `64` | The largest request body the one address takes, in megabytes. Files travel inside requests as base64, which is a third larger than the file. |
 | `BASEROUTER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | For trying the gateway without a real key, below |
 
 ## Tests
@@ -141,7 +162,7 @@ To test against the real OpenRouter, put a key in `.env` at the top of the repos
 bun --env-file=../.env test live
 ```
 
-That sends three short requests, one of them through a fallback, and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model.
+That sends three short requests, one of them through a fallback, and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model. With `BASEROUTER_LIVE_MEDIA=1` it also makes an image in a chat stream, an image through `/images/generations` and a sentence of speech, for about four cents.
 
 `bun run typecheck` checks the types.
 
@@ -157,6 +178,7 @@ This starts the gateway and its panel in front of the stand-in, with a new, empt
 
 - Providers other than OpenRouter. There is no provider interface on purpose; it will grow out of the second provider.
 - Changing a route's name after it is made.
-- Images, audio, video and embeddings.
+- Video. OpenRouter makes video as a job that is started, asked about until it is done, and fetched from a link that expires; that is next.
+- Embeddings, image edits (`/images/edits`), and OpenRouter's own `/responses` API.
 - With your own provider keys inside OpenRouter (BYOK), `usage.cost` is what OpenRouter charged, not what the provider behind it charged. Only the first is counted.
 - A cost lookup that is still waiting when the gateway stops is not picked up again on the next start.

@@ -1,10 +1,11 @@
-// The one address: /v1/chat/completions and /v1/models, opened with a route's key.
-import { Hono } from "hono";
+// The one address: /v1/chat/completions, /v1/images/generations, /v1/audio/speech,
+// /v1/audio/transcriptions and /v1/models, opened with a route's key.
+import { Hono, type Context } from "hono";
 import { gate, monthStart } from "./budget.ts";
 import { later, refuse, type Deps, type Env } from "./deps.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, unseal } from "./secrets.ts";
-import type { Failure, ProviderRow, RouteRow } from "./store.ts";
+import type { Failure, Kind, ProviderRow, RouteRow } from "./store.ts";
 import { readPlain, StreamScanner, type Reading } from "./usage.ts";
 
 const allowedModels = (route: RouteRow): string[] => JSON.parse(route.models) as string[];
@@ -29,6 +30,84 @@ export function withFallbacks(text: string, body: Record<string, unknown>, model
   return JSON.stringify({ ...body, models: [model, ...routeModels.filter((m) => m !== model)] });
 }
 
+// What a chat request makes, from the "modalities" it asks for.
+export function chatKind(body: Record<string, unknown>): Kind {
+  const modalities = Array.isArray(body.modalities) ? body.modalities : [];
+  if (modalities.includes("image")) return "image";
+  if (modalities.includes("audio")) return "speech";
+  return "chat";
+}
+
+// Reads the request body, but no more than the limit. Null when it is larger.
+async function readBody(request: Request, limit: number): Promise<Uint8Array | null> {
+  const declared = Number(request.headers.get("content-length") ?? NaN);
+  if (declared > limit) {
+    await request.body?.cancel().catch(() => {});
+    return null;
+  }
+  if (!request.body) return new Uint8Array();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for await (const part of request.body) {
+    size += part.byteLength;
+    if (size > limit) return null;
+    parts.push(part);
+  }
+  return Buffer.concat(parts);
+}
+
+const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
+
+// What one endpoint needs to say about a request before it is sent on.
+type Prepared =
+  | { ok: false; response: Response }
+  | { ok: true; model: string; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean };
+
+type Prepare = (c: Context<Env>, bytes: Uint8Array, route: RouteRow) => Promise<Prepared> | Prepared;
+
+const invalid = (c: Context<Env>, message: string): Prepared => ({ ok: false, response: refuse(c, 400, "invalid_request", message) });
+const noModel = 'The request does not say which model to use. Add "model".';
+
+// A JSON body with a "model". Chat requests get the route's fallbacks; the others are sent as written.
+function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
+  return (c, bytes, route) => {
+    const text = new TextDecoder().decode(bytes);
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return invalid(c, "The request body is not valid JSON.");
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return invalid(c, "The request body is not a JSON object.");
+    const fields = body as Record<string, unknown>;
+    const model = typeof fields.model === "string" ? fields.model : "";
+    if (!model) return invalid(c, noModel);
+    return {
+      ok: true,
+      model,
+      body: fallbacks ? withFallbacks(text, fields, model, allowedModels(route)) : bytes,
+      contentType: "application/json",
+      kind: kind === "chat-modalities" ? chatKind(fields) : kind,
+      streamed: fields.stream === true,
+    };
+  };
+}
+
+// A transcription comes as JSON (base64 audio) or as a form with a file, the way OpenAI
+// clients send it. Either way it is sent on as it came; only "model" is read from it.
+const transcription: Prepare = async (c, bytes, route) => {
+  const contentType = c.req.header("content-type") ?? "";
+  if (!contentType.includes("multipart/form-data")) return json("transcription", false)(c, bytes, route);
+  let model: unknown;
+  try {
+    model = (await new Response(bytes, { headers: { "Content-Type": contentType } }).formData()).get("model");
+  } catch {
+    return invalid(c, "The request body is not a valid form.");
+  }
+  if (typeof model !== "string" || !model) return invalid(c, noModel);
+  return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false };
+};
+
 export function proxy(deps: Deps) {
   const { store } = deps;
   const app = new Hono<Env>();
@@ -48,28 +127,29 @@ export function proxy(deps: Deps) {
     store.markProvider(provider.id, "down", message, null, deps.now());
   }
 
-  app.post("/chat/completions", async (c) => {
+  // Every request that is sent on goes through here: the budget, the body, the model,
+  // the provider, and one row in the request log. "path" is OpenRouter's.
+  async function forward(c: Context<Env>, path: string, prepare: Prepare): Promise<Response> {
     const started = deps.now();
     const route = c.get("route");
 
     const allowed = gate(route, store.spentSince(route.id, monthStart(new Date(started)).getTime()), new Date(started));
     if (!allowed.ok) return refuse(c, allowed.status, allowed.code, allowed.message, allowed.metadata);
 
-    const text = await c.req.text();
-    let body: { model?: unknown; stream?: unknown } | null;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      return refuse(c, 400, "invalid_request", "The request body is not valid JSON.");
+    const bytes = await readBody(c.req.raw, deps.maxRequestBytes);
+    if (!bytes) {
+      return refuse(c, 413, "request_too_large", `The request is larger than ${mb(deps.maxRequestBytes)}, the most BaseRouter takes. Send smaller files, or raise BASEROUTER_MAX_REQUEST_MB.`, {
+        max_bytes: deps.maxRequestBytes,
+      });
     }
-    const model = body && typeof body === "object" && typeof body.model === "string" ? body.model : "";
-    if (!model) return refuse(c, 400, "invalid_request", 'The request does not say which model to use. Add "model".');
+    const prepared = await prepare(c, bytes, route);
+    if (!prepared.ok) return prepared.response;
+    const { model, kind } = prepared;
 
     const models = allowedModels(route);
     if (models.length > 0 && !models.includes(model)) {
       return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${model}. It may use: ${models.join(", ")}.`);
     }
-    const sent = withFallbacks(text, body as Record<string, unknown>, model, models);
 
     const provider = store.providers()[0];
     if (!provider) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
@@ -103,9 +183,10 @@ export function proxy(deps: Deps) {
         route_id: route.id,
         provider_id: provider.id,
         started_at: started,
+        kind,
         model_requested: model,
         model_served: reading?.model ?? null,
-        streamed: body?.stream === true,
+        streamed: prepared.streamed,
         prompt_tokens: reading?.usage?.promptTokens ?? null,
         completion_tokens: reading?.usage?.completionTokens ?? null,
         cost_usd: cost,
@@ -122,7 +203,7 @@ export function proxy(deps: Deps) {
 
     let upstream: Response;
     try {
-      upstream = await openrouter.chat(deps.upstream, key, sent, abort.signal);
+      upstream = await openrouter.send(deps.upstream, key, path, prepared.body, prepared.contentType, abort.signal);
     } catch {
       if (client.aborted) {
         finish(null, "client_cancelled");
@@ -141,9 +222,13 @@ export function proxy(deps: Deps) {
       return refuse(c, 502, "provider_refused_key", `${provider.name} did not accept the key BaseRouter holds for it. Replace the provider's key in BaseRouter.`);
     }
 
-    const streaming = upstream.ok && upstream.body !== null && (upstream.headers.get("content-type") ?? "").includes("text/event-stream");
+    // How the answer is read depends on what it is: server-sent events are scanned as they
+    // pass, JSON is read whole, and anything else (the sound of /audio/speech) is passed on
+    // without being looked at, its cost asked for once it has ended.
+    const type = upstream.headers.get("content-type") ?? "";
+    const mode = !upstream.ok || upstream.body === null || type.includes("json") ? "plain" : type.includes("text/event-stream") ? "events" : "bytes";
 
-    if (!streaming) {
+    if (mode === "plain") {
       let bytes: Uint8Array;
       try {
         bytes = new Uint8Array(await upstream.arrayBuffer());
@@ -160,14 +245,14 @@ export function proxy(deps: Deps) {
       return new Response(bytes, { status: upstream.status, headers: passHeaders(upstream) });
     }
 
-    // Streaming: every chunk goes to the client exactly as it arrived, and the scanner
-    // looks at the same bytes on the way past.
-    const scanner = new StreamScanner();
+    // Every chunk goes to the client exactly as it arrived; events are scanned on the way past.
+    const scanner = mode === "events" ? new StreamScanner() : null;
+    let firstChunkAt: number | null = null;
     const reader = upstream.body!.getReader();
     const settle = (failure: Failure | null) => {
-      scanner.end(deps.now());
-      const outcome = failure ?? (scanner.failed ? "stream_error" : null);
-      finish(upstream.status, outcome, scanner, scanner.firstTokenAt, generationId);
+      scanner?.end(deps.now());
+      const outcome = failure ?? (scanner?.failed ? "stream_error" : null);
+      finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId);
     };
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {
@@ -178,7 +263,9 @@ export function proxy(deps: Deps) {
             controller.close();
             return;
           }
-          scanner.feed(value, deps.now());
+          const now = deps.now();
+          firstChunkAt ??= now;
+          scanner?.feed(value, now);
           controller.enqueue(value);
         } catch (err) {
           settle(client.aborted ? "client_cancelled" : "network_error");
@@ -191,7 +278,7 @@ export function proxy(deps: Deps) {
       },
     });
     return new Response(stream, { status: upstream.status, headers: passHeaders(upstream) });
-  });
+  }
 
   async function lookUpCost(rowId: number, generationId: string, key: string): Promise<void> {
     for (const delay of deps.costLookupDelays) {
@@ -203,6 +290,12 @@ export function proxy(deps: Deps) {
       }
     }
   }
+
+  app.post("/chat/completions", (c) => forward(c, "/chat/completions", json("chat-modalities", true)));
+  // OpenAI's name for it; OpenRouter's own is /images.
+  app.post("/images/generations", (c) => forward(c, "/images", json("image", false)));
+  app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech", false)));
+  app.post("/audio/transcriptions", (c) => forward(c, "/audio/transcriptions", transcription));
 
   app.get("/models", async (c) => {
     const route = c.get("route");

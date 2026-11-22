@@ -16,7 +16,7 @@ Version 0.1.0, the first release. It is young: try it, but do not bet a business
 
 **Works today**
 
-- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/models`), streamed or not.
+- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Generated images and sound are passed through, not kept.
 - Routes: a named key per agent, a monthly budget enforced before a request is sent, an on/off switch, a list of allowed models with OpenRouter's fallback between them.
 - A record of every request: models, tokens, cost, timings, what went wrong.
 - The panel in three skins (Socket, Display, Home), in English and Turkish, light and dark, behind an admin password.
@@ -25,7 +25,7 @@ Version 0.1.0, the first release. It is young: try it, but do not bet a business
 
 - Any provider other than OpenRouter.
 - Renaming a route after it is made.
-- Images, audio, video and embeddings.
+- Video and embeddings.
 - Users, teams, SSO, caching and routing strategies are not planned; see [PRODUCT.md](PRODUCT.md).
 
 ## Get started

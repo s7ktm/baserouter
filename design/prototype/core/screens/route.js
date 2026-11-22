@@ -106,7 +106,7 @@ export function routeSheet(ctx, ui) {
     <section class="br-sec">
       <h3>${t("recent")}</h3>
       ${recent.length
-        ? `<ul class="br-list">${recent.map((q) => `<li><i class="br-dot${q.ok ? "" : " stop"}"></i><span><code class="br-keep">${esc(q.model)}</code><small>${ctx.ago(q.ago)}, ${ctx.secs(q.seconds)}</small></span><b>${q.ok ? money(q.cost) : t("failed")}</b></li>`).join("")}</ul>
+        ? `<ul class="br-list">${recent.map((q) => `<li><i class="br-dot${q.ok ? "" : " stop"}"></i><span><code class="br-keep">${esc(q.model)}</code><small>${ctx.when(q)}</small></span><b>${q.ok ? money(q.cost) : t("failed")}</b></li>`).join("")}</ul>
            <p class="br-actions"><button class="br-btn quiet" data-action="go" data-screen="activity" data-filter="${route.id}">${t("allActivity")}</button></p>`
         : `<p class="br-note">${t("noRecent")}</p>`}
     </section>

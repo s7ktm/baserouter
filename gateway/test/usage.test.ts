@@ -117,3 +117,25 @@ test("a plain response can fail after HTTP 200", async () => {
   expect(readPlain({ id: "gen-4", model: "m", choices: [{ finish_reason: "error", error: { code: 502, message: "x" } }] }).failed).toBe(true);
   expect(readPlain("not an object").failed).toBe(true);
 });
+
+test("an image of several megabytes in one line is read, in pieces, without slowing down", () => {
+  const image = "A".repeat(6 << 20);
+  const text =
+    `data: {"id":"gen-big","model":"m","choices":[{"index":0,"delta":{"content":"","images":[{"type":"image_url","image_url":{"url":"data:image/png;base64,${image}"}}]}}]}\n\n` +
+    `data: {"id":"gen-big","model":"m","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"cost":0.03}}\n\ndata: [DONE]\n\n`;
+  const bytes = new TextEncoder().encode(text);
+  const scanner = new StreamScanner();
+  const started = performance.now();
+  for (let at = 0; at < bytes.length; at += 16 << 10) scanner.feed(bytes.subarray(at, at + (16 << 10)), at);
+  scanner.end(bytes.length);
+  expect(performance.now() - started).toBeLessThan(2000);
+  expect(scanner.firstTokenAt).not.toBeNull();
+  expect(facts(scanner)).toEqual({ id: "gen-big", model: "m", usage: { promptTokens: 1, completionTokens: 2, cost: 0.03 }, failed: false, done: true });
+});
+
+test("a finished image from /images, and a transcription's token counts, are read", async () => {
+  const scanner = await scan("images-stream.sse", 41);
+  expect(scanner.usage).toEqual({ promptTokens: 9, completionTokens: 272, cost: 0.0022 });
+  expect(scanner.firstTokenAt).not.toBeNull();
+  expect(readPlain(await fixture("transcription.json").json()).usage).toEqual({ promptTokens: 2, completionTokens: 6, cost: 0.0000067 });
+});

@@ -2,6 +2,25 @@
 
 All notable changes to BaseRouter are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Images, sound and files through OpenRouter, each with the route's key, its budget and its models, and recorded with its cost:
+  - images, PDFs and sound inside `POST /v1/chat/completions`, sent on unchanged;
+  - images out of a chat request (`modalities: ["image", "text"]`), plain and streamed;
+  - `POST /v1/images/generations`, plain and streamed;
+  - `POST /v1/audio/speech`, whose cost OpenRouter does not put in the answer, so it is asked for afterwards;
+  - `POST /v1/audio/transcriptions`, as JSON or as a form with a file.
+- Each request records what it made: `chat`, `image`, `speech` or `transcription`. The activity list and the route page show it.
+- A limit on the size of a request body, 64 MB by default (`BASEROUTER_MAX_REQUEST_MB`), with a clear HTTP 413 when it is passed.
+
+### Not yet
+
+- Video, which OpenRouter makes as a job to be asked about later; embeddings; image edits.
+
+Generated images and sound are passed through and not kept.
+
 ## [0.1.0] — 2026-11-22
 
 The first release.
@@ -19,4 +38,5 @@ The first release.
 
 - Providers other than OpenRouter; renaming a route; images, audio, video and embeddings.
 
+[Unreleased]: https://github.com/s7ktm/baserouter/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/s7ktm/baserouter/releases/tag/v0.1.0

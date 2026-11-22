@@ -8,11 +8,12 @@ export interface Upstream {
 
 const auth = (key: string) => ({ Authorization: `Bearer ${key}` });
 
-// The body is sent on exactly as the client wrote it.
-export function chat(up: Upstream, key: string, body: string, signal: AbortSignal): Promise<Response> {
-  return up.fetch(`${up.baseUrl}/chat/completions`, {
+// A request to one of OpenRouter's endpoints (/chat/completions, /images, /audio/speech,
+// /audio/transcriptions). The body is sent on exactly as the client wrote it.
+export function send(up: Upstream, key: string, path: string, body: Uint8Array | string, contentType: string, signal: AbortSignal): Promise<Response> {
+  return up.fetch(`${up.baseUrl}${path}`, {
     method: "POST",
-    headers: { ...auth(key), "Content-Type": "application/json" },
+    headers: { ...auth(key), "Content-Type": contentType },
     body,
     signal,
   });

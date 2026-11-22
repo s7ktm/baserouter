@@ -9,14 +9,14 @@ const routes = [
   { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"] },
 ];
 
-// newest first; "ago" is seconds
+// newest first; "ago" is seconds; "kind" is chat unless said: image, speech or transcription
 const requests = [
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 2.1, cost: 0.004, ago: 12, ok: true },
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 3.4, cost: 0.011, ago: 95, ok: true },
-  { route: "home", model: "openai/gpt-5-mini", seconds: 0.8, cost: 0.001, ago: 240, ok: true },
+  { route: "home", kind: "speech", model: "hexgrad/kokoro-82m", seconds: 0.8, cost: 0.0001, ago: 240, ok: true },
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 1.2, cost: 0, ago: 610, ok: false },
   { route: "arm", model: "google/gemini-2.5-flash", seconds: 0.6, cost: 0.0004, ago: 1500, ok: true },
-  { route: "coding", model: "openai/gpt-5-mini", seconds: 1.9, cost: 0.002, ago: 2400, ok: true },
+  { route: "news", kind: "image", model: "google/gemini-3.1-flash-lite-image", seconds: 5.4, cost: 0.034, ago: 2400, ok: true },
   { route: "home", model: "openai/gpt-5-mini", seconds: 1.1, cost: 0.001, ago: 5200, ok: true },
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 4.8, cost: 0.019, ago: 9100, ok: true },
   { route: "news", model: "openai/gpt-5-mini", seconds: 2.6, cost: 0.003, ago: 93000, ok: true },
@@ -113,7 +113,7 @@ function stress() {
     ],
     routes: many,
     requests: Array.from({ length: 30 }, (_, i) => ({
-      route: `r${i % 6}`, model: many[i % 6].models[0], seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
+      route: `r${i % 6}`, kind: ["chat", "transcription", "image", "speech"][i % 4], model: many[i % 6].models[0], seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
     })),
     last: { route: "r0", model: "extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking", seconds: 312.4, cost: 1234.5 },
   };

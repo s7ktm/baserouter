@@ -35,6 +35,7 @@ function requestView(r: RequestRow) {
     id: r.id,
     route: r.route_id,
     at: r.started_at,
+    kind: r.kind,
     requestedModel: r.model_requested,
     model: r.model_served ?? r.model_requested,
     streamed: r.streamed === 1,

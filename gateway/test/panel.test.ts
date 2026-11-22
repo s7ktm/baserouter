@@ -121,7 +121,7 @@ test("the model list is the provider's, sorted, and asked for once in ten minute
   expect(await asked()).toEqual({ models: [] });
 });
 
-test("a database from the first version gains the route's icon and colour", () => {
+test("a database from the first version gains the route's icon and colour, and its requests a kind", () => {
   const dir = mkdtempSync(join(tmpdir(), "baserouter-test-"));
   try {
     const path = join(dir, "old.sqlite");
@@ -129,14 +129,17 @@ test("a database from the first version gains the route's icon and colour", () =
     old.exec(`CREATE TABLE routes (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE, key_hint TEXT NOT NULL,
       budget_usd REAL NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, models TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL) STRICT;
       INSERT INTO routes VALUES ('r1', 'Old route', 'h', '0000', 5, 1, '[]', 0);
+      CREATE TABLE requests (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT, started_at INTEGER NOT NULL) STRICT;
+      INSERT INTO requests (route_id, started_at) VALUES ('r1', 0);
       PRAGMA user_version = 1;`);
     old.close();
 
     const db = openDb(path);
     expect(db.query("SELECT icon, color FROM routes").get()).toEqual({ icon: "code", color: "#2B62D9" });
-    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+    expect(db.query("SELECT kind FROM requests").get()).toEqual({ kind: "chat" });
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 3 });
     db.close();
-    expect(openDb(path).query("PRAGMA user_version").get()).toEqual({ user_version: 2 }); // opening again changes nothing
+    expect(openDb(path).query("PRAGMA user_version").get()).toEqual({ user_version: 3 }); // opening again changes nothing
 
     const newer = new Database(path);
     newer.exec("PRAGMA user_version = 99");
