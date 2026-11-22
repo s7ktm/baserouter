@@ -3,7 +3,7 @@
 import { Hono, type Context } from "hono";
 import { gate, monthStart } from "./budget.ts";
 import { later, refuse, type Deps, type Env } from "./deps.ts";
-import { imagesIn, MediaKeeper, promptOf, type Found, type MediaFile } from "./media.ts";
+import { imagesIn, isPcm, MediaKeeper, pcmFormat, promptOf, type Found, type MediaFile } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, unseal } from "./secrets.ts";
 import type { Failure, Kind, ProviderRow, RouteRow } from "./store.ts";
@@ -155,7 +155,7 @@ export function proxy(deps: Deps) {
     const { model, kind } = prepared;
     // Images and sound are kept when the gateway keeps any, the route keeps them, and the request
     // did not say no. Sound is kept from /audio/speech; the sound of a chat answer comes as
-    // headerless PCM in pieces, which cannot be played back without knowing its format, so it is not.
+    // base64 PCM spread over the stream's events, without its format, so it is not.
     const keepMedia = keeper.on && route.keep_media === 1 && !saveRefused(c.req.header("x-baserouter-save"));
     const keepImages = keepMedia && kind === "image";
     const keepSound = keepMedia && path === "/audio/speech";
@@ -271,8 +271,10 @@ export function proxy(deps: Deps) {
 
     // Every chunk goes to the client exactly as it arrived; events are scanned on the way past.
     const scanner = mode === "events" ? new StreamScanner(keepImages) : null;
-    // The sound of /audio/speech is written to its file as it passes to the client.
-    const sound = mode === "bytes" && keepSound ? keeper.start("audio") : null;
+    // The sound of /audio/speech is written to its file as it passes to the client. Raw PCM
+    // is kept as WAV when its format is known, and not at all when it is not.
+    const pcm = pcmFormat(type);
+    const sound = mode === "bytes" && keepSound && (!isPcm(type) || pcm) ? keeper.start("audio", pcm) : null;
     let firstChunkAt: number | null = null;
     const reader = upstream.body!.getReader();
     const settle = (failure: Failure | null) => {

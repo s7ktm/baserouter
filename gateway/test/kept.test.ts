@@ -4,9 +4,9 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { imagesIn, MediaKeeper, promptOf, sniff } from "../src/media.ts";
+import { imagesIn, MediaKeeper, pcmFormat, promptOf, sniff } from "../src/media.ts";
 import { migrate, MIGRATIONS, openDb, Store } from "../src/store.ts";
-import { fixtureBytes } from "./fake-openrouter.ts";
+import { fixtureBytes, PCM } from "./fake-openrouter.ts";
 import { startGateway, until, type Gateway } from "./harness.ts";
 
 // The 1×1 PNG every image fixture carries.
@@ -283,10 +283,42 @@ test("the sound of /audio/speech is written as it streams to the client, and kep
   expect((await fetch(src, { headers: { ...auth, Range: `bytes=${heard.length}-` } })).status).toBe(416);
 });
 
-test("sound is not kept when the request or the route says no, or when it is raw PCM", async () => {
+test("raw PCM whose format the answer names is kept as WAV; the client still gets the raw PCM", async () => {
+  const route = gw.addRoute();
+  const res = await speak({ model: "google/gemini-2.5-flash-tts", voice: "Kore", response_format: "pcm" })(route.key);
+  expect(res.headers.get("content-type")).toBe("audio/pcm;rate=24000;channels=1");
+  expect(new Uint8Array(await res.arrayBuffer())).toEqual(PCM);
+  await until(() => gw.lastRequest() !== null);
+  await gw.settled();
+
+  const [sound] = (await listed("", "audio")).images;
+  expect(sound).toMatchObject({ mediaType: "audio/wav", bytes: 44 + PCM.length, model: "google/gemini-2.5-flash-tts" });
+  const wav = new Uint8Array(await (await fetch(`${gw.url}${sound!.src}`, { headers: auth })).arrayBuffer());
+  const view = new DataView(wav.buffer);
+  const ascii = (from: number, to: number) => new TextDecoder().decode(wav.subarray(from, to));
+  expect([ascii(0, 4), ascii(8, 16), ascii(36, 40)]).toEqual(["RIFF", "WAVEfmt ", "data"]);
+  expect({
+    riff: view.getUint32(4, true), format: view.getUint16(20, true), channels: view.getUint16(22, true), rate: view.getUint32(24, true),
+    byteRate: view.getUint32(28, true), align: view.getUint16(32, true), bits: view.getUint16(34, true), data: view.getUint32(40, true),
+  }).toEqual({ riff: 36 + PCM.length, format: 1, channels: 1, rate: 24000, byteRate: 48000, align: 2, bits: 16, data: PCM.length });
+  expect(wav.subarray(44)).toEqual(PCM);
+  // Named after the file as it is kept, header included.
+  expect(files()).toEqual([`${new Bun.CryptoHasher("sha256").update(wav).digest("hex")}.wav`]);
+});
+
+test("the format of raw PCM is read from its content type", () => {
+  expect(pcmFormat("audio/pcm;rate=24000;channels=1")).toEqual({ rate: 24000, channels: 1 });
+  expect(pcmFormat("audio/L16; rate=16000; channels=2")).toEqual({ rate: 16000, channels: 2 });
+  expect(pcmFormat('audio/pcm; rate="44100"')).toEqual({ rate: 44100, channels: 1 });
+  expect(pcmFormat("audio/pcm")).toBeNull();
+  expect(pcmFormat("audio/pcm;rate=12")).toBeNull();
+  expect(pcmFormat("audio/mpeg;rate=24000")).toBeNull();
+});
+
+test("sound is not kept when the request or the route says no, or when it is raw PCM of an unknown format", async () => {
   const route = gw.addRoute();
   await (await speak({}, { "X-BaseRouter-Save": "no" })(route.key)).arrayBuffer();
-  const pcm = await speak({ response_format: "pcm" })(route.key);
+  const pcm = await speak({ model: "fixture/pcm-no-rate", response_format: "pcm" })(route.key);
   expect(pcm.headers.get("content-type")).toBe("audio/pcm");
   expect((await pcm.arrayBuffer()).byteLength).toBe(4000); // the client still gets all of it
   await fetch(`${gw.url}/api/routes/${route.id}`, { method: "PATCH", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ keepMedia: false }) });

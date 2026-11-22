@@ -9,10 +9,11 @@
 // in memory whole: the sound of /audio/speech is written while it streams to the client.
 // What a file is comes from its first bytes, not from what the answer says. Only these
 // are kept: PNG, JPEG, WebP, GIF and SVG images; MP3, WAV, Ogg (Opus, Vorbis), FLAC, AAC,
-// MP4 audio and WebM sound. Raw PCM sound has no header saying how to play it, so it is
-// not kept.
+// MP4 audio and WebM sound. Raw PCM sound has no header saying how to play it: when the
+// answer says its sample rate (OpenRouter's "audio/pcm;rate=24000;channels=1"), a WAV header
+// is written in front of it, so it can be played; when it does not, it is not kept.
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { FileSink } from "bun";
 import type { Deps } from "./deps.ts";
@@ -89,6 +90,43 @@ export function promptOf(kind: "chat" | "images" | "speech", body: Record<string
   return said ? said.slice(0, 2000) : null;
 }
 
+// The format of raw PCM sound, from its content type: 16-bit little-endian samples (as
+// OpenRouter's reference says), at the rate and with the channels the type names.
+// Null when the type is not raw PCM, or does not say its rate.
+export interface Pcm {
+  rate: number;
+  channels: number;
+}
+export const isPcm = (contentType: string) => /^\s*audio\/(pcm|l16)\b/i.test(contentType);
+export function pcmFormat(contentType: string): Pcm | null {
+  if (!isPcm(contentType)) return null;
+  const param = (name: string) => Number(new RegExp(`;\\s*${name}\\s*=\\s*"?(\\d+)`, "i").exec(contentType)?.[1] ?? NaN);
+  const rate = param("rate");
+  const channels = param("channels") || 1;
+  return rate >= 1000 && rate <= 384_000 && channels >= 1 && channels <= 8 ? { rate, channels } : null;
+}
+
+// A WAV header for 16-bit PCM. The two sizes are filled in once the length is known.
+function wavHeader({ rate, channels }: Pcm, dataBytes = 0): Uint8Array {
+  const header = new Uint8Array(44);
+  const view = new DataView(header.buffer);
+  const ascii = (at: number, text: string) => [...text].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true); // size of the fmt chunk
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * channels * 2, true); // bytes per second
+  view.setUint16(32, channels * 2, true); // bytes per sample frame
+  view.setUint16(34, 16, true); // bits per sample
+  ascii(36, "data");
+  view.setUint32(40, dataBytes, true);
+  return header;
+}
+
 // Links are fetched once, with a time and size limit.
 const FETCH_MS = 30_000;
 const FETCH_MAX = 50 * 1024 * 1024;
@@ -112,9 +150,11 @@ export class MediaFile {
   #done = false;
   readonly #temp: string;
 
-  constructor(private readonly keeper: MediaKeeper, private readonly kind: MediaKind, private readonly max: number) {
+  // pcm: the pieces are raw PCM in this format, and a WAV header goes in front of them.
+  constructor(private readonly keeper: MediaKeeper, private readonly kind: MediaKind, private readonly max: number, private readonly pcm: Pcm | null = null) {
     this.#temp = join(keeper.dir, TEMP + randomBytes(8).toString("hex"));
     this.#sink = Bun.file(this.#temp).writer({ highWaterMark: 1 << 20 });
+    if (pcm) this.write(wavHeader(pcm));
   }
 
   get dropped(): boolean {
@@ -150,12 +190,28 @@ export class MediaFile {
     if (this.#done) return null;
     this.#done = true;
     await this.#sink.end();
+    let hash = this.#hash.digest("hex");
+    if (this.pcm && this.#size > 44) {
+      // Now that the length is known, the header's two sizes are written, and the file is
+      // hashed again as it now is.
+      const sized = wavHeader(this.pcm, this.#size - 44);
+      const fd = openSync(this.#temp, "r+");
+      try {
+        writeSync(fd, sized, 4, 4, 4);
+        writeSync(fd, sized, 40, 4, 40);
+      } finally {
+        closeSync(fd);
+      }
+      const again = new Bun.CryptoHasher("sha256");
+      for await (const piece of Bun.file(this.#temp).stream()) again.update(piece);
+      hash = again.digest("hex");
+    }
     const type = sniff(this.#head.subarray(0, this.#headSize));
-    if (this.#size === 0 || !type || type.kind !== this.kind) {
+    if (this.#size === (this.pcm ? 44 : 0) || !type || type.kind !== this.kind) {
       rmSync(this.#temp, { force: true });
       return null;
     }
-    const file = `${this.#hash.digest("hex")}.${type.ext}`;
+    const file = `${hash}.${type.ext}`;
     renameSync(this.#temp, join(this.keeper.dir, file)); // the same bytes kept twice end up in one file
     return this.keeper.added(made, { kind: type.kind, media_type: type.mediaType, bytes: this.#size, file });
   }
@@ -180,9 +236,10 @@ export class MediaKeeper {
     return join(this.dir, row.file);
   }
 
-  // A file to write into as it arrives, or null when nothing is kept.
-  start(kind: MediaKind): MediaFile | null {
-    return this.on ? new MediaFile(this, kind, this.deps.mediaMaxBytes) : null;
+  // A file to write into as it arrives, or null when nothing is kept. With "pcm", the pieces
+  // are raw PCM in that format and are kept as WAV.
+  start(kind: MediaKind, pcm: Pcm | null = null): MediaFile | null {
+    return this.on ? new MediaFile(this, kind, this.deps.mediaMaxBytes, pcm) : null;
   }
 
   // Keeps the images found in an answer.

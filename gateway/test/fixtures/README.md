@@ -25,3 +25,5 @@ The media fixtures were made on 2026-11-22 from real answers, shortened: every i
 | `speech.mp3` | Stands in for the bytes of `POST /audio/speech`; not real audio |
 | `generation-speech.json` | `GET /generation?id=` for that speech |
 | `transcription.json` | `POST /audio/transcriptions`: `text`, and `usage` with `input_tokens`, `output_tokens` and `cost` |
+
+Raw PCM from `/audio/speech` (`response_format: "pcm"`) came live on 2026-11-22 from `hexgrad/kokoro-82m` and `microsoft/mai-voice-2.1` with the content type `audio/pcm;rate=24000;channels=1`, chunked; the stand-in answers the same way (`test/fake-openrouter.ts`, `PCM`). Google's Gemini voices, which offer only PCM, could not be tried: OpenRouter refused them up front because of the account's credit.
