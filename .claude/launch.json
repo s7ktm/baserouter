@@ -4,8 +4,18 @@
     {
       "name": "design-directions",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["design/serve.ts"],
+      "runtimeArgs": [
+        "design/serve.ts"
+      ],
       "port": 4173
+    },
+    {
+      "name": "gateway-demo",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "gateway/test/demo.ts"
+      ],
+      "port": 4141
     }
   ]
 }

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "bun src/index.ts",
+    "demo": "bun test/demo.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

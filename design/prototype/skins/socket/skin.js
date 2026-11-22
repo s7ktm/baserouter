@@ -9,7 +9,7 @@ const chevron = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
 export default {
   id: "socket",
   name: { en: "Socket", tr: "Priz" },
-  fonts: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=Martian+Mono:wght@500;700&display=swap",
+  fonts: "fonts/socket.css",
 
   strings: {
     en: {

@@ -1,12 +1,17 @@
 import { Hono } from "hono";
 import { admin } from "./admin.ts";
 import type { Deps, Env } from "./deps.ts";
+import { panel } from "./panel.ts";
 import { proxy } from "./proxy.ts";
 
 export function createApp(deps: Deps) {
   const app = new Hono<Env>();
   app.route("/v1", proxy(deps));
   app.route("/api", admin(deps));
+  if (deps.panelDir) {
+    const files = panel(deps.panelDir);
+    app.on(["GET", "HEAD"], "/*", (c) => (/^\/(v1|api)(\/|$)/.test(c.req.path) ? c.notFound() : files(c)));
+  }
   app.notFound((c) => c.json({ error: { message: `There is nothing at ${c.req.path}.`, type: "not_found", code: "not_found" } }, 404));
   app.onError((err, c) => {
     console.error(`${c.req.method} ${c.req.path} failed: ${err instanceof Error ? err.message : String(err)}`);

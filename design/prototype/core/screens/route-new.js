@@ -42,7 +42,8 @@ export function newRouteSheet(ctx, ui) {
   return sheet(ctx, ui, {
     title: t("newRoute"),
     step,
-    body: `<form class="br-form" data-form="route">
+    body: `${ui.error ? `<p class="br-banner" role="alert" style="margin:16px 0 0">${t("actionFailed", { error: esc(ui.error) })}</p>` : ""}
+    <form class="br-form" data-form="route">
       <label class="br-label" for="br-name">${t("routeName")}</label>
       <input class="br-input wide br-keep" id="br-name" name="name" type="text" maxlength="40" autocomplete="off" required data-autofocus>
       <p class="br-note" style="margin-top:8px">${t("routeNameHint")}</p>

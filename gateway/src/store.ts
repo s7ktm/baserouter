@@ -62,6 +62,15 @@ CREATE INDEX requests_by_route ON requests (route_id, started_at);
 CREATE INDEX requests_by_time ON requests (started_at);
 `;
 
+// Each step takes the database from one version to the next. Steps are never edited
+// once released; a change is a new step.
+const MIGRATIONS: string[] = [
+  SCHEMA,
+  // 2: how the panel draws a route
+  `ALTER TABLE routes ADD COLUMN icon TEXT NOT NULL DEFAULT 'code';
+   ALTER TABLE routes ADD COLUMN color TEXT NOT NULL DEFAULT '#2B62D9';`,
+];
+
 export type CostSource = "provider" | "computed" | "unknown";
 export type Failure = "upstream_error" | "stream_error" | "network_error" | "client_cancelled";
 
@@ -86,6 +95,8 @@ export interface RouteRow {
   budget_usd: number;
   enabled: number;
   models: string;
+  icon: string;
+  color: string;
   created_at: number;
 }
 
@@ -114,7 +125,10 @@ export function openDb(path: string): Database {
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
-  if (user_version === 0) db.transaction(() => db.exec(SCHEMA + "PRAGMA user_version = 1;"))();
+  if (user_version > MIGRATIONS.length) throw new Error(`The database is from a newer BaseRouter (version ${user_version}). Update BaseRouter to open it.`);
+  for (let version = user_version; version < MIGRATIONS.length; version++) {
+    db.transaction(() => db.exec(`${MIGRATIONS[version]}\nPRAGMA user_version = ${version + 1};`))();
+  }
   return db;
 }
 
@@ -180,8 +194,8 @@ export class Store {
 
   addRoute(row: RouteRow): void {
     this.db
-      .query("INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, enabled, models, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.created_at);
+      .query("INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, enabled, models, icon, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.created_at);
   }
 
   updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean }): void {
@@ -236,6 +250,24 @@ export class Store {
   spentSince(routeId: string, since: number): number {
     const row = this.db.query("SELECT COALESCE(SUM(cost_usd), 0) AS spent FROM requests WHERE route_id = ? AND started_at >= ?").get(routeId, since) as { spent: number };
     return row.spent;
+  }
+
+  // Total spend in each of the given periods. "starts" are the period starts in order; the
+  // last period runs until now. Requests before the first start are not counted.
+  spendPerPeriod(starts: number[]): number[] {
+    if (starts.length === 0) return [];
+    const rows = this.db.query("SELECT started_at, cost_usd FROM requests WHERE started_at >= ? AND cost_usd IS NOT NULL").all(starts[0]!) as { started_at: number; cost_usd: number }[];
+    const totals = starts.map(() => 0);
+    for (const row of rows) {
+      let i = starts.length - 1;
+      while (i > 0 && row.started_at < starts[i]!) i--;
+      totals[i]! += row.cost_usd;
+    }
+    return totals;
+  }
+
+  countSince(since: number): number {
+    return (this.db.query("SELECT COUNT(*) AS n FROM requests WHERE started_at >= ?").get(since) as { n: number }).n;
   }
 
   // Per route: spend since the start of the month and since the start of the day.

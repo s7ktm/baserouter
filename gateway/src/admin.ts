@@ -68,6 +68,8 @@ export function admin(deps: Deps) {
       budget: r.budget_usd,
       keyHint: r.key_hint,
       models: JSON.parse(r.models) as string[],
+      icon: r.icon,
+      color: r.color,
     };
   }
 
@@ -185,16 +187,19 @@ export function admin(deps: Deps) {
   const validBudget = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 
   // Makes a route. The answer is the only time its key is given in full.
+  // icon and color are how the panel draws it; the gateway only keeps them.
   app.post("/routes", async (c) => {
-    const { name, budget, models = [] } = await jsonBody(c);
+    const { name, budget, models = [], icon = "code", color = "#2B62D9" } = await jsonBody(c);
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) return fail(c, 400, "name_invalid", "Give the route a name of up to 120 characters.");
     if (!validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (!Array.isArray(models) || !models.every((m) => typeof m === "string" && m.trim())) return fail(c, 400, "models_invalid", "Give the models as a list of model names.");
+    if (typeof icon !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(icon)) return fail(c, 400, "icon_invalid", "Give the icon as a short lowercase name.");
+    if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return fail(c, 400, "color_invalid", "Give the colour as #RRGGBB.");
 
     const key = newRouteKey();
     const row: RouteRow = {
       id: newId(), name: name.trim(), key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: budget, enabled: 1,
-      models: JSON.stringify(models.map((m: string) => m.trim())), created_at: deps.now(),
+      models: JSON.stringify(models.map((m: string) => m.trim())), icon, color, created_at: deps.now(),
     };
     store.addRoute(row);
     return c.json({ route: routeView(row, new Map()), key }, 201);
@@ -214,6 +219,50 @@ export function admin(deps: Deps) {
   app.delete("/routes/:id", (c) => {
     if (!store.removeRoute(c.req.param("id"))) return fail(c, 404, "not_found", "There is no such route.");
     return c.body(null, 204);
+  });
+
+  // Everything the panel's home screen and its sheets draw from, in one answer.
+  // "now" is the gateway's clock, so the panel can say how long ago a request was.
+  app.get("/state", (c) => {
+    const now = deps.now();
+    const date = new Date(now);
+    const day = dayStart(date).getTime();
+    const [beforeToday, today] = store.spendPerPeriod([monthStart(date).getTime(), day]) as [number, number];
+    const week = store.spendPerPeriod(Array.from({ length: 7 }, (_, i) => new Date(date.getFullYear(), date.getMonth(), date.getDate() - 6 + i).getTime()));
+    const routes = store.routes();
+    const spend = spendNow();
+    const requests = store.requests({ limit: 100 }).map(requestView);
+    const last = requests.find((r) => r.route !== null) ?? null;
+    return c.json({
+      now,
+      spend: { today, month: beforeToday + today, week, requests: store.countSince(day) },
+      providers: store.providers().map(providerView),
+      routes: routes.map((r) => routeView(r, spend)),
+      requests,
+      last,
+      budgetsStartAgainOn: localDate(nextMonthStart(date)),
+    });
+  });
+
+  // The provider's model ids, for choosing a route's model. Kept for ten minutes.
+  let models: { providerId: string; at: number; ids: string[] } | null = null;
+  app.get("/models", async (c) => {
+    const provider = store.providers()[0];
+    if (!provider) return c.json({ models: [] });
+    if (models && models.providerId === provider.id && deps.now() - models.at < 10 * 60_000) return c.json({ models: models.ids });
+    try {
+      const res = await openrouter.models(deps.upstream, unseal(deps.master, provider.key_sealed), AbortSignal.timeout(15_000));
+      if (!res.ok) {
+        await res.body?.cancel();
+        return c.json({ models: [] });
+      }
+      const list = ((await res.json()) as { data?: { id?: unknown }[] }).data ?? [];
+      const ids = list.map((m) => m.id).filter((id): id is string => typeof id === "string").sort();
+      models = { providerId: provider.id, at: deps.now(), ids };
+      return c.json({ models: ids });
+    } catch {
+      return c.json({ models: [] });
+    }
   });
 
   // Activity, newest first. ?route=<id> filters; ?before=<request id> gets the next page.

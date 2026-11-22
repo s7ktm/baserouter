@@ -59,7 +59,7 @@ export function routeSheet(ctx, ui) {
       <span class="br-label">${t("address")}</span>
       <div class="br-field"><code class="br-keep">${data.address}</code><button class="br-btn" data-action="copy" data-copy-id="sheet-address">${copyLabel("sheet-address")}</button></div>
       <span class="br-label">${t("key")}</span>
-      <div class="br-field"><code class="br-keep">br-••••••••${esc(route.keyHint)}</code></div>
+      <div class="br-field"><code class="br-keep">br_••••••••${esc(route.keyHint)}</code></div>
       <p class="br-note" style="margin-top:8px">${t("keyNote")}</p>
       <p class="br-actions"><button class="br-btn">${t("newKey")}</button></p>
       <div class="br-tabs" role="tablist">

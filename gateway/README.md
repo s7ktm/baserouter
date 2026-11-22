@@ -1,6 +1,6 @@
 # BaseRouter gateway
 
-The part of BaseRouter that requests go through. This is its first slice: one provider (OpenRouter), the one address, budgets, a record of every request, and the small API the panel will talk to. There is no panel wired to it yet.
+The part of BaseRouter that requests go through: one provider (OpenRouter), the one address, budgets, a record of every request, and the panel.
 
 ## Run it
 
@@ -12,11 +12,13 @@ bun install
 bun start
 ```
 
-It listens on `http://localhost:4141`, and the one address is `http://localhost:4141/v1`. There is nothing to configure and no other database to install; everything it keeps is in `gateway/data/`.
+Open the panel at http://localhost:4141/. The first time, it asks you to choose a password, then walks you through adding OpenRouter, making a route and connecting to it. The one address is `http://localhost:4141/v1`. There is nothing to configure and no other database to install; everything it keeps is in `gateway/data/`.
 
-## First run
+The panel is the folder `design/prototype/`, served as it is; see [its README](../design/prototype/README.md).
 
-Until the panel is wired up, the first steps are four requests.
+## First run without the panel
+
+The same steps as four requests.
 
 1. Set the admin password. This works once; afterwards `POST /api/login` with the same body gives a new session.
 
@@ -91,8 +93,10 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/providers` `{kind: "openrouter", key}` | Tests the key, then adds the provider |
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
+| `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests |
+| `GET /api/models` | The provider's model ids, for choosing a route's model |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
-| `POST /api/routes` `{name, budget, models?}` | Makes a route and gives its key, once |
+| `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
 | `PATCH /api/routes/:id` `{budget?, enabled?}` | Changes the budget, switches it on or off |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
@@ -117,6 +121,7 @@ All optional, as environment variables.
 | `BASEROUTER_PORT` | `4141` | |
 | `BASEROUTER_HOST` | `127.0.0.1` | Only this machine can reach it. Set `0.0.0.0` to let other machines on your network connect, and set the admin password before you do: the first one to reach a fresh gateway sets it. |
 | `BASEROUTER_DATA_DIR` | `gateway/data` | |
+| `BASEROUTER_PANEL_DIR` | `design/prototype` | The folder the panel is served from |
 | `BASEROUTER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | For trying the gateway without a real key, below |
 
 ## Tests
@@ -139,19 +144,14 @@ That sends two short requests and asks for the model list. It costs a fraction o
 
 ### Try it without a real key
 
-Run the stand-in in one terminal and the gateway, pointed at it, in another. Then follow "First run" with `fixture-openrouter-key` as the provider's key.
-
 ```bash
-bun test/fake-openrouter.ts
+bun run demo
 ```
 
-```bash
-BASEROUTER_OPENROUTER_URL=http://127.0.0.1:4142 BASEROUTER_DATA_DIR=/tmp/baserouter-try bun start
-```
+This starts the gateway and its panel in front of the stand-in, with a new, empty database each time. Open http://localhost:4141/, choose any password, and add OpenRouter with the key `fixture-openrouter-key`.
 
 ## Not here yet
 
-- The panel is not wired to this API.
 - Providers other than OpenRouter. There is no provider interface on purpose; it will grow out of the second provider.
 - Trying a route's next model when the first fails, and changing a route's models or name after it is made.
 - Changing the admin password, and export.

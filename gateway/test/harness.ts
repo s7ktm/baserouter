@@ -1,6 +1,7 @@
 // A whole gateway for a test: an in-memory database, a real HTTP server on a free
 // port, and the fake OpenRouter behind it.
 import { randomBytes } from "node:crypto";
+import { join } from "node:path";
 import { createApp } from "../src/app.ts";
 import type { Deps } from "../src/deps.ts";
 import type { Upstream } from "../src/openrouter.ts";
@@ -28,6 +29,7 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     costLookupDelays: [0],
     running: new Map(),
     background: new Set(),
+    panelDir: join(import.meta.dir, "..", "..", "design", "prototype"),
   };
   const app = createApp(deps);
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request, server) => app.fetch(request, { server }) });
@@ -47,7 +49,7 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     const { allow = [], ...rest } = over;
     const row: RouteRow = {
       id: `route${++made}`, name: "Home assistant", key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: 10, enabled: 1,
-      models: JSON.stringify(allow), created_at: made, ...rest,
+      models: JSON.stringify(allow), icon: "code", color: "#2B62D9", created_at: made, ...rest,
     };
     store.addRoute(row);
     return { id: row.id, key };
