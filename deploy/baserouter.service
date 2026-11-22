@@ -1,0 +1,58 @@
+# BaseRouter as a systemd service, without Docker. See INSTALL.md.
+#   sudo cp deploy/baserouter.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now baserouter
+#
+# It expects the repository in /opt/baserouter, Bun in /usr/local/bin/bun, and a user
+# "baserouter" (sudo useradd --system --home /var/lib/baserouter baserouter).
+# Everything BaseRouter keeps goes to /var/lib/baserouter, which systemd makes for it.
+
+[Unit]
+Description=BaseRouter
+Documentation=https://github.com/s7ktm/baserouter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=baserouter
+Group=baserouter
+WorkingDirectory=/opt/baserouter/gateway
+ExecStart=/usr/local/bin/bun src/index.ts
+Environment=BASEROUTER_DATA_DIR=/var/lib/baserouter
+# This machine only. Put a reverse proxy with HTTPS in front to reach it from elsewhere.
+Environment=BASEROUTER_HOST=127.0.0.1
+StateDirectory=baserouter
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=2
+
+# It needs to write to its own folder and nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# Not MemoryDenyWriteExecute: Bun's JavaScript engine needs to write code it then runs.
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

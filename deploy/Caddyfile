@@ -1,0 +1,11 @@
+# Caddy in front of BaseRouter: HTTPS with a certificate from Let's Encrypt, renewed by itself.
+# BASEROUTER_DOMAIN must point at this machine, and ports 80 and 443 must reach it.
+#
+# On a home network without a public name, use a local one (for example baserouter.home.arpa)
+# and add the line "tls internal" inside the block: Caddy then makes its own certificate,
+# which each device has to trust once (see INSTALL.md).
+{$BASEROUTER_DOMAIN} {
+	# Streams are passed on as they come; Caddy does not buffer them, and sets no limit on
+	# how long an answer takes or how large a request is (BaseRouter has its own).
+	reverse_proxy baserouter:4141
+}
