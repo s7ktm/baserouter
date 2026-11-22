@@ -286,12 +286,13 @@ test("the model list asks for every model, not only those that write text, and p
   expect(gw.fake.modelQueries.at(-1)).toBe("?output_modalities=all");
 });
 
-test("a route with several models sends them as fallbacks, starting with the model asked for", async () => {
+test("a route's other models are not fallbacks: only the model asked for is sent", async () => {
   const route = gw.addRoute({ allow: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini", "google/gemini-2.5-flash"] });
   await gw.chat(route.key, hello("openai/gpt-5-mini"));
+  expect(gw.fake.chats).toHaveLength(1);
   const sent = JSON.parse(gw.fake.chats[0]!.body);
   expect(sent.model).toBe("openai/gpt-5-mini");
-  expect(sent.models).toEqual(["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"]);
+  expect(sent.models).toBeUndefined();
   expect(sent.messages).toEqual([{ role: "user", content: "Hello" }]);
 });
 

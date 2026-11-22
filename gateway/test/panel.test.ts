@@ -117,20 +117,20 @@ test("the state needs a session", async () => {
   expect((await fetch(`${gw.url}/api/models`)).status).toBe(401);
 });
 
-test("the model list is the provider's, in its order, with what each makes and costs, asked for once in ten minutes", async () => {
+test("what the provider offers is its list, in its order, with what each makes and costs, asked for once in ten minutes", async () => {
   const auth = await signIn();
-  const asked = () => fetch(`${gw.url}/api/models`, { headers: auth }).then((r) => r.json()) as Promise<{ models: Record<string, unknown>[] }>;
+  const asked = () => fetch(`${gw.url}/api/offers`, { headers: auth }).then((r) => r.json()) as Promise<{ offers: Record<string, unknown>[] }>;
   const first = await asked();
-  expect(first.models.map((m) => m.id)).toEqual(["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"]);
-  expect(first.models[0]).toEqual({
+  expect(first.offers.map((m) => m.id)).toEqual(["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"]);
+  expect(first.offers[0]).toEqual({
     id: "openai/gpt-5-mini", name: "OpenAI: GPT-5 Mini", makes: ["text"], takes: ["text", "image"], context: 400000, in: 0.00000025, out: 0.000002, perSecond: null, free: false,
   });
   // The video list is asked for too, for its prices per second; the model list only once.
-  expect((await asked()).models).toHaveLength(3);
+  expect((await asked()).offers).toHaveLength(3);
   // Every model, so a route can be given one that only makes images, sound or video.
   expect(gw.fake.modelQueries).toEqual(["?output_modalities=all"]);
   gw.store.removeProvider("openrouter");
-  expect(await asked()).toEqual({ models: [] });
+  expect(await asked()).toEqual({ offers: [] });
 });
 
 test("making room for video rebuilds requests and media without losing a row or the link between them", () => {
@@ -139,7 +139,7 @@ test("making room for video rebuilds requests and media without losing a row or 
     const path = join(dir, "v5.sqlite");
     const old = new Database(path);
     old.exec("PRAGMA foreign_keys = ON");
-    for (const step of MIGRATIONS.slice(0, 5)) old.exec(step);
+    for (const step of MIGRATIONS.slice(0, 5)) old.exec(step as string);
     old.exec(`INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, created_at) VALUES ('r1', 'Old route', 'h', '0000', 5, 0);
       INSERT INTO requests (route_id, started_at, streamed, cost_usd, cost_source, total_ms, kind) VALUES ('r1', 0, 0, 0.007, 'provider', 10, 'image');
       INSERT INTO media (id, request_id, route_id, created_at, media_type, bytes, file, kind) VALUES ('m1', 1, 'r1', 0, 'image/png', 9, 'a.png', 'image');

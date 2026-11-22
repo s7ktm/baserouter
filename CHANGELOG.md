@@ -4,10 +4,15 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Changed in behaviour
+
+- A route's other models are no longer a fallback list. What takes over when a model fails is set on the model in BaseRouter, as its places. A route that relied on OpenRouter trying its other models should give its model a second place.
+
 ### Changed
 
-- A route's model list is a list of lines, each a model and, if it names one, where it comes from: one of OpenRouter's own providers for that model (Google Vertex, Amazon Bedrock, a faster or cheaper tier...). The same model can be listed again from another provider as its fallback. When a route names providers, the gateway tries its lines itself, one request each. The panel shows each line's provider and lets it be chosen from OpenRouter's list for that model, with prices. Plain model ids still work, and the API returns lines as `{model, provider}`.
-- Choosing a model in the panel (adding one to a route, or a new route's first) is a model picker instead of a long drop-down: a search, the kinds of model (text, image, speech, transcription, video) with how many of each, and a row per model with its name, id, price and what it reads, all from OpenRouter's own list. `GET /api/models` gives that for each model instead of ids only.
+- Models in BaseRouter. A model is the name apps send, what it makes, and the places it comes from, in order: a provider and its id for the model, and for OpenRouter which of its own providers (Google Vertex, Amazon Bedrock, a faster or cheaper tier...). When a place fails, the next is tried, for chat, images, sound and video alike. A route only says which models it may use. The panel has a Models screen (from Providers and from a route): rename a model (its routes follow), add a fallback from any provider, choose OpenRouter's provider for a place, delete it. `GET/POST/PATCH/DELETE /api/models`.
+- Routes made before keep working: every name they list becomes a model, at the first provider, when the gateway starts.
+- Choosing a model in the panel (adding one to a route, or a new route's first) is a model picker instead of a long drop-down: a search, the kinds of model (text, image, speech, transcription, video) with how many of each, and a row per model with its name, id, price and what it reads, all from OpenRouter's own list. That list is now `GET /api/offers`, and `GET /api/models` is BaseRouter's own models.
 
 ### Fixed
 

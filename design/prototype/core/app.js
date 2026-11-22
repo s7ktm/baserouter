@@ -76,7 +76,7 @@ if (live) {
 // In a live panel, only the providers the gateway can add are offered, and one that is
 // already added is marked so the list can leave it out.
 const liveCatalog = catalog.filter((k) => k.kind === "openrouter").map((k) => ({ ...k }));
-let liveModels = null; // the provider's models (see gateway/src/catalogue.ts), once asked for
+let liveModels = null; // what the provider offers (see gateway/src/catalogue.ts), once asked for
 
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
@@ -181,7 +181,8 @@ function context() {
     data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref,
     catalog: live ? liveCatalog.map((k) => ({ ...k, added: data.providers.some((p) => p.kind === k.kind) })) : catalog,
     // what the providers offer, to find models in (gateway/src/catalogue.ts)
-    offers: live ? (liveModels ?? []).map((m) => ({ ...m, provider: data.providers[0]?.id })) : data.offers ?? offers,
+    offers: live ? liveModels ?? [] : data.offers ?? offers,
+    loadingOffers: live && !liveModels?.length,
     theme: theme(),
     copied: copiedId === "address",
     skins: registry.map((id) => ({ id, name: skins[id].name[lang], icon: skins[id].icon, active: id === skinId })),
@@ -310,7 +311,7 @@ const actions = {
   close,
   async edit(control) {
     const editing = control.dataset.edit || null;
-    if (live && editing === "model") loadModels().then(() => drawPicker(true));
+    if (live && ["model", "add", "place"].includes(editing)) loadModels().then(() => drawPicker(true));
     ui.place = editing === "via" ? Number(control.dataset.place) : null;
     if (editing === "via") loadProviders();
     ui.editing = editing;
@@ -448,9 +449,15 @@ const actions = {
       if (!model || !offer || model.from.some((p) => p.provider === offer.provider && p.model === offer.id && !p.via)) return;
       model.from.push({ provider: offer.provider, model: offer.id, via: null });
       ui.editing = null;
-      return render();
+      render();
+      if (live) send(api.updateModel(model.id, { from: model.from }));
+      return;
     }
+    const known = offer && (data.models ?? []).some((m) => m.from.some((p) => p.provider === offer.provider && p.model === offer.id));
     const name = offer ? ensureModel(offer) : value;
+    // A provider's model that is not in BaseRouter yet is made one first (a new route's model is
+    // made when the route is: the gateway makes a model of every name a route lists).
+    const made = live && offer && !known && mode !== "choose" ? api.createModel({ name, from: [{ provider: offer.provider, model: offer.id }] }).catch(() => {}) : Promise.resolve();
     if (mode === "choose") {
       Object.assign(ui, { chosen: name, picking: false });
       drawPicker();
@@ -458,13 +465,16 @@ const actions = {
     }
     if (mode === "add") {
       Object.assign(ui, { model: name, editing: null, focus: true });
-      return render();
+      render();
+      if (live) send(made);
+      return;
     }
     const route = data.routes.find((r) => r.id === picker.dataset.id);
     if (!route || route.models.includes(name)) return;
     route.models = [...route.models, name];
     ui.editing = null;
     render();
+    if (live) send(made.then(() => api.setModels(route.id, route.models)));
   },
   // Models: one opened, a place removed, where an OpenRouter place comes from, deleting one
   "open-model"(control) { Object.assign(ui, { model: control.dataset.model || null, editing: null, error: null, focus: true }); render(); },
@@ -474,6 +484,7 @@ const actions = {
     model.from = model.from.filter((_, i) => i !== Number(control.dataset.place));
     ui.editing = null;
     render();
+    if (live) send(api.updateModel(model.id, { from: model.from }));
   },
   "set-via"(control) {
     const model = data.models.find((m) => m.name === ui.model);
@@ -486,13 +497,16 @@ const actions = {
     ui.editing = null;
     render();
     app.querySelector(`.br-from[data-place="${at}"]`)?.focus();
+    if (live) send(api.updateModel(model.id, { from: model.from }));
   },
   "delete-model"(control) {
     const name = control.dataset.model;
+    const gone = data.models.find((m) => m.name === name);
     data.models = data.models.filter((m) => m.name !== name);
     for (const route of data.routes) route.models = route.models.filter((n) => n !== name);
     Object.assign(ui, { model: null, editing: null, focus: true });
     render();
+    if (live && gone?.id) send(api.deleteModel(gone.id));
   },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
   theme(control) { themePref = control.dataset.value; keep.set("theme", themePref); render(); },
@@ -510,6 +524,14 @@ const forms = {
     if (!model) return;
     if (!/^[\w~][\w.:/@+~-]{0,199}$/.test(name)) return void ((ui.error = core[lang].nameInvalid), render());
     if (name !== from && data.models.some((m) => m.name === name)) return void ((ui.error = core[lang].nameTaken), render());
+    if (live) {
+      // The gateway checks the name too; what it says is shown in the form.
+      return void api.updateModel(model.id, { name })
+        .then(() => refresh(true))
+        .then(() => Object.assign(ui, { model: name, editing: null, error: null, focus: true }))
+        .catch(failed)
+        .finally(render);
+    }
     model.name = name;
     for (const route of data.routes) route.models = route.models.map((n) => (n === from ? name : n));
     Object.assign(ui, { model: name, editing: null, error: null, focus: true });
@@ -693,7 +715,7 @@ async function loadProviders() {
   ui.providers = null;
   if (!live) return void (ui.providers = { model, list: providersFor(model) });
   try {
-    ui.providers = { model, list: await api.providersOf(model) };
+    ui.providers = { model, list: await api.offerEndpoints(model) };
   } catch {
     ui.providers = { model, list: [] };
   }
@@ -720,7 +742,7 @@ function defaultModel() {
 async function loadModels() {
   if (liveModels?.length || !data.providers.length) return;
   try {
-    liveModels = await api.models();
+    liveModels = await api.offers();
   } catch {}
 }
 

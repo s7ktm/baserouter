@@ -148,7 +148,7 @@ test("a route's key is given in full once, and only its hash is kept", async () 
   expect(res.status).toBe(201);
   const { route, key } = (await res.json()) as { route: Record<string, unknown>; key: string };
   expect(key).toMatch(/^br_[0-9a-f]{48}$/);
-  expect(route).toEqual({ id: route.id, name: "Home assistant", enabled: true, busy: false, today: 0, used: 0, budget: 10, keyHint: key.slice(-4), models: [{ model: "openai/gpt-5-mini", provider: null }], icon: "code", color: "#2B62D9", keepMedia: true });
+  expect(route).toEqual({ id: route.id, name: "Home assistant", enabled: true, busy: false, today: 0, used: 0, budget: 10, keyHint: key.slice(-4), models: ["openai/gpt-5-mini"], icon: "code", color: "#2B62D9", keepMedia: true });
 
   const stored = gw.store.route(route.id as string)!;
   expect(JSON.stringify(stored)).not.toContain(key);
@@ -248,14 +248,15 @@ test("a route's models can be changed, in order, and the change is enforced at o
   expect((await ask("anthropic/claude-sonnet-5.5")).status).toBe(403);
 
   const res = await api("PATCH", `/routes/${route.id}`, { models: ["anthropic/claude-sonnet-5.5", " openai/gpt-5-mini "] }, auth);
-  expect((await got(res)).route).toMatchObject({ models: [{ model: "anthropic/claude-sonnet-5.5", provider: null }, { model: "openai/gpt-5-mini", provider: null }] });
+  expect((await got(res)).route).toMatchObject({ models: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"] });
   expect((await ask("anthropic/claude-sonnet-5.5")).status).toBe(200);
 
-  // A line can name where its model comes from; the same model may be listed again from elsewhere.
-  const lines = [{ model: "openai/gpt-5-mini", provider: "azure" }, { model: "openai/gpt-5-mini", provider: null }, { model: "anthropic/claude-sonnet-5.5", provider: "google-vertex/global" }];
-  expect((await got(await api("PATCH", `/routes/${route.id}`, { models: lines }, auth))).route).toMatchObject({ models: lines });
+  // The names a route lists that are not models in BaseRouter yet become models, at the provider.
+  const listed = (await (await api("GET", "/models", undefined, auth)).json()) as { models: { name: string; from: unknown[] }[] };
+  expect(listed.models.map((m) => m.name).sort()).toEqual(["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"]);
+  expect(listed.models[0]!.from).toEqual([{ provider: gw.store.providers()[0]!.id, model: listed.models[0]!.name, via: null }]);
 
-  for (const models of ["m", [""], ["a/b", "a/b"], [1], [{ model: "a/b", provider: "Not A Slug" }], [{ model: "a/b", provider: 3 }], [{ model: "a/b", provider: "x" }, { model: "a/b", provider: "x" }]]) {
+  for (const models of ["m", [""], ["a/b", "a/b"], [1], ["has space"]]) {
     expect((await api("PATCH", `/routes/${route.id}`, { models }, auth)).status).toBe(400);
   }
 });

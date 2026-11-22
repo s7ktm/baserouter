@@ -151,7 +151,7 @@ A form with three fields (name, monthly budget, first model), then the one momen
 
 ### Models
 
-Drafted 2026-11-22 from the decision in PRODUCT.md ("Providers, models and routes"); waits for the maintainer's approval.
+From the decision in PRODUCT.md ("Providers, models and routes"); approved by the maintainer on 2026-11-22.
 
 A shared screen, built once, reached from Providers ("Models") and from a route ("All models"). Not from the home screen: skins keep their five ways in.
 

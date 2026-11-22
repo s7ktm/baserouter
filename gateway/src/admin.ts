@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { dayStart, monthStart, nextMonthStart, localDate } from "./budget.ts";
 import type { Deps, Env } from "./deps.ts";
 import { catalogue, providersOf, type CatalogueModel, type ModelProvider } from "./catalogue.ts";
-import { linesOf, parseLines } from "./lines.ts";
+import { MODEL_NAME, namesOf, parseNames, parsePlaces, type Model } from "./models.ts";
 import { MediaKeeper } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
@@ -102,7 +102,7 @@ export function admin(deps: Deps) {
       used: spent.used,
       budget: r.budget_usd,
       keyHint: r.key_hint,
-      models: linesOf(r),
+      models: namesOf(r),
       icon: r.icon,
       color: r.color,
       keepMedia: r.keep_media === 1,
@@ -202,10 +202,11 @@ export function admin(deps: Deps) {
       baserouter: 1,
       exportedAt: new Date(now).toISOString(),
       routes: store.routes().map((r) => ({
-        id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: linesOf(r),
+        id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: namesOf(r),
         icon: r.icon, color: r.color, keepMedia: r.keep_media === 1, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
       })),
       providers: store.providers().map((p) => ({ ...providerView(p), createdAt: new Date(p.created_at).toISOString() })),
+      models: store.models().map(modelView),
       requests: store.allRequests().map((r) => ({ ...requestView(r), at: new Date(r.started_at).toISOString() })),
       // The images and sounds themselves are files in the media folder; here is what is known about each.
       media: store.media({ limit: 1_000_000 }).map((i) => {
@@ -270,7 +271,17 @@ export function admin(deps: Deps) {
   });
 
   const validBudget = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
-  const badLines = "Give the models as a list of up to 50 different lines: model ids, or { model, provider } where provider is one of the provider's own (such as \"google-vertex\") or null.";
+  const badNames = "Give the models as a list of up to 50 different model names.";
+
+  // The names a route lists that are not models in BaseRouter yet become models, at the first
+  // provider, under the provider's own id. (Picking a model a provider offers does the same.)
+  function adopt(names: string[]): void {
+    const first = store.providers()[0];
+    for (const name of names) {
+      if (store.modelByName(name)) continue;
+      store.addModel({ id: newId(), name, makes: offerOf(name)?.makes ?? [], places: first ? [{ provider: first.id, model: name, via: null }] : [], created_at: deps.now() });
+    }
+  }
 
   // Makes a route. The answer is the only time its key is given in full.
   // icon and color are how the panel draws it; the gateway only keeps them.
@@ -278,8 +289,8 @@ export function admin(deps: Deps) {
     const { name, budget, models = [], icon = "code", color = "#2B62D9", keepMedia = true } = await jsonBody(c);
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) return fail(c, 400, "name_invalid", "Give the route a name of up to 120 characters.");
     if (!validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
-    const lines = parseLines(models);
-    if (!lines) return fail(c, 400, "models_invalid", badLines);
+    const names = parseNames(models);
+    if (!names) return fail(c, 400, "models_invalid", badNames);
     if (typeof icon !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(icon)) return fail(c, 400, "icon_invalid", "Give the icon as a short lowercase name.");
     if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return fail(c, 400, "color_invalid", "Give the colour as #RRGGBB.");
     if (typeof keepMedia !== "boolean") return fail(c, 400, "keep_media_invalid", 'Give "keepMedia" as true or false.');
@@ -287,8 +298,9 @@ export function admin(deps: Deps) {
     const key = newRouteKey();
     const row: RouteRow = {
       id: newId(), name: name.trim(), key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: budget, enabled: 1,
-      models: JSON.stringify(lines), icon, color, keep_media: keepMedia ? 1 : 0, created_at: deps.now(),
+      models: JSON.stringify(names), icon, color, keep_media: keepMedia ? 1 : 0, created_at: deps.now(),
     };
+    adopt(names);
     store.addRoute(row);
     return c.json({ route: routeView(row, new Map()), key }, 201);
   });
@@ -299,10 +311,11 @@ export function admin(deps: Deps) {
     const { budget, enabled, models, keepMedia } = await jsonBody(c);
     if (budget !== undefined && !validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (enabled !== undefined && typeof enabled !== "boolean") return fail(c, 400, "enabled_invalid", 'Give "enabled" as true or false.');
-    const lines = models === undefined ? undefined : parseLines(models);
-    if (lines === null) return fail(c, 400, "models_invalid", badLines);
+    const names = models === undefined ? undefined : parseNames(models);
+    if (names === null) return fail(c, 400, "models_invalid", badNames);
     if (keepMedia !== undefined && typeof keepMedia !== "boolean") return fail(c, 400, "keep_media_invalid", 'Give "keepMedia" as true or false.');
-    store.updateRoute(id, { budget_usd: budget, enabled, models: lines, keep_media: keepMedia });
+    if (names) adopt(names);
+    store.updateRoute(id, { budget_usd: budget, enabled, models: names, keep_media: keepMedia });
     return c.json({ route: routeView(store.route(id)!, spendNow()) });
   });
 
@@ -345,17 +358,19 @@ export function admin(deps: Deps) {
       sounds: store.media({ kind: "audio", limit: 60 }).map(mediaView),
       videos: store.media({ kind: "video", limit: 60 }).map(mediaView),
       mediaSpace: space(),
+      models: store.models().map(modelView),
       budgetsStartAgainOn: localDate(nextMonthStart(date)),
     });
   });
 
-  // The provider's models, for choosing a route's model: what each makes, takes and costs
-  // (see catalogue.ts). Asked for once in ten minutes.
-  let models: { providerId: string; at: number; list: CatalogueModel[] } | null = null;
-  app.get("/models", async (c) => {
+  // What the provider offers, to find models in: what each makes, takes and costs (see
+  // catalogue.ts). Asked for once in ten minutes.
+  let offers: { providerId: string; at: number; list: CatalogueModel[] } | null = null;
+  const offerOf = (id: string) => offers?.list.find((m) => m.id === id) ?? null;
+  app.get("/offers", async (c) => {
     const provider = store.providers()[0];
-    if (!provider) return c.json({ models: [] });
-    if (models && models.providerId === provider.id && deps.now() - models.at < 10 * 60_000) return c.json({ models: models.list });
+    if (!provider) return c.json({ offers: [] });
+    if (offers && offers.providerId === provider.id && deps.now() - offers.at < 10 * 60_000) return c.json({ offers: offers.list, provider: provider.id });
     const key = unseal(deps.master, provider.key_sealed);
     const read = async (res: Response) => (res.ok ? (((await res.json()) as { data?: unknown }).data ?? []) : (await res.body?.cancel(), null));
     try {
@@ -364,19 +379,24 @@ export function admin(deps: Deps) {
         // Video prices are only in the video list; without them the list still stands.
         openrouter.get(deps.upstream, key, "/videos/models", AbortSignal.timeout(15_000)).then(read).catch(() => []),
       ]);
-      if (!all) return c.json({ models: [] });
+      if (!all) return c.json({ offers: [] });
       const list = catalogue(all, videos ?? []);
-      models = { providerId: provider.id, at: deps.now(), list };
-      return c.json({ models: list });
+      offers = { providerId: provider.id, at: deps.now(), list };
+      // Models whose kind was not known when they were made learn it now.
+      for (const m of store.models()) {
+        const kind = !m.makes.length && m.places[0] ? offerOf(m.places[0].model)?.makes : null;
+        if (kind?.length) store.updateModel(m.id, { makes: kind });
+      }
+      return c.json({ offers: list, provider: provider.id });
     } catch {
-      return c.json({ models: [] });
+      return c.json({ offers: [] });
     }
   });
 
   // Where one model comes from: the provider's own providers for it (OpenRouter's endpoints
   // list), with what each charges. ?model=<id>. Kept for ten minutes each.
   const providersCache = new Map<string, { at: number; list: ModelProvider[] }>();
-  app.get("/models/providers", async (c) => {
+  app.get("/offers/endpoints", async (c) => {
     const model = c.req.query("model") ?? "";
     // Exactly "author/name": the id becomes part of a path to OpenRouter.
     const parts = model.split("/");
@@ -399,6 +419,48 @@ export function admin(deps: Deps) {
     } catch {
       return c.json({ providers: [] });
     }
+  });
+
+  // Models in BaseRouter: the name apps send, what it makes, the places it comes from in order.
+  function modelView(m: Model) {
+    return { id: m.id, name: m.name, makes: m.makes.length ? m.makes : offerOf(m.places[0]?.model ?? "")?.makes ?? [], from: m.places };
+  }
+  const badPlaces = 'Give "from" as 1 to 10 different places, each { provider, model, via? }: a provider BaseRouter holds a key for, its id for the model, and for OpenRouter which of its own providers.';
+  const badName = "Give the model a name of letters, digits and . : / @ + ~ - (up to 200), that no other model has.";
+
+  app.get("/models", (c) => c.json({ models: store.models().map(modelView) }));
+
+  // Makes a model. Without a name, it is named after its first place's id.
+  app.post("/models", async (c) => {
+    const { name, from, makes } = await jsonBody(c);
+    const places = parsePlaces(from, store.providers());
+    if (!places) return fail(c, 400, "places_invalid", badPlaces);
+    const chosen = typeof name === "string" ? name.trim() : places[0]!.model;
+    if (!MODEL_NAME.test(chosen) || store.modelByName(chosen)) return fail(c, 400, "name_invalid", badName);
+    const kinds = offerOf(places[0]!.model)?.makes ?? (Array.isArray(makes) ? makes.filter((k): k is string => typeof k === "string").slice(0, 8) : []);
+    const id = newId();
+    store.addModel({ id, name: chosen, makes: kinds, places, created_at: deps.now() });
+    return c.json({ model: modelView(store.model(id)!) }, 201);
+  });
+
+  // Renames a model (its routes follow) or changes its places.
+  app.patch("/models/:id", async (c) => {
+    const id = c.req.param("id");
+    const before = store.model(id);
+    if (!before) return fail(c, 404, "not_found", "There is no such model.");
+    const { name, from } = await jsonBody(c);
+    const places = from === undefined ? undefined : parsePlaces(from, store.providers());
+    if (places === null) return fail(c, 400, "places_invalid", badPlaces);
+    const renamed = typeof name === "string" ? name.trim() : name === undefined ? undefined : null;
+    if (renamed === null || (renamed !== undefined && (!MODEL_NAME.test(renamed) || (renamed !== before.name && store.modelByName(renamed))))) return fail(c, 400, "name_invalid", badName);
+    store.updateModel(id, { name: renamed, places });
+    return c.json({ model: modelView(store.model(id)!) });
+  });
+
+  // Deletes a model; the routes that listed it lose it.
+  app.delete("/models/:id", (c) => {
+    if (!store.removeModel(c.req.param("id"))) return fail(c, 404, "not_found", "There is no such model.");
+    return c.body(null, 204);
   });
 
   // Activity, newest first. ?route=<id> filters; ?before=<request id> gets the next page.

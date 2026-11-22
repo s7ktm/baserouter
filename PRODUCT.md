@@ -26,11 +26,11 @@ A model's name and the places it comes from live on the model; a route only says
 
 ## Providers, models and routes
 
-Three things, each answering one question. Decided on 2026-11-22; the screens for it are drafted in the prototype and wait for the maintainer's approval before the gateway follows.
+Three things, each answering one question. Decided and its screens approved on 2026-11-22.
 
 - **A provider** answers *how do I reach it*: a key, and whether it works. It is also where models are found: what it offers, what each makes and costs, all as the provider says.
 - **A model** answers *what do apps ask for, and where does it come from*. It is defined once in BaseRouter, for every route: the name apps send (by default the provider's own id, so existing apps work unchanged), what it makes (from the provider, never chosen by hand), and the places it comes from, in order. When the first place fails, the next is used, for every route at once. A place is a provider and that provider's id for the model; the same model has different ids at different providers (`gpt-5-mini` at OpenAI, `openai/gpt-5-mini` at OpenRouter). A place may also be a different model, as a deliberate fallback; it is then shown as one.
-- **A route** answers *who is asking, and what may it spend*: one agent or app, with its own key, monthly budget, on/off switch, the models it may use, and what it made. A route holds no routing logic: no order, no providers. A route that names no models may use every model in BaseRouter.
+- **A route** answers *who is asking, and what may it spend*: one agent or app, with its own key, monthly budget, on/off switch, the models it may use, and what it made. A route holds no routing logic: no order, no providers. A route that names no models may use every model in BaseRouter, and also any model the first provider offers, by the provider's own id, as before models existed.
 
 Adding a model is finding it: picking a model a provider offers makes it a model in BaseRouter, with that one place. Renaming it and adding fallback places is done on the model, when wanted, never required.
 

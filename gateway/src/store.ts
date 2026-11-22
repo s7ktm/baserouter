@@ -1,5 +1,7 @@
 // SQLite storage. All SQL lives in this file.
 import { Database } from "bun:sqlite";
+import { randomBytes } from "node:crypto";
+import { namesOf, toModel, type Model, type ModelRow, type Place } from "./models.ts";
 
 // cost_source says where cost_usd came from: reported by the provider, computed from a
 // price table (not used by OpenRouter), or unknown.
@@ -64,7 +66,7 @@ CREATE INDEX requests_by_time ON requests (started_at);
 
 // Each step takes the database from one version to the next. Steps are never edited
 // once released; a change is a new step.
-export const MIGRATIONS: string[] = [
+export const MIGRATIONS: (string | ((db: Database) => void))[] = [
   SCHEMA,
   // 2: how the panel draws a route
   `ALTER TABLE routes ADD COLUMN icon TEXT NOT NULL DEFAULT 'code';
@@ -158,6 +160,31 @@ export const MIGRATIONS: string[] = [
      done_at    INTEGER
    ) STRICT;
    CREATE INDEX video_jobs_open ON video_jobs (done_at);`,
+  // 7: models in BaseRouter: the name apps send, what it makes, the places it comes from in
+  // order (JSON, see models.ts). A route's "models" become the names of the models it may use.
+  // Every name a route already lists becomes a model, at the first provider, so nothing that
+  // worked before changes.
+  (db) => {
+    db.exec(`CREATE TABLE models (
+       id         TEXT PRIMARY KEY,
+       name       TEXT NOT NULL UNIQUE,
+       makes      TEXT NOT NULL DEFAULT '[]',
+       places     TEXT NOT NULL DEFAULT '[]',
+       created_at INTEGER NOT NULL
+     ) STRICT;`);
+    const first = db.query("SELECT id FROM providers ORDER BY created_at LIMIT 1").get() as { id: string } | null;
+    const known = new Set<string>();
+    for (const route of db.query("SELECT id, models, created_at FROM routes ORDER BY created_at").all() as { id: string; models: string; created_at: number }[]) {
+      const names = namesOf(route);
+      db.query("UPDATE routes SET models = ? WHERE id = ?").run(JSON.stringify(names), route.id);
+      for (const name of names) {
+        if (known.has(name)) continue;
+        known.add(name);
+        const places = first ? [{ provider: first.id, model: name, via: null }] : [];
+        db.query("INSERT INTO models (id, name, makes, places, created_at) VALUES (?, ?, '[]', ?, ?)").run(randomBytes(6).toString("hex"), name, JSON.stringify(places), route.created_at);
+      }
+    }
+  },
 ];
 
 export type CostSource = "provider" | "computed" | "unknown";
@@ -267,7 +294,12 @@ export function migrate(db: Database): Database {
   db.exec("PRAGMA foreign_keys = OFF");
   try {
     for (let version = user_version; version < MIGRATIONS.length; version++) {
-      db.transaction(() => db.exec(`${MIGRATIONS[version]}\nPRAGMA user_version = ${version + 1};`))();
+      const step = MIGRATIONS[version]!;
+      db.transaction(() => {
+        if (typeof step === "string") db.exec(step);
+        else step(db);
+        db.exec(`PRAGMA user_version = ${version + 1}`);
+      })();
     }
     const broken = db.query("PRAGMA foreign_key_check").all();
     if (broken.length > 0) throw new Error(`The database has ${broken.length} rows that point at rows that are gone.`);
@@ -348,7 +380,7 @@ export class Store {
       .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.keep_media, row.created_at);
   }
 
-  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: unknown[]; key_hash?: string; key_hint?: string; keep_media?: boolean }): void {
+  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string; keep_media?: boolean }): void {
     this.db.transaction(() => {
       if (change.keep_media !== undefined) this.db.query("UPDATE routes SET keep_media = ? WHERE id = ?").run(change.keep_media ? 1 : 0, id);
       if (change.budget_usd !== undefined) this.db.query("UPDATE routes SET budget_usd = ? WHERE id = ?").run(change.budget_usd, id);
@@ -516,6 +548,58 @@ export class Store {
       }
       return true;
     })();
+  }
+
+  models(): Model[] {
+    return (this.db.query("SELECT * FROM models ORDER BY created_at, name").all() as ModelRow[]).map(toModel);
+  }
+
+  model(id: string): Model | null {
+    const row = this.db.query("SELECT * FROM models WHERE id = ?").get(id) as ModelRow | null;
+    return row ? toModel(row) : null;
+  }
+
+  modelByName(name: string): Model | null {
+    const row = this.db.query("SELECT * FROM models WHERE name = ?").get(name) as ModelRow | null;
+    return row ? toModel(row) : null;
+  }
+
+  addModel(m: { id: string; name: string; makes: string[]; places: Place[]; created_at: number }): void {
+    this.db.query("INSERT INTO models (id, name, makes, places, created_at) VALUES (?, ?, ?, ?, ?)").run(m.id, m.name, JSON.stringify(m.makes), JSON.stringify(m.places), m.created_at);
+  }
+
+  // Changes a model. A new name is carried into every route that lists the old one.
+  updateModel(id: string, change: { name?: string; makes?: string[]; places?: Place[] }): void {
+    this.db.transaction(() => {
+      const before = this.model(id);
+      if (!before) return;
+      if (change.makes) this.db.query("UPDATE models SET makes = ? WHERE id = ?").run(JSON.stringify(change.makes), id);
+      if (change.places) this.db.query("UPDATE models SET places = ? WHERE id = ?").run(JSON.stringify(change.places), id);
+      if (change.name !== undefined && change.name !== before.name) {
+        this.db.query("UPDATE models SET name = ? WHERE id = ?").run(change.name, id);
+        this.renameInRoutes(before.name, change.name);
+      }
+    })();
+  }
+
+  // Removes a model, and its name from every route that lists it.
+  removeModel(id: string): boolean {
+    return this.db.transaction(() => {
+      const before = this.model(id);
+      if (!before) return false;
+      this.db.query("DELETE FROM models WHERE id = ?").run(id);
+      this.renameInRoutes(before.name, null);
+      return true;
+    })();
+  }
+
+  private renameInRoutes(from: string, to: string | null): void {
+    for (const route of this.routes()) {
+      const names = namesOf(route);
+      if (!names.includes(from)) continue;
+      const next = to === null ? names.filter((n) => n !== from) : names.map((n) => (n === from ? to : n));
+      this.db.query("UPDATE routes SET models = ? WHERE id = ?").run(JSON.stringify([...new Set(next)]), route.id);
+    }
   }
 
   // How many images, sounds and videos, and the room their files take: the same bytes kept twice count once.
