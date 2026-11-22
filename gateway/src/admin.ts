@@ -9,7 +9,7 @@ import type { CatalogueModel, ModelProvider } from "./catalogue.ts";
 import { MODEL_NAME, namesOf, parseNames, parsePlaces, type Model } from "./models.ts";
 import { MediaKeeper } from "./media.ts";
 import * as providers from "./providers.ts";
-import type { SendAs } from "./proxy.ts";
+import type { JobAs, SendAs } from "./proxy.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
 import type { MediaKind, MediaListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
 
@@ -63,7 +63,7 @@ function requestView(r: RequestRow) {
   };
 }
 
-export function admin(deps: Deps, sendAs: SendAs) {
+export function admin(deps: Deps, sendAs: SendAs, jobAs: JobAs) {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
   const space = () => ({ ...store.mediaSpace(), keeping: keeper.on, max: deps.mediaMaxBytes });
@@ -339,9 +339,10 @@ export function admin(deps: Deps, sendAs: SendAs) {
 
   // The playground: a request sent as this route, with the panel's session in place of the
   // route's key, which nobody holds (only its hash is kept). The body is what an app would
-  // send to /v1/chat/completions (try) or /v1/images/generations (try/images), and everything
-  // that holds for the route holds here: its switch, its budget, its models, one row in its
-  // requests, an image kept if the route keeps what it makes. Nothing of a conversation is
+  // send to /v1/chat/completions (try), /v1/images/generations (try/images), /v1/audio/speech
+  // (try/speech), /v1/audio/transcriptions (try/transcriptions) or /v1/videos (try/videos), and
+  // everything that holds for the route holds here: its switch, its budget, its models, one row
+  // in its requests, an image, sound or video kept if the route keeps what it makes. Nothing of a conversation is
   // kept. So the panel can say what answered, what it cost and how long it took, a stream
   // ends with one event more than the provider sent, the request's row; an answer that is not
   // a stream names its row in the header X-BaseRouter-Request (see GET /requests/:id).
@@ -349,11 +350,30 @@ export function admin(deps: Deps, sendAs: SendAs) {
     const row = store.request(rowId);
     return row ? new TextEncoder().encode(`\nevent: baserouter.request\ndata: ${JSON.stringify(rowView(row))}\n\n`) : null;
   };
-  for (const [path, what] of [["/routes/:id/try", "chat"], ["/routes/:id/try/images", "image"]] as const) {
+  const tries = [
+    ["/routes/:id/try", "chat"],
+    ["/routes/:id/try/images", "image"],
+    ["/routes/:id/try/speech", "speech"],
+    ["/routes/:id/try/transcriptions", "transcription"],
+    ["/routes/:id/try/videos", "video"],
+  ] as const;
+  for (const [path, what] of tries) {
     app.post(path, async (c) => {
       const route = store.route(c.req.param("id"));
       if (!route) return fail(c, 404, "not_found", "There is no such route.");
+      // A video job's links lead to the panel's own equivalents below.
+      c.set("base", `/api/routes/${encodeURIComponent(route.id)}`);
       return sendAs(c, route, what, told);
+    });
+  }
+  // A video job the playground started, which the panel asks about until it ends, then plays:
+  // what GET /v1/videos/:id and /v1/videos/:id/content give, with the session in place of the
+  // route's key. The links in the job's answer lead here.
+  for (const [path, part] of [["/routes/:id/videos/:job", "status"], ["/routes/:id/videos/:job/content", "content"]] as const) {
+    app.get(path, async (c) => {
+      const route = store.route(c.req.param("id"));
+      if (!route) return fail(c, 404, "not_found", "There is no such route.");
+      return jobAs(c, route, c.req.param("job"), part, `/api/routes/${encodeURIComponent(route.id)}`);
     });
   }
 

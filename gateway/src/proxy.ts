@@ -141,6 +141,10 @@ function clientBase(c: Context<Env>): string {
   return `${https ? "https" : "http"}://${url.host}/v1`;
 }
 
+// Where the links in a video job's answer lead: the one address, or the panel's own for a job
+// its playground started (see jobAs).
+const baseOf = (c: Context<Env>) => c.get("base") ?? clientBase(c);
+
 const notAJob = (c: Context<Env>) => refuse(c, 404, "not_found", "This route has no video job with that id.");
 
 // A video job, sent on as written. A job may continue an earlier one ("previous_job_id");
@@ -188,10 +192,15 @@ const saveRefused = (value: string | undefined) => /^(no|false|0|off)$/i.test(va
 // What the playground adds to the end of a stream: bytes made from the request's row.
 export type Tail = (rowId: number) => Uint8Array | null;
 // A request sent for a route by the panel, which holds a session and not the route's key:
-// a chat, or an image (what /v1/images/generations takes).
-export type SendAs = (c: Context<Env>, route: RouteRow, what: "chat" | "image", tail: Tail) => Promise<Response>;
+// what /v1/chat/completions, /v1/images/generations, /v1/audio/speech, /v1/audio/transcriptions
+// or /v1/videos takes.
+export type Try = "chat" | "image" | "speech" | "transcription" | "video";
+export type SendAs = (c: Context<Env>, route: RouteRow, what: Try, tail: Tail) => Promise<Response>;
+// A video job of the route, asked about by the panel: how far it has got, or its video. "base"
+// is where the links in a job's answer lead.
+export type JobAs = (c: Context<Env>, route: RouteRow, jobId: string, part: "status" | "content", base: string) => Promise<Response>;
 
-export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
+export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs; jobAs: JobAs } {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
   const videos = new VideoWatcher(deps, keeper);
@@ -392,6 +401,7 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
       const rowId = finish(upstream.status, failure, reading, null, generationId, images);
       if (kind === "video" && failure === null && rowId !== null) {
         const answer = startedVideo(c, bytes, rowId, route, model, prepared.prompt ?? null, keepVideo, provider);
+        if (answer && tail) answer.headers.set("X-BaseRouter-Request", String(rowId));
         if (answer) return answer;
       }
       const headers = passHeaders(upstream);
@@ -412,12 +422,13 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
       const outcome = failure ?? (scanner?.failed ? "stream_error" : null);
       return finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId, scanner?.images, sound);
     };
+    let rowAtEnd: number | null = null;
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const { done, value } = await reader.read();
           if (done) {
-            const rowId = settle(null);
+            const rowId = (rowAtEnd = settle(null));
             const more = scanner && rowId !== null ? tail?.(rowId) : null;
             if (more) controller.enqueue(more);
             controller.close();
@@ -438,6 +449,19 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
         abort.abort();
       },
     });
+    // The playground's sound is read whole before it goes, so its answer can name its row: the
+    // row is written only once the sound has ended. A spoken answer is short.
+    if (tail && !scanner) {
+      let whole: ArrayBuffer;
+      try {
+        whole = await new Response(stream).arrayBuffer();
+      } catch {
+        return refuse(c, 502, "provider_unreachable", `The answer from ${provider.name} broke off. Try again.`);
+      }
+      const headers = passHeaders(upstream);
+      if (rowAtEnd !== null) headers.set("X-BaseRouter-Request", String(rowAtEnd));
+      return new Response(whole, { status: upstream.status, headers });
+    }
     return new Response(stream, { status: upstream.status, headers: passHeaders(upstream) });
   }
 
@@ -458,7 +482,7 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
     store.addVideoJob(job);
     // A job may already have ended in its first answer (a refusal after 202, say).
     later(deps, videos.observe(job, status).then((ended) => ended || videos.watch(job.id)));
-    return c.json(nano ? nanoForClient(status, clientBase(c), null) : forClient(doc, clientBase(c)), 202);
+    return c.json(nano ? nanoForClient(status, baseOf(c), null) : forClient(doc, baseOf(c)), 202);
   }
 
   const unreachable = (c: Context<Env>, provider: ProviderRow) =>
@@ -619,7 +643,11 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
   // its models, its one row, and an image kept if the route keeps what it makes.
   const sendAs: SendAs = (c, route, what, tail) => {
     c.set("route", route);
-    return what === "image" ? forward(c, "/images", json("image"), tail) : forward(c, "/chat/completions", json("chat-modalities"), tail);
+    if (what === "image") return forward(c, "/images", json("image"), tail);
+    if (what === "speech") return forward(c, "/audio/speech", json("speech"), tail);
+    if (what === "transcription") return forward(c, "/audio/transcriptions", transcription, tail);
+    if (what === "video") return forward(c, "/videos", video(store), tail);
+    return forward(c, "/chat/completions", json("chat-modalities"), tail);
   };
   // OpenAI's name for it; OpenRouter's own is /images.
   app.post("/images/generations", (c) => forward(c, "/images", json("image")));
@@ -634,14 +662,17 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
   app.post("/videos", (c) => forward(c, "/videos", video(store)));
   app.get("/videos/models", (c) => videoModelList(c));
 
-  app.get("/videos/:id", async (c) => {
-    const job = store.videoJob(c.req.param("id"));
+  app.get("/videos/:id", (c) => jobStatus(c, c.req.param("id")));
+  app.get("/videos/:id/content", (c) => jobContent(c, c.req.param("id")));
+
+  async function jobStatus(c: Context<Env>, id: string): Promise<Response> {
+    const job = store.videoJob(id);
     if (!job || job.route_id !== c.get("route").id) return notAJob(c);
     const provider = providerOf(deps, job);
     if (provider && providers.isNano(provider)) {
       const status = await nanoJob(c, job, provider);
       if (status instanceof Response) return status;
-      return c.json(nanoForClient(status, clientBase(c), job.request_id === null ? null : (store.request(job.request_id)?.cost_usd ?? null)));
+      return c.json(nanoForClient(status, baseOf(c), job.request_id === null ? null : (store.request(job.request_id)?.cost_usd ?? null)));
     }
     const upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}`, provider);
     if (!upstream.ok || !(upstream.headers.get("content-type") ?? "").includes("json")) {
@@ -650,11 +681,11 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
     const doc = (await upstream.json()) as Record<string, unknown>;
     const status = readJob(doc);
     if (status && status.id === job.id) later(deps, videos.observe(job, status));
-    return c.json(forClient(doc, clientBase(c)), upstream.status as 200);
-  });
+    return c.json(forClient(doc, baseOf(c)), upstream.status as 200);
+  }
 
-  app.get("/videos/:id/content", async (c) => {
-    const job = store.videoJob(c.req.param("id"));
+  async function jobContent(c: Context<Env>, id: string): Promise<Response> {
+    const job = store.videoJob(id);
     if (!job || job.route_id !== c.get("route").id) return notAJob(c);
     const index = c.req.query("index") ?? "0";
     if (!/^\d{1,3}$/.test(index)) return refuse(c, 400, "invalid_request", '"index" must be a number: 0 for the first video.');
@@ -679,7 +710,23 @@ export function proxy(deps: Deps): { app: Hono<Env>; sendAs: SendAs } {
     const length = upstream.headers.get("content-length");
     if (upstream.ok && length) headers.set("content-length", length);
     return new Response(upstream.body, { status: upstream.status, headers });
-  });
+  }
 
-  return { app, sendAs };
+  // The panel's equivalents of the two above, for a job its playground started as a route.
+  const jobAs: JobAs = (c, route, jobId, part, base) => {
+    c.set("route", route);
+    c.set("base", base);
+    if (part === "status") return jobStatus(c, jobId);
+    // The video is shown on the panel's own origin, so like a kept file it may run nothing.
+    return jobContent(c, jobId).then((res) => {
+      if (!res.ok) return res;
+      const headers = new Headers(res.headers);
+      headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      headers.set("X-Content-Type-Options", "nosniff");
+      headers.set("Content-Disposition", "inline");
+      return new Response(res.body, { status: res.status, headers });
+    });
+  };
+
+  return { app, sendAs, jobAs };
 }

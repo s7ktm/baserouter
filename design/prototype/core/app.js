@@ -3,7 +3,7 @@
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
 import { states, catalog, modelChoices, offers, providersFor, playSample } from "./data.js";
 import { modelPicker } from "./screens/models.js";
-import { api, gatewayStatus, SignedOut, toData, tryChat, tryImage } from "./live.js";
+import { api, gatewayStatus, requestRow, SignedOut, toData, tryChat, tryImage, trySpeech, tryTranscription, tryVideo, videoJob } from "./live.js";
 import { words as core } from "./words.js";
 import { checkSkin, missingTokens } from "./contract.js";
 import { routeSheet } from "./screens/route.js";
@@ -13,7 +13,8 @@ import { activitySheet } from "./screens/activity.js";
 import { modelsSheet } from "./screens/model-list.js";
 import { settingsSheet } from "./screens/settings.js";
 import { signInSheet } from "./screens/sign-in.js";
-import { playgroundSheet, modelsFor, playNow, KINDS } from "./screens/playground.js";
+import { playgroundSheet, modelsFor, playNow, elapsed, KINDS } from "./screens/playground.js";
+import { size } from "./screens/activity.js";
 import { registry } from "../skins/registry.js";
 
 // Everything that is not the home screen is a sheet over it.
@@ -84,18 +85,24 @@ let liveModels = null; // what the provider offers (see gateway/src/catalogue.ts
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
 //   screen=providers|add-provider|new-route|activity|settings|playground
-//   as=<route id> kind=chat|image model=<name> (playground: who asks, and for what)   edit=system (its system message)
-//   step=waiting|streaming|done|stopped|fail (playground, on made-up data: an answer or an image in that state)   detail=1 (its details open)
+//   as=<route id> kind=chat|image|speech|transcription|video model=<name> (playground: who asks, and for what)   edit=system (its system message)
+//   step=waiting|streaming|done|stopped|fail (playground, on made-up data: an answer, image, sound, text or video in that state;
+//   step=chosen: a sound file chosen to be written down)   detail=1 (its details open)
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
 //   find=<words> makes=text|image|speech|transcription|video (choosing a model: route edit=model, new-route edit=model)
 //   show=images|sounds|videos (activity: what was kept)   media=<id> (one of them)   edit=delete-media
 const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
-// The playground: what is being tried (a chat or an image), and what was said and made so far,
-// each kind in its own list. It lives here and nowhere else: closing the sheet keeps it,
-// "Start over" and leaving the page end it. "running" stops the request under way.
-const play = { route: null, kind: "chat", model: null, system: "", draft: { chat: "", image: "" }, turns: { chat: [], image: [] }, open: null, running: null };
+// The playground: what is being tried (a chat, an image, speech, a transcription or a video),
+// and what was said and made so far, each kind in its own list. It lives here and nowhere else:
+// closing the sheet keeps it, "Start over" and leaving the page end it. "running" stops the
+// request under way; a video is not one, since it is made as a job that the page only watches.
+// "file" is the sound file chosen to be written down.
+const play = {
+  route: null, kind: "chat", model: null, system: "", file: null, open: null, running: null,
+  draft: Object.fromEntries(KINDS.map((k) => [k, ""])), turns: Object.fromEntries(KINDS.map((k) => [k, []])),
+};
 let view = null;
 let ui = fresh();
 let copiedId = null;
@@ -140,7 +147,20 @@ if (view?.screen === "playground") {
   play.model = query.get("model");
   if (KINDS.includes(query.get("kind"))) play.kind = query.get("kind");
   const step = query.get("step");
-  if (!live && playNow(data, play).kind === "image" && ["waiting", "done", "stopped", "fail"].includes(step)) {
+  const now = playNow(data, play);
+  if (!live && now.kind === "transcription" && step === "chosen") play.file = madeUpFile();
+  if (!live && ["speech", "transcription", "video"].includes(now.kind) && ["waiting", "done", "stopped", "fail"].includes(step) && !(now.kind === "video" && step === "stopped")) {
+    const { route, kind, model } = now;
+    const state = step === "fail" ? "failed" : step;
+    const done = step === "done";
+    const turn = {
+      speech: () => ({ ask: playSample.speechAsk[lang], sound: done ? playSample.sound : null, facts: done ? madeUpFacts(route, kind, model, playSample.speechFacts) : null }),
+      transcription: () => ({ ask: fileLabel(madeUpFile()), text: done ? playSample.heard[lang] : "", facts: done ? madeUpFacts(route, kind, model, playSample.heardFacts) : null }),
+      video: () => ({ ask: playSample.videoAsk[lang], video: done ? playSample.video : null, started: Date.now() - playSample.videoSoFar, facts: done ? madeUpFacts(route, kind, model, playSample.videoFacts) : null }),
+    }[kind]();
+    play.turns[kind] = [{ ...turn, route: route.id, kept: keepsMedia(route), state, error: step === "fail" ? playSample.error : null }];
+    if (query.get("detail") === "1") play.open = 0;
+  } else if (!live && now.kind === "image" && ["waiting", "done", "stopped", "fail"].includes(step)) {
     const { route, model } = playNow(data, play);
     play.turns.image = [{
       ask: playSample.imageAsk[lang], route: route.id, kept: keepsMedia(route), state: step === "fail" ? "failed" : step, images: step === "done" ? [playSample.image] : [],
@@ -580,7 +600,7 @@ const actions = {
     ui.focus = true;
     render();
   },
-  // a chat or an image: the models follow the kind
+  // what is tried: the models follow the kind
   "try-kind"(control) {
     if (play.running || !KINDS.includes(control.dataset.kind)) return;
     Object.assign(play, { kind: control.dataset.kind, model: null, open: null });
@@ -702,6 +722,52 @@ const forms = {
         return signedOut ? null : refresh(true).catch(() => {});
       })
       .then(() => { if (!signedOut) draw(); });
+  },
+  // The playground: speech asked for as the chosen route. Only the words are sent with the
+  // model; a voice, for a model that needs one, is sent with a client.
+  "try-speech"(form) {
+    const ask = draftOf(form, "speech");
+    if (!ask) return;
+    tryOnce("speech", ask, (route, model, signal) => trySpeech(route.id, { model, input: ask }, { signal }).then(({ sound, row }) => ({ sound, row, state: sound ? "done" : "failed" })),
+      () => ({ sound: playSample.sound, facts: playSample.speechFacts, bytes: 31000, media: "sounds" }));
+  },
+  // The playground: the chosen sound file written down, sent as a form with the model.
+  "try-transcription"() {
+    const file = play.file;
+    if (!file) return;
+    tryOnce("transcription", fileLabel(file), (route, model, signal) => tryTranscription(route.id, { model, file }, { signal }).then(({ text, row }) => ({ text, row, state: text ? "done" : "failed" })),
+      () => ({ text: playSample.heard[lang], facts: playSample.heardFacts }));
+  },
+  // The playground: a video asked for as the chosen route. It is made as a job of minutes,
+  // which the page watches; meanwhile the screen stays free. Leaving the page leaves the job
+  // to the gateway, which keeps its video if the route keeps what it makes.
+  "try-video"(form) {
+    const { route, kind, model } = playNow(data, play);
+    const ask = draftOf(form, "video");
+    if (!route || kind !== "video" || !model || !ask || play.running) return;
+    const turn = { ask, route: route.id, kept: keepsMedia(route), state: "waiting", started: Date.now(), video: null, error: null, facts: null };
+    Object.assign(play, { route: route.id, model, open: null });
+    play.draft.video = "";
+    play.turns.video.push(turn);
+    render();
+    toEnd();
+    if (!live) {
+      // on made-up data a video "is made" in a few seconds
+      return void setTimeout(() => {
+        if (!play.turns.video.includes(turn)) return;
+        const facts = madeUpFacts(route, "video", model, { ...playSample.videoFacts, totalMs: Date.now() - turn.started });
+        Object.assign(turn, { state: "done", video: playSample.video, facts });
+        madeUp(route, "video", turn, ask, 599000, "videos");
+        drawLater();
+      }, 6000);
+    }
+    tryVideo(route.id, { model, prompt: ask }, {})
+      .then(({ job, rowId }) => watchVideo(route.id, turn, job, rowId))
+      .catch((err) => {
+        if (err instanceof SignedOut) return signOut();
+        Object.assign(turn, { state: "failed", error: err instanceof TypeError ? core[lang].noAnswer : err.message });
+        drawLater();
+      });
   },
   // A model's new name. Routes that use it follow.
   rename(form, values) {
@@ -883,6 +949,11 @@ app.addEventListener("input", (event) => {
 });
 app.addEventListener("change", (event) => {
   const which = event.target.dataset?.play;
+  if (which === "file") {
+    play.file = event.target.files?.[0] ?? null;
+    ui.focus = true;
+    return render();
+  }
   if (which !== "route" && which !== "model") return;
   play[which] = event.target.value;
   if (which === "route") play.model = null;
@@ -895,6 +966,138 @@ app.addEventListener("keydown", (event) => {
   event.preventDefault();
   event.target.form?.requestSubmit();
 });
+
+// What was typed in the playground's field for a kind.
+function draftOf(form, kind) {
+  return (form.querySelector('[data-play="draft"]')?.value ?? play.draft[kind]).trim();
+}
+
+// A sound file as it is shown where it was asked: its name and size. (Also used before the
+// first drawing, so it formats the number itself rather than through context().)
+function fileLabel(file) {
+  const num = (n, digits) => new Intl.NumberFormat(lang === "tr" ? "tr-TR" : "en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
+  return `${file.name}, ${size({ num }, file.size)}`;
+}
+// The made-up sound file of the transcription states.
+function madeUpFile() {
+  return new File([new Uint8Array(playSample.file.bytes)], playSample.file.name, { type: "audio/mp4" });
+}
+
+// Draws the playground again after something arrived, unless a sound or a video is playing
+// there: then the next look draws it (see refresh).
+function drawLater() {
+  if (view?.screen !== "playground") return;
+  if ([...app.querySelectorAll("audio, video")].some((a) => !a.paused)) return void (waiting = true);
+  render();
+}
+
+// Speech or a transcription asked for as the chosen route: one request, which "Stop" cancels.
+// "send" makes it and says what came back; "pretend" is what arrives on made-up data.
+function tryOnce(kind, ask, send, pretend) {
+  const { route, kind: now, model } = playNow(data, play);
+  if (!route || now !== kind || !model || play.running) return;
+  const turn = { ask, route: route.id, kept: keepsMedia(route), state: "waiting", error: null, facts: null };
+  Object.assign(play, { route: route.id, model, open: null });
+  if (kind === "transcription") play.file = null;
+  else play.draft[kind] = "";
+  play.turns[kind].push(turn);
+  const draw = () => {
+    if (view?.screen !== "playground") return;
+    render();
+    toEnd();
+  };
+  if (!live) {
+    // on made-up data the answer "arrives" by itself after a moment
+    const started = Date.now();
+    const timer = setTimeout(() => {
+      play.running = null;
+      const { facts, bytes, media, ...made } = pretend();
+      Object.assign(turn, made, { state: "done", facts: madeUpFacts(route, kind, model, { ...facts, totalMs: Date.now() - started }) });
+      madeUp(route, kind, turn, ask, bytes, media);
+      draw();
+    }, 1400);
+    play.running = { abort() { clearTimeout(timer); play.running = null; turn.state = "stopped"; draw(); } };
+    return draw();
+  }
+  const abort = new AbortController();
+  play.running = abort;
+  draw();
+  send(route, model, abort.signal)
+    .then(({ row, ...made }) => {
+      Object.assign(turn, made);
+      if (row) turn.facts = { id: row.id, model: row.model, provider: row.provider, cost: row.cost, totalMs: row.totalMs };
+    })
+    .catch((err) => {
+      if (err instanceof SignedOut) return signOut();
+      if (abort.signal.aborted) return void (turn.state = "stopped");
+      turn.state = "failed";
+      turn.error = err instanceof TypeError ? core[lang].noAnswer : err.message;
+    })
+    .then(() => {
+      play.running = null;
+      return signedOut ? null : refresh(true).catch(() => {});
+    })
+    .then(() => { if (!signedOut) draw(); });
+}
+
+// What a made-up answer leaves behind: a request of the route, its cost, and what was kept.
+function madeUp(route, kind, turn, ask, bytes, media) {
+  data.requests.unshift({ route: route.id, kind, model: turn.facts.model, seconds: turn.facts.totalMs / 1000, cost: turn.facts.cost, ago: 1, ok: true });
+  route.today += turn.facts.cost;
+  route.used += turn.facts.cost;
+  if (!turn.kept || !media) return;
+  const src = turn.sound ?? turn.video;
+  data[media].unshift({ id: `p${data[media].length + 1}`, kind: media === "sounds" ? "audio" : "video", route: route.id, model: turn.facts.model, prompt: ask, cost: turn.facts.cost, bytes, ago: 1, src });
+  data.mediaSpace = { ...data.mediaSpace, [media]: data.mediaSpace[media] + 1, bytes: data.mediaSpace.bytes + bytes };
+}
+
+// A video job the playground started, asked about every few seconds until it ends, while the
+// page is open and the turn is still on it ("Start over" forgets it). Its video is played from
+// the copy the gateway kept, or else from the panel's own link to the provider's.
+async function watchVideo(routeId, turn, job, rowId) {
+  let status = job;
+  for (let misses = 0; !["completed", "failed", "cancelled", "expired"].includes(status.status); ) {
+    await new Promise((done) => setTimeout(done, 5000));
+    if (!play.turns.video.includes(turn) || signedOut) return;
+    try {
+      status = await videoJob(routeId, job.id);
+      misses = 0;
+    } catch (err) {
+      if (err instanceof SignedOut) return signOut();
+      // a gateway that is restarting is asked again; one that is gone for a minute is given up on
+      if (++misses < 12) continue;
+      return void (Object.assign(turn, { state: "failed", error: err instanceof TypeError ? core[lang].noAnswer : err.message }), drawLater());
+    }
+  }
+  const totalMs = Date.now() - turn.started;
+  let row = rowId ? await requestRow(rowId).catch(() => null) : null;
+  // A video the route keeps is fetched a moment after the job ends: wait for it a while, since
+  // the kept copy can be sought in (Safari plays nothing else).
+  const own = () => row?.media?.find((m) => m.kind === "video")?.src;
+  for (let tries = 0; status.status === "completed" && turn.kept && row && !own() && tries < 20; tries++) {
+    await new Promise((done) => setTimeout(done, 1000));
+    row = (await requestRow(rowId).catch(() => null)) ?? row;
+  }
+  if (row) turn.facts = { id: row.id, model: row.model, provider: row.provider, cost: row.cost, totalMs };
+  if (status.status === "completed") {
+    Object.assign(turn, { state: "done", video: own() ?? `/api/routes/${encodeURIComponent(routeId)}/videos/${encodeURIComponent(job.id)}/content?index=0` });
+  } else {
+    Object.assign(turn, { state: "failed", error: typeof status.error === "string" ? status.error : typeof status.error?.message === "string" ? status.error.message : null });
+  }
+  await refresh(true).catch(() => {});
+  drawLater();
+}
+
+// While a video is being made, how long it has been is counted on the screen, second by second,
+// without drawing the sheet again.
+setInterval(() => {
+  if (view?.screen !== "playground" || playNow(data, play).kind !== "video") return;
+  const ctx = context();
+  play.turns.video.forEach((turn, i) => {
+    const at = turn.state === "waiting" ? app.querySelector(`[data-elapsed="${i}"]`) : null;
+    if (at) at.textContent = elapsed(ctx, turn);
+  });
+}, 1000);
 
 // Does this route keep the images it makes (and does the gateway keep any)?
 function keepsMedia(route) {
@@ -1054,7 +1257,7 @@ async function refresh(force = false) {
   }
   // A playground answer whose cost was not known when it ended learns it from its row.
   let learned = false;
-  for (const turn of [...play.turns.chat, ...play.turns.image]) {
+  for (const turn of Object.values(play.turns).flat()) {
     const cost = turn.facts?.id != null && turn.facts.cost == null ? state.requests.find((q) => q.id === turn.facts.id)?.cost : null;
     if (cost != null) {
       turn.facts.cost = cost;

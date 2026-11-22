@@ -66,7 +66,14 @@ function paint() {
       ["play", "screen=playground"], ["playWaiting", "screen=playground&step=waiting"], ["playWriting", "screen=playground&step=streaming"], ["playDone", "screen=playground&step=done&detail=1"],
       ["playFail", "screen=playground&step=fail"], ["playOver", "screen=playground&as=news"], ["playNone", "state=empty&screen=playground"],
       ["playImage", "screen=playground&as=home&kind=image"], ["playImageWaiting", "screen=playground&as=home&kind=image&step=waiting"],
-      ["playImageDone", "screen=playground&as=home&kind=image&step=done&detail=1"], ["playImageFail", "screen=playground&as=home&kind=image&step=fail"]];
+      ["playImageDone", "screen=playground&as=home&kind=image&step=done&detail=1"], ["playImageFail", "screen=playground&as=home&kind=image&step=fail"],
+      ["playSpeech", "screen=playground&as=home&kind=speech"], ["playSpeechWaiting", "screen=playground&as=home&kind=speech&step=waiting"],
+      ["playSpeechDone", "screen=playground&as=home&kind=speech&step=done&detail=1"], ["playSpeechFail", "screen=playground&as=home&kind=speech&step=fail"],
+      ["playHear", "screen=playground&as=home&kind=transcription"], ["playHearChosen", "screen=playground&as=home&kind=transcription&step=chosen"],
+      ["playHearWaiting", "screen=playground&as=home&kind=transcription&step=waiting"], ["playHearDone", "screen=playground&as=home&kind=transcription&step=done&detail=1"],
+      ["playHearFail", "screen=playground&as=home&kind=transcription&step=fail"],
+      ["playVideo", "screen=playground&as=home&kind=video"], ["playVideoWaiting", "screen=playground&as=home&kind=video&step=waiting"],
+      ["playVideoDone", "screen=playground&as=home&kind=video&step=done&detail=1"], ["playVideoFail", "screen=playground&as=home&kind=video&step=fail"]];
     const frames = views.map(([label, params]) =>
       `<figure><figcaption>${w[label] ?? label}</figcaption>
        <iframe loading="lazy" title="${skin.id} ${label}" src="index.html?skin=${skin.id}&${params.includes("state=") ? params : `state=default&${params}`}&lang=${lang}&theme=${theme}&bar=0"></iframe></figure>`).join("");

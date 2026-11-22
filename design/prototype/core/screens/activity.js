@@ -75,7 +75,7 @@ function mediaSub(ctx) {
 // A video's first frame, for its tile: a browser shows nothing until it has a moment to show.
 const frame = (src) => (src.startsWith("data:") || src.includes("#") ? src : `${src}#t=0.1`);
 
-function size(ctx, bytes) {
+export function size(ctx, bytes) {
   const units = [["GB", 1024 ** 3], ["MB", 1024 ** 2], ["KB", 1024]];
   let at = units.findIndex(([, per]) => bytes >= per);
   if (at < 0) at = units.length - 1;
