@@ -1,6 +1,7 @@
 // Route detail. Built once; every skin restyles it through the shared tokens.
 // Order follows what a person opens a route for: is it on, what has it spent,
 // how do I connect to it, which models may it use, what did it just do.
+import { modelPicker } from "./models.js";
 import { sheet, cross, curl } from "./sheet.js";
 
 function snippets(route, data) {
@@ -52,15 +53,13 @@ export function routeSheet(ctx, ui) {
             <p class="br-actions"><button class="br-btn main" data-action="new-key" data-id="${route.id}">${t("newKey")}</button><button class="br-btn" data-action="edit" data-edit="" data-autofocus>${t("cancel")}</button></p>`
          : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="key">${t("newKey")}</button></p>`}`;
 
-  // Models the route does not have yet, to add one.
-  const choices = ctx.modelChoices.filter((m) => !route.models.includes(m));
-  const addModel = ui.editing === "model" && choices.length
-    ? `<form class="br-form" data-form="model" data-id="${route.id}">
-        <label class="br-label" for="br-add-model">${t("modelToAdd")}</label>
-        <span class="br-select"><select class="br-input wide br-keep" id="br-add-model" name="model" data-autofocus>${choices.map((m) => `<option>${esc(m)}</option>`).join("")}</select></span>
-        <p class="br-actions" style="margin-top:12px"><button class="br-btn main" type="submit">${t("add")}</button><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
+  // Adding a model: the provider's models, to search and pick from. Picking one adds it.
+  const addModel = ui.editing === "model"
+    ? `<form class="br-form br-adding" data-form="find" data-id="${route.id}">
+        ${modelPicker(ctx, ui, { mode: "add", taken: route.models, routeId: route.id })}
+        <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
       </form>`
-    : route.models.length && choices.length ? `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("addModel")}</button></p>` : "";
+    : route.models.length ? `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("addModel")}</button></p>` : "";
 
   const code = snippets(route, data);
   const tab = ui.tab in code ? ui.tab : "curl";

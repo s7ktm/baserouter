@@ -4,6 +4,10 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Changed
+
+- Choosing a model in the panel (adding one to a route, or a new route's first) is a model picker instead of a long drop-down: a search, the kinds of model (text, image, speech, transcription, video) with how many of each, and a row per model with its name, id, price and what it reads, all from OpenRouter's own list. `GET /api/models` gives that for each model instead of ids only.
+
 ### Fixed
 
 - The model list (`/v1/models`, and the panel's choice of a route's models) left out most models that only make images, sound or video, because OpenRouter lists only text models unless asked for all. Every model is listed now, and an app can pass OpenRouter's filters on: `/v1/models?output_modalities=image`, `?supported_parameters=tools`, `?category=`.

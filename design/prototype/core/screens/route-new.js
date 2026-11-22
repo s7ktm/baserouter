@@ -1,5 +1,6 @@
 // New route: a short form, then the one moment the full key is shown,
 // with a line that watches for the first request.
+import { modelPicker } from "./models.js";
 import { sheet, curl } from "./sheet.js";
 
 export function newRouteSheet(ctx, ui) {
@@ -49,8 +50,8 @@ export function newRouteSheet(ctx, ui) {
       <p class="br-note" style="margin-top:8px">${t("routeNameHint")}</p>
       <label class="br-label" for="br-new-budget">${t("monthly")}</label>
       <input class="br-input wide" id="br-new-budget" name="budget" type="number" inputmode="decimal" min="1" step="1" value="5" required>
-      <label class="br-label" for="br-model">${t("firstModel")}</label>
-      <span class="br-select"><select class="br-input wide br-keep" id="br-model" name="model">${ctx.modelChoices.map((m) => `<option>${esc(m)}</option>`).join("")}</select></span>
+      ${ui.picking ? "" : `<span class="br-label">${t("firstModel")}</span>`}
+      ${modelPicker(ctx, ui, { mode: "choose" })}
       <p class="br-note" style="margin-top:8px">${t("modelLater")}</p>
       <p class="br-actions" style="margin-top:16px"><button class="br-btn main" type="submit">${t("makeRoute")}</button></p>
     </form>`,

@@ -5,6 +5,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
 import { dayStart, monthStart, nextMonthStart, localDate } from "./budget.ts";
 import type { Deps, Env } from "./deps.ts";
+import { catalogue, type CatalogueModel } from "./catalogue.ts";
 import { MediaKeeper } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
@@ -346,22 +347,25 @@ export function admin(deps: Deps) {
     });
   });
 
-  // The provider's model ids, for choosing a route's model. Kept for ten minutes.
-  let models: { providerId: string; at: number; ids: string[] } | null = null;
+  // The provider's models, for choosing a route's model: what each makes, takes and costs
+  // (see catalogue.ts). Asked for once in ten minutes.
+  let models: { providerId: string; at: number; list: CatalogueModel[] } | null = null;
   app.get("/models", async (c) => {
     const provider = store.providers()[0];
     if (!provider) return c.json({ models: [] });
-    if (models && models.providerId === provider.id && deps.now() - models.at < 10 * 60_000) return c.json({ models: models.ids });
+    if (models && models.providerId === provider.id && deps.now() - models.at < 10 * 60_000) return c.json({ models: models.list });
+    const key = unseal(deps.master, provider.key_sealed);
+    const read = async (res: Response) => (res.ok ? (((await res.json()) as { data?: unknown }).data ?? []) : (await res.body?.cancel(), null));
     try {
-      const res = await openrouter.models(deps.upstream, unseal(deps.master, provider.key_sealed), AbortSignal.timeout(15_000));
-      if (!res.ok) {
-        await res.body?.cancel();
-        return c.json({ models: [] });
-      }
-      const list = ((await res.json()) as { data?: { id?: unknown }[] }).data ?? [];
-      const ids = list.map((m) => m.id).filter((id): id is string => typeof id === "string").sort();
-      models = { providerId: provider.id, at: deps.now(), ids };
-      return c.json({ models: ids });
+      const [all, videos] = await Promise.all([
+        openrouter.models(deps.upstream, key, AbortSignal.timeout(15_000)).then(read),
+        // Video prices are only in the video list; without them the list still stands.
+        openrouter.get(deps.upstream, key, "/videos/models", AbortSignal.timeout(15_000)).then(read).catch(() => []),
+      ]);
+      if (!all) return c.json({ models: [] });
+      const list = catalogue(all, videos ?? []);
+      models = { providerId: provider.id, at: deps.now(), list };
+      return c.json({ models: list });
     } catch {
       return c.json({ models: [] });
     }

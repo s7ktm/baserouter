@@ -142,7 +142,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
 | `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, and the last 60 kept images, sounds and videos each |
-| `GET /api/models` | The provider's model ids, all of them (images, sound and video included), for choosing a route's model |
+| `GET /api/models` | The provider's models, for choosing a route's model, in OpenRouter's order: for each, `id`, `name`, what it `makes` (`text`, `image`, `speech`, `transcription`, `video`), what it `takes`, its `context`, its price per token read (`in`) and written (`out`) for text models, its lowest price per second (`perSecond`) for video models, and whether it is `free`. Models the gateway cannot use (embeddings, reranking, moderation) are left out. Asked of OpenRouter once in ten minutes |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
 | `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images, sound and video |

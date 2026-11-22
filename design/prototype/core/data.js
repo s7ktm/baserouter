@@ -107,6 +107,32 @@ export const catalog = [
 // What "New route" offers as a first model.
 export const modelChoices = ["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"];
 
+// The provider's models, in the shape the gateway gives them (gateway/src/catalogue.ts):
+// what each makes and takes, how much it reads ("context", tokens), its price per token read
+// and written, or per second of video, in US dollars. Made up, after OpenRouter's list.
+const model = (id, name, makes, takes, context, inM, outM, extra = {}) =>
+  ({ id, name, makes, takes, context, in: inM == null ? null : inM / 1e6, out: outM == null ? null : outM / 1e6, perSecond: null, free: id.endsWith(":free"), ...extra });
+export const modelCatalogue = [
+  model("anthropic/claude-sonnet-5.5", "Anthropic: Claude Sonnet 5.5", ["text"], ["text", "image", "file"], 1000000, 3, 15),
+  model("openai/gpt-5-mini", "OpenAI: GPT-5 Mini", ["text"], ["text", "image", "file"], 400000, 0.25, 2),
+  model("google/gemini-2.5-flash", "Google: Gemini 2.5 Flash", ["text"], ["text", "image", "file", "audio", "video"], 1048576, 0.3, 2.5),
+  model("google/gemini-3.1-flash-lite-image", "Google: Gemini 3.1 Flash Lite Image", ["image", "text"], ["text", "image"], 65536, 0.1, 0.4),
+  model("x-ai/grok-imagine-video-1.5-lite", "xAI: Grok Imagine Video 1.5 Lite", ["video"], ["text", "image"], null, null, null, { perSecond: 0.02 }),
+  model("google/veo-3.1-lite", "Google: Veo 3.1 Lite", ["video"], ["text", "image"], null, null, null, { perSecond: 0.03 }),
+  model("hexgrad/kokoro-82m", "hexgrad: Kokoro 82M", ["speech"], ["text"], 4096, null, null),
+  model("elevenlabs/eleven-flash-v2.5", "ElevenLabs: Flash v2.5", ["speech"], ["text"], null, null, null),
+  model("qwen/qwen3-asr-0.6b", "Qwen: Qwen3 ASR 0.6B", ["transcription"], ["audio"], null, null, null),
+  model("openai/gpt-4o-mini-transcribe", "OpenAI: GPT-4o Mini Transcribe", ["transcription"], ["audio"], null, null, null),
+  model("recraft/recraft-v4.1-flash", "Recraft: Recraft V4.1 Flash", ["image"], ["text"], null, null, null),
+  model("black-forest-labs/flux-3-schnell", "Black Forest Labs: FLUX.3 Schnell", ["image"], ["text", "image"], null, null, null),
+  model("openai/gpt-audio-mini", "OpenAI: GPT Audio Mini", ["speech", "text"], ["text", "audio"], 128000, 0.6, 2.4),
+  model("deepseek/deepseek-v4", "DeepSeek: DeepSeek V4", ["text"], ["text"], 163840, 0.27, 1.1),
+  model("meta-llama/llama-5-scout:free", "Meta: Llama 5 Scout (free)", ["text"], ["text", "image"], 131072, 0, 0),
+  model("mistralai/mistral-small-4", "Mistral: Mistral Small 4", ["text"], ["text", "image"], 131072, 0.1, 0.3),
+  model("qwen/qwen3.5-coder", "Qwen: Qwen3.5 Coder", ["text"], ["text"], 262144, 0.22, 0.95),
+  model("bytedance/seedance-2.0-fast", "ByteDance: Seedance 2.0 Fast", ["video"], ["text", "image", "video", "audio"], null, null, null),
+];
+
 export const states = {
   // a normal day: one provider unreachable, one route stopped at its budget, one switched off
   default: base,
@@ -198,5 +224,14 @@ function stress() {
       src: clip((i % 3) + 1),
     })),
     mediaSpace: { images: 120394, sounds: 98765, videos: 4321, bytes: 1073000000, keeping: true, max: 1024 ** 3 },
+    // 120 models: very long names and ids, huge and tiny prices, every kind
+    models: Array.from({ length: 120 }, (_, i) => model(
+      i % 7 === 0 ? `provider-with-a-very-long-name-${i}/extremely-long-model-identifier-with-many-parts-v${i}.5-preview-0612-thinking` : `p${i}/m${i}`,
+      i % 7 === 0 ? "A Provider With A Very Long Name: An Extremely Long Model Name That Goes On And On, Preview Edition " + i : `P: M${i}`,
+      [["text"], ["image"], ["speech"], ["transcription"], ["video"], ["image", "text"]][i % 6],
+      i % 3 ? ["text", "image", "file", "audio", "video"] : ["text"],
+      [2000000, 4096, null][i % 3], [1234.5, 0.000001, 0][i % 3], [9999, 0.000004, 0][i % 3],
+      i % 6 === 4 ? { perSecond: [12.5, 0.005][i % 2] } : {},
+    )),
   };
 }

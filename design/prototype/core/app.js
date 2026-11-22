@@ -1,7 +1,8 @@
 // The shared mechanism: one state, one set of actions, any skin on top.
 // Served by a gateway, the state is the gateway's and actions go to its API. Anywhere
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
-import { states, catalog, modelChoices } from "./data.js";
+import { states, catalog, modelChoices, modelCatalogue } from "./data.js";
+import { modelPicker } from "./screens/models.js";
 import { api, gatewayStatus, SignedOut, toData } from "./live.js";
 import { words as core } from "./words.js";
 import { checkSkin, missingTokens } from "./contract.js";
@@ -73,13 +74,14 @@ if (live) {
 // In a live panel, only the providers the gateway can add are offered, and one that is
 // already added is marked so the list can leave it out.
 const liveCatalog = catalog.filter((k) => k.kind === "openrouter").map((k) => ({ ...k }));
-let liveModels = null; // the provider's model ids, once asked for
+let liveModels = null; // the provider's models (see gateway/src/catalogue.ts), once asked for
 
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
 //   screen=providers|add-provider|new-route|activity|settings
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
+//   find=<words> makes=text|image|speech|transcription|video (choosing a model: route edit=model, new-route edit=model)
 //   show=images|sounds|videos (activity: what was kept)   media=<id> (one of them)   edit=delete-media
 const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
@@ -89,7 +91,8 @@ let copiedId = null;
 let opener = null;
 
 function fresh() {
-  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false };
+  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false,
+    find: "", makes: "", more: 0, picking: false, chosen: null };
 }
 if (signedOut) {
   view = { screen: "sign-in" };
@@ -118,6 +121,14 @@ if (signedOut) {
     ui.made = { id: data.routes[0].id, key: demoKey, first: ui.step === "arrived" ? demoFirst : null };
     ui.step = "made";
   }
+}
+
+// Choosing a model, from the URL: the search, the category, and for a new route whether the field is open.
+ui.find = query.get("find") ?? "";
+ui.makes = ["text", "image", "speech", "transcription", "video"].includes(query.get("makes")) ? query.get("makes") : "";
+if (view?.screen === "new-route") {
+  ui.picking = ui.editing === "model";
+  ui.chosen = defaultModel();
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -157,7 +168,7 @@ function context() {
     num,
     data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref,
     catalog: live ? liveCatalog.map((k) => ({ ...k, added: data.providers.some((p) => p.kind === k.kind) })) : catalog,
-    modelChoices: live ? orderModels(liveModels) : modelChoices,
+    models: live ? liveModels ?? [] : data.models ?? modelCatalogue,
     theme: theme(),
     copied: copiedId === "address",
     skins: registry.map((id) => ({ id, name: skins[id].name[lang], icon: skins[id].icon, active: id === skinId })),
@@ -278,16 +289,17 @@ const actions = {
   go(control) {
     const screen = control.dataset.screen;
     if (!(screen in screens) || fixed.has(screen)) return;
-    if (live && screen === "new-route" && !liveModels?.length) loadModels().then(fillModels);
+    if (live && screen === "new-route" && !liveModels?.length) loadModels().then(() => drawPicker());
     // adding the very first provider starts the three-step first run
     const flow = control.dataset.flow === "1" || (screen === "add-provider" && !data.providers.length && !data.routes.length);
-    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null });
+    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null });
   },
   close,
   async edit(control) {
     const editing = control.dataset.edit || null;
-    if (live && editing === "model") await loadModels();
+    if (live && editing === "model") loadModels().then(() => drawPicker(true));
     ui.editing = editing;
+    Object.assign(ui, { find: "", makes: "", more: 0 });
     ui.error = null;
     ui.saved = false;
     ui.focus = Boolean(editing);
@@ -402,21 +414,36 @@ const actions = {
       send(api.removeProvider(control.dataset.id));
     }
   },
+  // choosing a model (core/screens/models.js): only the picker is drawn again
+  makes(control) { ui.makes = control.dataset.makes; ui.more = 0; drawPicker(); },
+  "more-models"() { ui.more++; drawPicker(); },
+  "pick-open"() { Object.assign(ui, { picking: true, find: "", makes: "", more: 0 }); drawPicker(true); },
+  "pick-close"() { ui.picking = false; drawPicker(); },
+  "pick-model"(control) {
+    const model = control.dataset.model;
+    const picker = control.closest("#br-picker");
+    if (picker?.dataset.mode !== "add") {
+      ui.chosen = model;
+      ui.picking = false;
+      drawPicker();
+      app.querySelector("#br-picker .br-btn")?.focus();
+      return;
+    }
+    const route = data.routes.find((r) => r.id === picker.dataset.id);
+    if (!route || route.models.includes(model)) return;
+    route.models = [...route.models, model];
+    ui.editing = null;
+    render();
+    if (live) send(api.setModels(route.id, route.models));
+  },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
   theme(control) { themePref = control.dataset.value; keep.set("theme", themePref); render(); },
   lang(control) { lang = control.dataset.value; keep.set("lang", lang); render(); },
 };
 
 const forms = {
-  model(form, values) {
-    const route = data.routes.find((r) => r.id === form.dataset.id);
-    const model = String(values.get("model") ?? "");
-    if (!route || !model || route.models.includes(model)) return;
-    route.models = [...route.models, model];
-    ui.editing = null;
-    render();
-    if (live) send(api.setModels(route.id, route.models));
-  },
+  // the model search: Enter picks the first model found (see the keydown listener)
+  find() {},
   password(form, values) {
     const done = () => { ui.editing = null; ui.error = null; ui.saved = true; };
     if (!live) return done(), render();
@@ -567,6 +594,19 @@ addEventListener("keydown", (event) => {
   if (event.key === "Escape" && view) close();
 });
 
+// Typing a model search draws the picker again, and nothing else.
+app.addEventListener("input", (event) => {
+  if (!event.target.matches("[data-find]")) return;
+  ui.find = event.target.value;
+  ui.more = 0;
+  drawPicker();
+});
+app.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.matches("[data-find]")) return;
+  event.preventDefault();
+  app.querySelector("#br-picker .br-model")?.click();
+});
+
 // ---- live: keeping the panel in step with the gateway ----
 
 function replaceData(next) {
@@ -574,11 +614,10 @@ function replaceData(next) {
   Object.assign(data, next);
 }
 
-// The three suggested models first, when the provider has them, then the rest.
-function orderModels(ids) {
-  if (!ids?.length) return modelChoices;
-  const first = modelChoices.filter((m) => ids.includes(m));
-  return [...first, ...ids.filter((m) => !first.includes(m))];
+// The model a new route starts with: the first suggested one the provider has, or its first.
+function defaultModel() {
+  const models = live ? liveModels ?? [] : data.models ?? modelCatalogue;
+  return modelChoices.find((id) => models.some((m) => m.id === id)) ?? models[0]?.id ?? modelChoices[0];
 }
 
 async function loadModels() {
@@ -588,13 +627,23 @@ async function loadModels() {
   } catch {}
 }
 
-// The model list arrived while the new-route form is open: fill its choices in place,
-// so nothing typed in the form is lost.
-function fillModels() {
-  const select = app.querySelector("#br-model");
-  if (!select || !liveModels?.length) return;
-  const chosen = select.value;
-  select.replaceChildren(...orderModels(liveModels).map((m) => new Option(m, m, false, m === chosen)));
+// Draws the model picker again in place: while a search is typed, when a category is
+// chosen, when the provider's models arrive. The rest of the sheet, and anything typed into
+// it, is left alone. The search keeps its focus and caret.
+function drawPicker(focusFind = false) {
+  const picker = app.querySelector("#br-picker");
+  if (!picker) return;
+  const ctx = context();
+  if (picker.dataset.mode === "choose" && (!ui.chosen || (live && liveModels?.length && !liveModels.some((m) => m.id === ui.chosen)))) ui.chosen = defaultModel();
+  const find = picker.querySelector("[data-find]");
+  const typing = find && document.activeElement === find ? find.selectionStart : null;
+  const route = data.routes.find((r) => r.id === picker.dataset.id);
+  picker.outerHTML = modelPicker({ ...ctx, t: ctx.shared }, ui, { mode: picker.dataset.mode, taken: route?.models ?? [], routeId: picker.dataset.id });
+  const again = app.querySelector("#br-picker [data-find]");
+  if (again && (typing !== null || focusFind)) {
+    again.focus();
+    if (typing !== null) again.setSelectionRange(typing, typing);
+  }
 }
 
 // An action that did not go through: say so in the open sheet, or ask to sign in again.
