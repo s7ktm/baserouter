@@ -86,7 +86,7 @@ export default {
         <div class="word">BaseRouter<small>${summary}</small></div>
         <div class="key"><button data-action="go" data-screen="settings" aria-label="${t("settings")}">${sliders}</button></div>
       </header>
-      <p class="feed-h">${t("plugged")}</p>
+      <div class="feed-h"><span>${t("plugged")}</span><button class="models" data-action="go" data-screen="models">${t("models")} <b>${(data.models ?? []).length}</b>${chevron}</button></div>
       <div class="plugs">${data.providers.map((p) => this.provider(p, ctx)).join("")}
         <div class="plug add"><button class="head" data-action="go" data-screen="add-provider" aria-label="${t("plugIn")}">+</button><div class="wire"></div></div>
       </div>

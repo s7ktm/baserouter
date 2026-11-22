@@ -24,6 +24,7 @@ URL parameters for `index.html`:
 | `lang`, `theme` | `en`, `tr`; `light`, `dark`, `auto` |
 | `route` | A route id: opens its detail. With `edit=budget`, `edit=model`, `edit=key` or `edit=delete`, on that form or question; `edit=key&step=made` shows a new key |
 | `screen` | `providers`, `add-provider`, `new-route`, `activity`, `settings`, and `sign-in` on made-up data |
+| `models=none` | Leaves BaseRouter without models, for a new route that has none to choose from |
 | `find`, `makes` | While choosing a model (`route=<id>&edit=model`, or `screen=new-route&edit=model` with the field open): the search, and the kind, `text`, `image`, `speech`, `transcription` or `video` |
 | `step` | For `add-provider`: `pick`, `key`, `testing`, `ok`, `fail`, with `kind` (for example `kind=openrouter`). For `new-route`: `made`, `arrived`. For `sign-in`: `login`, `setup`, `fail` |
 | `flow=1` | Shows a flow as part of the first run, with numbered steps |
@@ -53,7 +54,7 @@ A skin's own words (`strings`) apply to its home screen only; shared screens alw
 - `data-action="toggle" data-id="<route id>"` switches a route on or off
 - `data-action="copy"` copies the address
 - `data-action="open" data-id="<route id>"` opens the route's detail; add `data-edit="budget"` to land on its budget form
-- `data-action="go" data-screen="<screen>"` opens `providers`, `add-provider`, `new-route`, `activity` or `settings`. Every skin offers a way to all five from its home screen
+- `data-action="go" data-screen="<screen>"` opens `providers`, `add-provider`, `models`, `new-route`, `activity` or `settings`. Every skin offers a way to all six from its home screen
 
 Every route offers both `toggle` and `open`. The usual way is a button with class `br-stretch` that covers the whole route, with the skin's switch lifted above it by `position: relative; z-index: 1`.
 

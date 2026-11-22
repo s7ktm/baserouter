@@ -59,6 +59,7 @@ let themePref = pick("theme", "auto", (v) => ["light", "dark", "auto"].includes(
 const gateway = query.get("state") ? null : await gatewayStatus();
 const live = gateway !== null;
 const data = structuredClone(live ? states.empty : states[query.get("state")] ?? states.default);
+if (!live && query.get("models") === "none") data.models = []; // a new route with no models to choose from
 let signedOut = false;
 if (live) {
   data.address = `${location.origin}/v1`;
@@ -303,10 +304,10 @@ const actions = {
   go(control) {
     const screen = control.dataset.screen;
     if (!(screen in screens) || fixed.has(screen)) return;
-    if (live && screen === "new-route" && !liveModels?.length) loadModels().then(() => drawPicker());
+    if (live && screen === "models" && control.dataset.edit === "add") loadModels().then(() => drawPicker(true));
     // adding the very first provider starts the three-step first run
     const flow = control.dataset.flow === "1" || (screen === "add-provider" && !data.providers.length && !data.routes.length);
-    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null, model: control.dataset.model ?? null });
+    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null, model: control.dataset.model ?? null, editing: control.dataset.edit ?? null });
   },
   close,
   async edit(control) {
@@ -457,7 +458,7 @@ const actions = {
     const name = offer ? ensureModel(offer) : value;
     // A provider's model that is not in BaseRouter yet is made one first (a new route's model is
     // made when the route is: the gateway makes a model of every name a route lists).
-    const made = live && offer && !known && mode !== "choose" ? api.createModel({ name, from: [{ provider: offer.provider, model: offer.id }] }).catch(() => {}) : Promise.resolve();
+    const made = live && offer && !known ? api.createModel({ name, from: [{ provider: offer.provider, model: offer.id }] }).catch(() => {}) : Promise.resolve();
     if (mode === "choose") {
       Object.assign(ui, { chosen: name, picking: false });
       drawPicker();
@@ -616,7 +617,7 @@ const forms = {
       if (key.includes("bad")) { ui.step = "fail"; ui.error = "401 invalid key"; }
       else {
         const name = kind.name ?? new URL(String(values.get("address"))).host;
-        data.providers.push({ id: `${kind.kind}-${data.providers.length + 1}`, name, status: "up", keyHint: key ? key.slice(-4) : null, models: kind.models });
+        data.providers.push({ id: data.providers.some((p) => p.id === kind.kind) ? `${kind.kind}-${data.providers.length + 1}` : kind.kind, name, status: "up", keyHint: key ? key.slice(-4) : null, models: kind.models });
         ui.step = "ok";
       }
       ui.focus = true;

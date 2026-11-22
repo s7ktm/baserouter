@@ -11,6 +11,7 @@ const icons = {
   leaf: '<path d="M5 19c0-9 5-14 14-14 0 9-5 14-14 14zM5 19l8-8"/>',
   list: '<path d="M5 7h14M5 12h14M5 17h9"/>',
   sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  stack: '<path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/>',
 };
 const glyph = (name) => `<svg viewBox="0 0 24 24">${icons[name] ?? icons.code}</svg>`;
 
@@ -96,9 +97,10 @@ export default {
       </div>
     </main>
     <nav class="bar">
-      <button aria-current="page">${glyph("home")}<span>${t("home")}</span></button>
-      <button data-action="go" data-screen="activity">${glyph("list")}<span>${t("activity")}</span></button>
-      <button data-action="go" data-screen="settings">${glyph("sliders")}<span>${t("settings")}</span></button>
+      <button aria-current="page" aria-label="${t("home")}">${glyph("home")}<span>${t("home")}</span></button>
+      <button data-action="go" data-screen="models" aria-label="${t("models")}">${glyph("stack")}<span>${t("models")}</span></button>
+      <button data-action="go" data-screen="activity" aria-label="${t("activity")}">${glyph("list")}<span>${t("activity")}</span></button>
+      <button data-action="go" data-screen="settings" aria-label="${t("settings")}">${glyph("sliders")}<span>${t("settings")}</span></button>
     </nav>`;
   },
 };

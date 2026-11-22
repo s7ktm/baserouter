@@ -53,14 +53,13 @@ export function routeSheet(ctx, ui) {
             <p class="br-actions"><button class="br-btn main" data-action="new-key" data-id="${route.id}">${t("newKey")}</button><button class="br-btn" data-action="edit" data-edit="" data-autofocus>${t("cancel")}</button></p>`
          : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="key">${t("newKey")}</button></p>`}`;
 
-  // Allowing a model: BaseRouter's models first, then what the providers offer (picking one of
-  // those makes it a model in BaseRouter, with that one place).
+  // Authorizing a model: one of BaseRouter's models. Models are added in Manage models.
   const allow = ui.editing === "model"
     ? `<form class="br-form br-adding" data-form="find" data-id="${route.id}">
         ${modelPicker(ctx, ui, { mode: "allow", taken: route.models, routeId: route.id })}
         <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
       </form>`
-    : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("allowModel")}</button><button class="br-btn quiet" data-action="go" data-screen="models">${t("allModels")}</button></p>`;
+    : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("allowModel")}</button><button class="br-btn quiet" data-action="go" data-screen="models">${t("manageModels")}</button></p>`;
 
   const code = snippets(route, data);
   const tab = ui.tab in code ? ui.tab : "curl";

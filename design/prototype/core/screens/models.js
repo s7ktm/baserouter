@@ -1,12 +1,13 @@
 // Choosing a model. One element, #br-picker, which the core redraws on its own while a search
 // is typed, so nothing else in the sheet (a name being typed in the new-route form) is touched.
 //
-// Where to look: "In BaseRouter" (the models already defined, by the names apps send) and each
-// provider (what it offers, as it describes it). Then a search and the kinds of model.
+// What it lists depends on where it is. On a route, only BaseRouter's own models, by the names
+// apps send: a route never takes a model straight from a provider. In Manage models, what each
+// provider offers, as it describes it, one provider at a time. Then a search and the kinds.
 //
-// mode "allow"  a route: a row allows its model (a provider's model becomes a model first)
+// mode "allow"  a route: a row authorizes its model
 //      "choose" a new route: a row becomes the field's value, and the field folds back
-//      "add"    the Models screen: a row adds a provider's model to BaseRouter
+//      "add"    Manage models: a row adds a provider's model to BaseRouter
 //      "place"  one model: a row adds a fallback place
 //
 // ui: where ("mine" or a provider id), find, makes, more, picking and chosen (new route).
@@ -72,11 +73,10 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "", forModel 
         <button type="button" class="br-btn" data-action="pick-open">${t("change")}</button></div></div>`;
   }
 
-  // Where to look. Routes and a new route start in BaseRouter; adding starts at a provider.
-  const ownFirst = mode === "allow" || mode === "choose";
-  const places = [...(ownFirst ? ["mine"] : []), ...data.providers.map((p) => p.id)];
-  const where = places.includes(ui.where) ? ui.where : ownFirst && mine.length ? "mine" : places.find((p) => p !== "mine") ?? "mine";
-  const own = where === "mine";
+  // Where to look: BaseRouter's models on a route, a provider's offer in Manage models.
+  const own = mode === "allow" || mode === "choose";
+  const places = own ? ["mine"] : data.providers.map((p) => p.id);
+  const where = places.includes(ui.where) ? ui.where : places[0] ?? "mine";
   const list = own ? mine.filter((m) => !taken.includes(m.name)) : (ctx.offers ?? []).filter((o) => o.provider === where);
 
   const found = matching(list, ui);
@@ -98,7 +98,9 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "", forModel 
     return row(ctx, { value: `${m.provider}|${m.id}`, name: m.name, code: m.id, small: facts(ctx, m, !ui.makes) + note, picked: false, adding: true, label: t("addNamed", { name: m.name }) });
   });
 
-  const empty = own && !mine.length ? "noOwnModels" : !own && !list.length && ctx.loadingOffers ? "modelsLoading" : "noModel";
+  const empty = own && !list.length && !(ui.find || ui.makes) ? (mine.length ? "allAuthorized" : "noOwnModels") : !own && !list.length && ctx.loadingOffers ? "modelsLoading" : "noModel";
+  // On a route, the way to more models is Manage models.
+  const manage = own ? `<p class="br-actions"><button type="button" class="br-btn quiet" data-action="go" data-screen="models"${mine.length ? "" : ' data-edit="add"'}>${t("manageModels")}</button></p>` : "";
   return `<div ${attrs}>${hidden}
     <label class="br-label" for="br-find">${t(label)}</label>
     ${places.length > 1 ? `<div class="br-chips br-where-chips" role="group" aria-label="${t("whereToLook")}">${places.map(placeChip).join("")}</div>` : ""}
@@ -108,6 +110,7 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "", forModel 
       ? `<ul class="br-models">${rows.join("")}</ul>
          ${found.length > shown.length ? `<p class="br-actions"><button type="button" class="br-btn quiet" data-action="more-models">${t("moreModels", { n: ctx.num(found.length - shown.length, 0) })}</button></p>` : ""}`
       : `<p class="br-lead">${t(empty)}</p>`}
+    ${manage}
     ${mode === "choose" && ui.chosen ? `<p class="br-actions"><button type="button" class="br-btn quiet" data-action="pick-close">${t("keepChosen", { id: esc(ui.chosen) })}</button></p>` : ""}
   </div>`;
 }

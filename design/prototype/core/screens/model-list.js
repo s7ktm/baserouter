@@ -16,7 +16,12 @@ export function modelsSheet(ctx, ui) {
   const usedBy = (name) => data.routes.filter((r) => r.models.includes(name));
   const open = models.find((m) => m.name === ui.model);
   const sub = models.length ? t("modelsSub", { n: ctx.num(models.length, 0), p: ctx.num(new Set(models.flatMap((m) => m.from.map((p) => p.provider))).size, 0) }) : "";
-  if (open) return sheet(ctx, ui, { title: t("models"), sub, body: oneModel(ctx, ui, open, usedBy(open.name)) });
+  // In the first run this is step 2 of 4: add a model, then make a route.
+  const step = ui.flow ? { n: 2, of: 4 } : null;
+  const next = ui.flow && models.length
+    ? `<p class="br-actions" style="margin-top:18px"><button class="br-btn main" data-action="go" data-screen="new-route" data-flow="1">${t("nextRoute")}</button></p>`
+    : "";
+  if (open) return sheet(ctx, ui, { title: t("models"), sub, step, body: oneModel(ctx, ui, open, usedBy(open.name)) + next });
 
   const adding = ui.editing === "add"
     ? `<form class="br-form" data-form="find">
@@ -28,7 +33,8 @@ export function modelsSheet(ctx, ui) {
   return sheet(ctx, ui, {
     title: t("models"),
     sub,
-    body: `<p class="br-note" style="margin-top:12px">${t("modelsNote")}</p>
+    step,
+    body: `<p class="br-note" style="margin-top:12px">${t(ui.flow && !models.length ? "modelsFirst" : "modelsNote")}</p>
       ${models.length
         ? `<ul class="br-models">${models.map((m) => {
             const n = usedBy(m.name).length;
@@ -37,8 +43,8 @@ export function modelsSheet(ctx, ui) {
                 <small>${m.makes.map((k) => t(`makes_${k}`)).join(", ")} · <span class="br-keep">${esc(fromSummary(ctx, m))}</span> · ${n ? t("usedByCount", { n }) : t("usedByNoRoute")}</small></span>
               <i class="br-mark br-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></i></button></li>`;
           }).join("")}</ul>`
-        : `<p class="br-lead">${t("noOwnModels")}</p>`}
-      ${adding}`,
+        : ui.editing === "add" ? "" : `<p class="br-lead">${t("noModelsYet")}</p>`}
+      ${adding}${ui.editing === "add" ? "" : next}`,
   });
 }
 
