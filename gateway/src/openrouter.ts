@@ -54,7 +54,9 @@ export function models(up: Upstream, key: string, signal?: AbortSignal): Promise
 export async function errorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => "");
   try {
-    const message = JSON.parse(text)?.error?.message;
+    // OpenAI's shape, or the older one where "error" is the message itself.
+    const error = JSON.parse(text)?.error;
+    const message = typeof error === "string" ? error : error?.message;
     if (typeof message === "string" && message) return message;
   } catch {}
   return text.trim().slice(0, 200) || `HTTP ${res.status}`;

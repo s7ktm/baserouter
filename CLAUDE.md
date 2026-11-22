@@ -2,7 +2,7 @@
 
 - Read [PRODUCT.md](PRODUCT.md) before any product or interface work. Once it exists, read `DESIGN.md` before any interface work; Claude Code does not load it automatically.
 - The design was approved by the maintainer on 2026-11-22. Gateway work may start; it follows [DESIGN.md](DESIGN.md) and the prototype in `design/prototype/`, and changes to the design still go through the maintainer.
-- The gateway is built one provider at a time, OpenRouter first. Do not design a general provider architecture up front; let it grow from what each provider teaches.
+- The gateway is built one provider at a time: OpenRouter first, NanoGPT second. Do not design a general provider architecture up front; let it grow from what each provider teaches. What NanoGPT's API does, and where its documentation is wrong, is in [docs/nanogpt.md](docs/nanogpt.md); read it before touching `gateway/src/nanogpt.ts`.
 - Never print, log or commit a provider key. Real keys live in `.env`, which git ignores.
 - Talk to the maintainer in Turkish. Repository documents and code are in English.
 - The interface ships in English and Turkish. Check every screen in both languages.

@@ -1,0 +1,112 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "Kokoro-82m",
+   "object": "model",
+   "created": 1795300000,
+   "owned_by": "hexgrad",
+   "name": "Kokoro 82M",
+   "architecture": {
+    "modality": "text->audio",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "audio"
+    ]
+   },
+   "pricing": {
+    "per_thousand_chars": 0.0017,
+    "currency": "USD"
+   },
+   "capabilities": {
+    "text_to_speech": true
+   },
+   "supported_parameters": {},
+   "category": "audio_tts"
+  },
+  {
+   "id": "Whisper-Large-V3",
+   "object": "model",
+   "created": 1795300000,
+   "owned_by": "openai",
+   "name": "Whisper Large V3",
+   "architecture": {
+    "modality": "audio->text",
+    "input_modalities": [
+     "audio"
+    ],
+    "output_modalities": [
+     "text"
+    ]
+   },
+   "pricing": {
+    "per_minute": 0.000495,
+    "currency": "USD"
+   },
+   "capabilities": {
+    "speech_to_text": true,
+    "word_timestamps": true
+   },
+   "supported_parameters": {},
+   "category": "audio_stt"
+  },
+  {
+   "id": "elevenlabs/music",
+   "object": "model",
+   "created": 1795300000,
+   "owned_by": "elevenlabs",
+   "name": "ElevenLabs Music",
+   "architecture": {
+    "modality": "text->music",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "music"
+    ]
+   },
+   "pricing": {
+    "per_second": 0.01,
+    "minimum": 0,
+    "currency": "USD"
+   },
+   "capabilities": {
+    "text_to_music": true
+   },
+   "supported_parameters": {},
+   "category": "audio_music"
+  },
+  {
+   "id": "elevenlabs/audio-isolation",
+   "object": "model",
+   "created": 1795300000,
+   "owned_by": "elevenlabs",
+   "name": "ElevenLabs Audio Isolation",
+   "architecture": {
+    "modality": "audio->audio",
+    "input_modalities": [
+     "audio"
+    ],
+    "output_modalities": [
+     "audio"
+    ]
+   },
+   "pricing": {
+    "per_second": 0.002016666666666667,
+    "minimum": 0.00121,
+    "currency": "USD"
+   },
+   "capabilities": {
+    "audio_to_audio": true,
+    "noise_reduction": true
+   },
+   "supported_parameters": {},
+   "category": "audio_processing"
+  }
+ ],
+ "meta": {
+  "count": 4
+ }
+}

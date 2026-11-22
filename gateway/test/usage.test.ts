@@ -106,6 +106,8 @@ test("usage without a cost keeps the tokens and leaves the cost unknown", () => 
 test("a plain completion gives its id, model, tokens and cost", async () => {
   expect(readPlain(await fixture("chat.json").json())).toEqual({
     id: "gen-1795300001-FixturePlain00000001",
+    requestId: null,
+    estimate: null,
     model: "openai/gpt-5-mini",
     usage: { promptTokens: 8, completionTokens: 9, cost: 0.0000205 },
     failed: false,
@@ -113,7 +115,7 @@ test("a plain completion gives its id, model, tokens and cost", async () => {
 });
 
 test("a plain response can fail after HTTP 200", async () => {
-  expect(readPlain(await fixture("chat-error-200.json").json())).toEqual({ id: "gen-1795300002-FixtureError00000001", model: null, usage: null, failed: true });
+  expect(readPlain(await fixture("chat-error-200.json").json())).toEqual({ id: "gen-1795300002-FixtureError00000001", requestId: null, estimate: null, model: null, usage: null, failed: true });
   expect(readPlain({ id: "gen-4", model: "m", choices: [{ finish_reason: "error", error: { code: 502, message: "x" } }] }).failed).toBe(true);
   expect(readPlain("not an object").failed).toBe(true);
 });

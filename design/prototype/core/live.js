@@ -31,9 +31,10 @@ export const api = {
   setup: (password) => call("POST", "/setup", { password }),
   login: (password) => call("POST", "/login", { password }),
   state: () => call("GET", "/state"),
-  // what the provider offers, each with the provider's id, to find models in
-  offers: () => call("GET", "/offers").then((answer) => (answer.offers ?? []).map((o) => ({ ...o, provider: answer.provider }))),
-  offerEndpoints: (model) => call("GET", `/offers/endpoints?model=${encodeURIComponent(model)}`).then((answer) => answer.providers),
+  // what the providers offer, each with its provider's id, to find models in
+  offers: () => call("GET", "/offers").then((answer) => (answer.offers ?? []).map((o) => ({ ...o, provider: o.provider ?? answer.provider }))),
+  // where one provider's model can come from: that provider's own providers for it
+  offerEndpoints: (model, provider) => call("GET", `/offers/endpoints?model=${encodeURIComponent(model)}${provider ? `&provider=${encodeURIComponent(provider)}` : ""}`).then((answer) => answer.providers),
   // models in BaseRouter
   createModel: (model) => call("POST", "/models", model),
   updateModel: (id, change) => call("PATCH", `/models/${encodeURIComponent(id)}`, change),

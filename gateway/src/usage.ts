@@ -11,15 +11,49 @@ export interface Usage {
 const number = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const object = (v: unknown): Record<string, unknown> | null => (typeof v === "object" && v !== null ? (v as Record<string, unknown>) : null);
 
-// OpenRouter's usage object. "cost" is what was charged to the OpenRouter account.
-// Transcriptions count "input_tokens" and "output_tokens" instead.
+// A provider's usage object. "cost" is what was charged to the account at the provider.
+// Transcriptions count "input_tokens" and "output_tokens" instead. NanoGPT names the currency
+// beside the cost; one that is not US dollars (an account paying in Nano) is not a cost in dollars.
 export function readUsage(value: unknown): Usage | null {
   const usage = object(value);
   if (!usage) return null;
+  const dollars = usage.currency === undefined || usage.currency === "USD";
   return {
     promptTokens: number(usage.prompt_tokens) ?? number(usage.input_tokens),
     completionTokens: number(usage.completion_tokens) ?? number(usage.output_tokens),
-    cost: number(usage.cost),
+    cost: dollars ? number(usage.cost) : null,
+  };
+}
+
+// What NanoGPT says a request cost when "usage" does not: "x_nanogpt_pricing" in every chat
+// answer and in the last chunk of every stream, asked for or not, and a top-level "cost" (with
+// "paymentSource") in an image answer and in the answer that starts a video. An amount in
+// another currency is not a cost in dollars. An estimate ("isEstimate": a plain answer that
+// did not wait for billing to finish) is not the charge either; it is given apart, as "estimate".
+// See docs/nanogpt.md.
+function readExtras(doc: Record<string, unknown>): { cost: number | null; estimate: number | null; promptTokens: number | null; completionTokens: number | null; requestId: string | null } {
+  const pricing = object(doc.x_nanogpt_pricing);
+  const id = [pricing?.requestId, doc.requestId].find((v): v is string => typeof v === "string" && v !== "") ?? null;
+  if (pricing) {
+    const dollars = (pricing.currency ?? pricing.paymentSource ?? "USD") === "USD";
+    const named = number(pricing.costUsd) ?? (dollars ? number(pricing.cost) : null);
+    const guess = pricing.isEstimate === true;
+    return { cost: guess ? null : named, estimate: guess ? named : null, promptTokens: number(pricing.inputTokens), completionTokens: number(pricing.outputTokens), requestId: id };
+  }
+  const flat = (doc.paymentSource ?? "USD") === "USD" && !("choices" in doc) ? number(doc.cost) : null;
+  return { cost: flat, estimate: null, promptTokens: null, completionTokens: null, requestId: id };
+}
+
+// The usage of an answer or of one event of a stream, with what NanoGPT says beside it.
+function usageOf(doc: Record<string, unknown>, before: Usage | null = null): { usage: Usage | null; requestId: string | null; estimate: number | null } {
+  const usage = readUsage(doc.usage) ?? before;
+  const extra = readExtras(doc);
+  if (extra.cost === null && extra.promptTokens === null) return { usage, requestId: extra.requestId, estimate: extra.estimate };
+  const cost = usage?.cost ?? extra.cost;
+  return {
+    usage: { promptTokens: usage?.promptTokens ?? extra.promptTokens, completionTokens: usage?.completionTokens ?? extra.completionTokens, cost },
+    requestId: extra.requestId,
+    estimate: cost === null ? extra.estimate : null,
   };
 }
 
@@ -52,6 +86,10 @@ function carriesToken(event: Record<string, unknown>): boolean {
 
 export interface Reading {
   id: string | null;
+  // NanoGPT's id for asking what the request cost, when the answer itself names it.
+  requestId: string | null;
+  // What NanoGPT guessed the request cost, when its answer came before the charge was known.
+  estimate: number | null;
   model: string | null;
   usage: Usage | null;
   failed: boolean;
@@ -60,11 +98,11 @@ export interface Reading {
 // A response that came as one JSON document.
 export function readPlain(body: unknown): Reading {
   const doc = object(body);
-  if (!doc) return { id: null, model: null, usage: null, failed: true };
+  if (!doc) return { id: null, requestId: null, estimate: null, model: null, usage: null, failed: true };
   return {
     id: typeof doc.id === "string" ? doc.id : null,
     model: typeof doc.model === "string" ? doc.model : null,
-    usage: readUsage(doc.usage),
+    ...usageOf(doc),
     failed: failed(doc),
   };
 }
@@ -76,6 +114,8 @@ export class StreamScanner implements Reading {
   images: Found[] = [];
   constructor(private readonly collectImages = false) {}
   id: string | null = null;
+  requestId: string | null = null;
+  estimate: number | null = null;
   model: string | null = null;
   usage: Usage | null = null;
   failed = false;
@@ -136,10 +176,10 @@ export class StreamScanner implements Reading {
       return;
     }
     // Once the first token is known (and with it the id and the model, which come in every
-    // chunk), only a line that mentions usage or an error is worth parsing.
+    // chunk), only a line that mentions usage, NanoGPT's pricing or an error is worth parsing.
     const settled = this.firstTokenAt !== null;
     const images = this.collectImages && mayCarryImages(data);
-    if (settled && !images && !data.includes('"usage"') && !data.includes('"error"')) return;
+    if (settled && !images && !data.includes('"usage"') && !data.includes('"x_nanogpt_pricing"') && !data.includes('"error"')) return;
 
     let event: Record<string, unknown> | null;
     try {
@@ -152,8 +192,10 @@ export class StreamScanner implements Reading {
     if (typeof event.model === "string") this.model = event.model;
     if (this.firstTokenAt === null && carriesToken(event)) this.firstTokenAt = now;
     if (failed(event)) this.failed = true;
-    const usage = readUsage(event.usage);
-    if (usage) this.usage = usage;
+    const read = usageOf(event, this.usage);
+    if (read.usage) this.usage = read.usage;
+    if (read.requestId) this.requestId = read.requestId;
+    this.estimate = read.usage?.cost == null ? (read.estimate ?? this.estimate) : null;
     if (images) this.images.push(...imagesIn(event));
   }
 }

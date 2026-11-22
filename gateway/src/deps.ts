@@ -7,7 +7,8 @@ import type { RouteRow, Store } from "./store.ts";
 export interface Deps {
   store: Store;
   master: Buffer; // seals provider keys
-  upstream: Upstream;
+  upstream: Upstream; // OpenRouter: https://openrouter.ai/api/v1
+  nanogpt: Upstream; // NanoGPT: https://api.nano-gpt.com/api
   now: () => number;
   // How long to wait before each attempt to ask the provider what a request cost,
   // when its response ended without saying.

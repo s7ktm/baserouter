@@ -123,7 +123,7 @@ test("what the provider offers is its list, in its order, with what each makes a
   const first = await asked();
   expect(first.offers.map((m) => m.id)).toEqual(["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"]);
   expect(first.offers[0]).toEqual({
-    id: "openai/gpt-5-mini", name: "OpenAI: GPT-5 Mini", makes: ["text"], takes: ["text", "image"], context: 400000, in: 0.00000025, out: 0.000002, perSecond: null, free: false,
+    id: "openai/gpt-5-mini", name: "OpenAI: GPT-5 Mini", makes: ["text"], takes: ["text", "image"], context: 400000, in: 0.00000025, out: 0.000002, perSecond: null, free: false, provider: "openrouter",
   });
   // The video list is asked for too, for its prices per second; the model list only once.
   expect((await asked()).offers).toHaveLength(3);

@@ -1,0 +1,211 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "openai/gpt-4.1-nano",
+   "object": "model",
+   "created": 1704067200,
+   "owned_by": "openai",
+   "name": "GPT 4.1 Nano",
+   "context_length": 1047576,
+   "max_output_tokens": 32768,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ]
+   },
+   "capabilities": {
+    "vision": true,
+    "video_input": false,
+    "audio_input": false,
+    "reasoning": false,
+    "tool_calling": false,
+    "parallel_tool_calls": false,
+    "structured_output": false,
+    "pdf_upload": true,
+    "batch_api": true
+   },
+   "supported_service_tiers": [
+    "fast",
+    "priority"
+   ],
+   "supported_batch_endpoints": [
+    "/v1/chat/completions",
+    "/v1/responses"
+   ],
+   "pricing": {
+    "prompt": 0.1,
+    "completion": 0.4,
+    "cacheReadInputPer1kTokens": 2.5e-05,
+    "currency": "USD",
+    "unit": "per_million_tokens"
+   },
+   "category": "More",
+   "subscription": {
+    "included": false,
+    "inputTokenMultiplier": 1,
+    "note": "Not included in subscription"
+   }
+  },
+  {
+   "id": "moonshotai/kimi-k2.5",
+   "object": "model",
+   "created": 1769385600,
+   "owned_by": "moonshot",
+   "name": "Kimi K2.5",
+   "context_length": 256000,
+   "max_output_tokens": 65536,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ]
+   },
+   "capabilities": {
+    "vision": true,
+    "video_input": false,
+    "audio_input": false,
+    "reasoning": false,
+    "tool_calling": true,
+    "parallel_tool_calls": false,
+    "structured_output": false,
+    "pdf_upload": false,
+    "batch_api": true
+   },
+   "open_weights": true,
+   "supported_service_tiers": [],
+   "supported_batch_endpoints": [
+    "/v1/chat/completions"
+   ],
+   "pricing": {
+    "prompt": 0.557,
+    "completion": 2.832,
+    "cacheReadInputPer1kTokens": 9.12e-05,
+    "currency": "USD",
+    "unit": "per_million_tokens"
+   },
+   "category": "More",
+   "providers": [
+    "meganova",
+    "siliconflow"
+   ],
+   "subscription": {
+    "included": true,
+    "inputTokenMultiplier": 1,
+    "note": "Included in subscription"
+   }
+  },
+  {
+   "id": "gemini-2.5-flash-lite",
+   "object": "model",
+   "created": 1750118400,
+   "owned_by": "gemini",
+   "name": "Gemini 2.5 Flash Lite",
+   "context_length": 1048576,
+   "max_output_tokens": 65536,
+   "architecture": {
+    "modality": "text+image+video+audio->text",
+    "input_modalities": [
+     "text",
+     "image",
+     "video",
+     "audio"
+    ],
+    "output_modalities": [
+     "text"
+    ]
+   },
+   "capabilities": {
+    "vision": true,
+    "video_input": true,
+    "audio_input": true,
+    "reasoning": true,
+    "tool_calling": true,
+    "parallel_tool_calls": false,
+    "structured_output": false,
+    "pdf_upload": false,
+    "batch_api": false
+   },
+   "reasoning_efforts": [
+    "low",
+    "medium",
+    "high"
+   ],
+   "supported_service_tiers": [],
+   "supported_batch_endpoints": [],
+   "pricing": {
+    "audio_input": 0.3,
+    "prompt": 0.1,
+    "completion": 0.4,
+    "cacheReadInputPer1kTokens": 1e-05,
+    "currency": "USD",
+    "unit": "per_million_tokens"
+   },
+   "category": "More",
+   "subscription": {
+    "included": false,
+    "inputTokenMultiplier": 1,
+    "note": "Not included in subscription"
+   }
+  },
+  {
+   "id": "TEE/qwen3.6-27b",
+   "object": "model",
+   "created": 1780531200,
+   "owned_by": "qwen",
+   "name": "Qwen3.6 27B TEE",
+   "context_length": 262144,
+   "max_output_tokens": 65536,
+   "architecture": {
+    "modality": "text+image->text",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "text"
+    ]
+   },
+   "capabilities": {
+    "vision": true,
+    "video_input": false,
+    "audio_input": false,
+    "reasoning": true,
+    "tool_calling": false,
+    "parallel_tool_calls": false,
+    "structured_output": false,
+    "pdf_upload": false,
+    "batch_api": false
+   },
+   "open_weights": true,
+   "supported_service_tiers": [],
+   "supported_batch_endpoints": [],
+   "pricing": {
+    "prompt": 0.32,
+    "completion": 3.25,
+    "cacheReadInputPer1kTokens": 3e-05,
+    "currency": "USD",
+    "unit": "per_million_tokens"
+   },
+   "category": "Private/TEE",
+   "subscription": {
+    "included": false,
+    "inputTokenMultiplier": 1,
+    "note": "Not included in subscription"
+   },
+   "available": false,
+   "status": "paused",
+   "unavailable_reason": "tee_verification",
+   "providers": []
+  }
+ ]
+}

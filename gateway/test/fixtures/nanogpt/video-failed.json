@@ -1,0 +1,11 @@
+{
+ "requestId": "vid_fixture0000000000001",
+ "model": "pruna-ai/p-video/text-to-video",
+ "data": {
+  "status": "FAILED",
+  "request_id": "vid_fixture0000000000001",
+  "error": "Content policy violation",
+  "isNSFWError": true,
+  "userFriendlyError": "Content flagged as inappropriate. Please modify your prompt and try again."
+ }
+}

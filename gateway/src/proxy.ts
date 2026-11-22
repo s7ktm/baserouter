@@ -4,11 +4,13 @@ import { Hono, type Context } from "hono";
 import { gate, monthStart } from "./budget.ts";
 import { later, refuse, type Deps, type Env } from "./deps.ts";
 import { imagesIn, isPcm, MediaKeeper, pcmFormat, promptOf, type Found, type MediaFile } from "./media.ts";
+import * as nanogpt from "./nanogpt.ts";
 import * as openrouter from "./openrouter.ts";
+import * as providers from "./providers.ts";
 import { hashKey, unseal } from "./secrets.ts";
-import type { Failure, Kind, ProviderRow, RouteRow, Store } from "./store.ts";
+import type { Failure, Kind, ProviderRow, RouteRow, Store, VideoJobRow } from "./store.ts";
 import { readPlain, StreamScanner, type Reading } from "./usage.ts";
-import { forClient, readJob, VideoWatcher } from "./video.ts";
+import { forClient, fromNano, nanoForClient, providerOf, readJob, VideoWatcher, type JobStatus } from "./video.ts";
 import { bodyFor, namesOf, resolve, type Place } from "./models.ts";
 
 // Only these response headers are passed back. The rest describe the connection
@@ -162,9 +164,11 @@ function video(store: Store): Prepare {
 
 // One place to send a request to: its provider, the key BaseRouter holds for it, and the body
 // with that place's model id.
-type Attempt = { provider: ProviderRow; key: string; body: Uint8Array | string; contentType: string };
+type Attempt = { provider: ProviderRow; key: string; model: string; body: Uint8Array | string; contentType: string };
 
-async function bodyAt(prepared: Extract<Prepared, { ok: true }>, place: Place): Promise<{ body: Uint8Array | string; contentType: string }> {
+async function bodyAt(prepared: Extract<Prepared, { ok: true }>, place: Place, provider: ProviderRow): Promise<{ body: Uint8Array | string; contentType: string }> {
+  // NanoGPT starts a video with fields of its own.
+  if (prepared.fields && prepared.kind === "video" && providers.isNano(provider)) return { body: nanogpt.videoBody(prepared.fields, place.model), contentType: prepared.contentType };
   if (prepared.fields) return { body: bodyFor(prepared.fields, place, prepared.model) ?? prepared.body, contentType: prepared.contentType };
   if (prepared.form && place.model !== prepared.model) {
     const form = new FormData();
@@ -238,11 +242,11 @@ export function proxy(deps: Deps) {
       return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${notAllowed}. It may use: ${names.join(", ")}.`);
     }
     const resolved = resolve(store, route, model);
-    const providers = store.providers();
+    const held = store.providers();
     const attempts: Attempt[] = [];
     for (const place of resolved.ok ? resolved.places : []) {
-      const at = providers.find((p) => p.id === place.provider);
-      if (at) attempts.push({ provider: at, key: unseal(deps.master, at.key_sealed), ...(await bodyAt(prepared, place)) });
+      const at = held.find((p) => p.id === place.provider);
+      if (at) attempts.push({ provider: at, key: unseal(deps.master, at.key_sealed), model: place.model, ...(await bodyAt(prepared, place, at)) });
     }
     if (!attempts.length) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
     if (prepared.alsoModels?.length && (attempts.length > 1 || attempts[0]!.body !== prepared.body)) {
@@ -273,7 +277,13 @@ export function proxy(deps: Deps) {
       else deps.running.delete(route.id);
 
       const cost = reading?.usage?.cost ?? null;
-      const upstreamId = reading?.id ?? generationId ?? null;
+      // NanoGPT's guess, when its answer came before the charge was known. It is recorded as
+      // worked out, so the budget counts it at once, and replaced by the charge once that is known.
+      const guess = cost === null ? (reading?.estimate ?? null) : null;
+      const nano = providers.isNano(provider);
+      // The id to ask the provider about this request with: OpenRouter's is the answer's own,
+      // NanoGPT's is in the answer's headers, or named in its pricing after a fallback there.
+      const upstreamId = (nano ? reading?.requestId : reading?.id) ?? generationId ?? null;
       const rowId = store.addRequest({
         route_id: route.id,
         provider_id: provider.id,
@@ -284,19 +294,31 @@ export function proxy(deps: Deps) {
         streamed: prepared.streamed,
         prompt_tokens: reading?.usage?.promptTokens ?? null,
         completion_tokens: reading?.usage?.completionTokens ?? null,
-        cost_usd: cost,
-        cost_source: cost === null ? "unknown" : "provider",
+        cost_usd: cost ?? guess,
+        cost_source: cost !== null ? "provider" : guess !== null ? "computed" : "unknown",
         first_token_ms: firstTokenAt == null ? null : firstTokenAt - started,
         total_ms: deps.now() - started,
         status,
         failure,
         upstream_id: upstreamId,
       });
-      // The provider started a response but it ended without a cost: ask for it afterwards.
-      // (A video job's cost comes with the job's end, from the watch in video.ts.)
-      if (cost === null && upstreamId && status !== null && status < 300 && kind !== "video") later(deps, lookUpCost(rowId, upstreamId, key));
       const made = { requestId: rowId, routeId: route.id, model: reading?.model ?? model, prompt: prepared.prompt ?? null };
       const worked = failure === null && status !== null && status < 300;
+      // The provider started a response but it ended without a cost: ask for it afterwards.
+      // (A video job's cost comes with the job, from the watch in video.ts.) NanoGPT's image
+      // answers can name less than was charged, so those are asked about as well.
+      if (upstreamId && status !== null && status < 300 && kind !== "video") {
+        if (cost === null) later(deps, lookUpCost(rowId, upstreamId, provider, key, guess !== null));
+        else if (nano && kind === "image" && worked) later(deps, lookUpCost(rowId, upstreamId, provider, key, true));
+      }
+      // NanoGPT's speech answers say nothing of their cost and carry no id to ask with: it is
+      // worked out from the characters sent and the model's listed price, and recorded as that.
+      if (nano && path === "/audio/speech" && worked && cost === null && guess === null) {
+        const sent = attempts.find((a) => a.provider.id === provider.id)?.model ?? model;
+        later(deps, nanogpt.speechCost(deps.nanogpt, key, sent, prepared.fields?.input).then((worth) => {
+          if (worth !== null) store.fillRequest(rowId, { cost: worth, promptTokens: null, completionTokens: null, model: null }, { source: "computed" });
+        }));
+      }
       if (keepImages && worked && images.length > 0) later(deps, keeper.keepImages(made, images));
       if (sound) {
         if (worked) later(deps, sound.finish(made));
@@ -312,8 +334,8 @@ export function proxy(deps: Deps) {
     try {
       for (let i = 0; ; i++) {
         ({ provider, key } = attempts[i]!);
-        upstream = await openrouter.send(deps.upstream, key, path, attempts[i]!.body, attempts[i]!.contentType, abort.signal);
-        if (upstream.ok || i === attempts.length - 1 || upstream.status === 401 || upstream.status === 402 || client.aborted) break;
+        upstream = await providers.send(deps, provider, key, path, attempts[i]!.body, attempts[i]!.contentType, abort.signal);
+        if (upstream.ok || i === attempts.length - 1 || providers.keyRefused(provider, upstream) || upstream.status === 402 || client.aborted) break;
         await upstream.body?.cancel().catch(() => {});
       }
     } catch {
@@ -325,13 +347,13 @@ export function proxy(deps: Deps) {
       return refuse(c, 502, "provider_unreachable", `BaseRouter could not reach ${provider.name}. Check the provider in BaseRouter, then try again.`);
     }
 
-    const generationId = upstream.headers.get("x-generation-id");
+    const generationId = providers.costId(provider, upstream);
 
-    if (upstream.status === 401) {
+    if (providers.keyRefused(provider, upstream)) {
       const message = await openrouter.errorMessage(upstream);
       providerRefused(provider, message);
-      finish(401, "upstream_error");
-      return refuse(c, 502, "provider_refused_key", `${provider.name} did not accept the key BaseRouter holds for it. Replace the provider's key in BaseRouter.`);
+      finish(upstream.status, "upstream_error");
+      return keyNotAccepted(c, provider);
     }
 
     // How the answer is read depends on what it is: server-sent events are scanned as they
@@ -354,11 +376,14 @@ export function proxy(deps: Deps) {
         const doc: unknown = JSON.parse(new TextDecoder().decode(bytes));
         reading = readPlain(doc);
         if (keepImages && upstream.ok) images = imagesIn(doc);
+        // What a NanoGPT answer says about the account stays here.
+        const cleaned = providers.isNano(provider) ? nanogpt.withoutAccount(doc) : null;
+        if (cleaned) bytes = new TextEncoder().encode(JSON.stringify(cleaned));
       } catch {}
       const failure: Failure | null = !upstream.ok || !reading || reading.failed ? "upstream_error" : null;
       const rowId = finish(upstream.status, failure, reading, null, generationId, images);
       if (kind === "video" && failure === null && rowId !== null) {
-        const answer = startedVideo(c, bytes, rowId, route, model, prepared.prompt ?? null, keepVideo);
+        const answer = startedVideo(c, bytes, rowId, route, model, prepared.prompt ?? null, keepVideo, provider);
         if (answer) return answer;
       }
       return new Response(bytes, { status: upstream.status, headers: passHeaders(upstream) });
@@ -406,80 +431,173 @@ export function proxy(deps: Deps) {
 
   // A video job has started: it is remembered as the route's, watched until it ends, and its
   // answer goes back with links to the gateway. Null when the answer is not a job after all.
-  function startedVideo(c: Context<Env>, bytes: Uint8Array, rowId: number, route: RouteRow, model: string, prompt: string | null, keep: boolean): Response | null {
+  function startedVideo(c: Context<Env>, bytes: Uint8Array, rowId: number, route: RouteRow, model: string, prompt: string | null, keep: boolean, provider: ProviderRow): Response | null {
     let doc: Record<string, unknown>;
     try {
       doc = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
     } catch {
       return null;
     }
-    const status = readJob(doc);
+    const nano = providers.isNano(provider);
+    const started = nano ? nanogpt.readVideo(doc) : null;
+    const status: JobStatus | null = nano ? started && fromNano(started) : readJob(doc);
     if (!status) return null;
-    const job = { id: status.id, request_id: rowId, route_id: route.id, model, prompt, keep: keep ? 1 : 0, status: status.status, created_at: deps.now(), done_at: null };
+    const job = { id: status.id, provider_id: provider.id, request_id: rowId, route_id: route.id, model, prompt, keep: keep ? 1 : 0, status: status.status, created_at: deps.now(), done_at: null };
     store.addVideoJob(job);
     // A job may already have ended in its first answer (a refusal after 202, say).
     later(deps, videos.observe(job, status).then((ended) => ended || videos.watch(job.id)));
-    return c.json(forClient(doc, clientBase(c)), 202);
+    return c.json(nano ? nanoForClient(status, clientBase(c), null) : forClient(doc, clientBase(c)), 202);
   }
+
+  const unreachable = (c: Context<Env>, provider: ProviderRow) =>
+    refuse(c, 502, "provider_unreachable", `BaseRouter could not reach ${provider.name}. Check the provider in BaseRouter, then try again.`);
+  const keyNotAccepted = (c: Context<Env>, provider: ProviderRow) =>
+    refuse(c, 502, "provider_refused_key", `${provider.name} did not accept the key BaseRouter holds for it. Replace the provider's key in BaseRouter.`);
 
   // A GET to OpenRouter for a request that is not recorded: a video job's status or video, the
   // model lists. Either OpenRouter's answer, or the gateway's refusal when it cannot be had.
-  async function ask(c: Context<Env>, path: string): Promise<Response> {
-    const provider = store.providers()[0];
+  async function ask(c: Context<Env>, path: string, provider: ProviderRow | null = store.providers()[0] ?? null): Promise<Response> {
     if (!provider) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
     let upstream: Response;
     try {
       upstream = await openrouter.get(deps.upstream, unseal(deps.master, provider.key_sealed), path, c.req.raw.signal);
     } catch {
-      return refuse(c, 502, "provider_unreachable", `BaseRouter could not reach ${provider.name}. Check the provider in BaseRouter, then try again.`);
+      return unreachable(c, provider);
     }
     if (upstream.status === 401) {
       providerRefused(provider, await openrouter.errorMessage(upstream));
-      return refuse(c, 502, "provider_refused_key", `${provider.name} did not accept the key BaseRouter holds for it. Replace the provider's key in BaseRouter.`);
+      return keyNotAccepted(c, provider);
     }
     return upstream;
   }
 
+  // What a provider's model list says about each of its models, by the provider's id for it,
+  // as entries of /v1/models. NanoGPT's are brought to the shape OpenRouter's have. Empty when
+  // the list cannot be had.
+  async function listedAt(provider: ProviderRow): Promise<Map<string, Record<string, unknown>>> {
+    const key = unseal(deps.master, provider.key_sealed);
+    try {
+      if (providers.isNano(provider)) return new Map(((await nanogpt.offers(deps.nanogpt, key)) ?? []).map((m) => [m.id, nanogpt.listed(m)]));
+      const res = await openrouter.models(deps.upstream, key, AbortSignal.timeout(15_000));
+      const data = res.ok ? ((await res.json()) as { data?: Record<string, unknown>[] }).data : (await res.body?.cancel(), null);
+      return new Map((data ?? []).filter((m) => openrouter.usable(m.id)).map((m) => [m.id as string, m]));
+    } catch {
+      return new Map();
+    }
+  }
+
+  // Whether an entry makes one of the things a client asked for with ?output_modalities=.
+  // OpenRouter filters its own list; the entries the gateway adds from NanoGPT are filtered here.
+  function makesAsked(entry: Record<string, unknown>, asked: string | null): boolean {
+    if (!asked || asked === "all") return true;
+    const made = (entry.architecture as { output_modalities?: unknown } | undefined)?.output_modalities;
+    const wanted = asked.split(",").map((k) => (k === "speech" ? "audio" : k));
+    return Array.isArray(made) && made.some((k) => wanted.includes(k));
+  }
+
   // The models a route may use, in OpenAI's shape, by the names apps send. Each carries what
-  // the provider says about the model at its first place. A route that may use any model also
-  // sees the provider's own list after BaseRouter's models.
-  async function modelList(c: Context<Env>, path: string): Promise<Response> {
-    const upstream = await ask(c, path);
-    if (!upstream.ok) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
-    const list = (await upstream.json()) as { data?: Record<string, unknown>[] };
-    const offered = new Map((list.data ?? []).filter((m) => openrouter.usable(m.id)).map((m) => [m.id as string, m]));
-    const names = namesOf(c.get("route"));
-    const asNamed = (name: string) => {
-      const model = store.modelByName(name);
-      const info = offered.get(model?.places[0]?.model ?? name);
-      return info ? { ...info, id: name } : null;
+  // its provider says about the model at its first place. A route that may use any model also
+  // sees the first provider's own list after BaseRouter's models.
+  async function modelList(c: Context<Env>): Promise<Response> {
+    const asked = new URL(c.req.url).searchParams;
+    const all = store.providers();
+    const first = all[0];
+    if (!first) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
+    const lists = new Map<string, Promise<Map<string, Record<string, unknown>>>>();
+    let envelope: Record<string, unknown> = { object: "list" };
+    if (providers.isNano(first)) {
+      const offered = await nanogpt.offers(deps.nanogpt, unseal(deps.master, first.key_sealed)).catch(() => null);
+      if (!offered) return unreachable(c, first);
+      lists.set(first.id, Promise.resolve(new Map(offered.map((m) => [m.id, nanogpt.listed(m)]))));
+    } else {
+      // The first provider is asked with the client's own filters, and its refusal is the answer.
+      const upstream = await ask(c, openrouter.modelsPath(asked), first);
+      if (!upstream.ok) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+      const list = (await upstream.json()) as { data?: Record<string, unknown>[] };
+      envelope = list;
+      lists.set(first.id, Promise.resolve(new Map((list.data ?? []).filter((m) => openrouter.usable(m.id)).map((m) => [m.id as string, m]))));
+    }
+    const listOf = (id: string) => {
+      const at = all.find((p) => p.id === id);
+      if (!lists.has(id)) lists.set(id, at ? listedAt(at) : Promise.resolve(new Map()));
+      return lists.get(id)!;
     };
-    const data: Record<string, unknown>[] = (names.length ? names : store.models().map((m) => m.name)).map(asNamed).filter((m) => m !== null);
+    const wanted = asked.get("output_modalities");
+    const names = namesOf(c.get("route"));
+    const data: Record<string, unknown>[] = [];
+    for (const name of names.length ? names : store.models().map((m) => m.name)) {
+      const place = store.modelByName(name)?.places[0];
+      const at = place?.provider ?? first.id;
+      const info = (await listOf(at)).get(place?.model ?? name);
+      // What OpenRouter left out was filtered by OpenRouter; the rest is filtered here.
+      if (info && (at === first.id && !providers.isNano(first) ? true : makesAsked(info, wanted))) data.push({ ...info, id: name });
+    }
     if (!names.length) {
       const shown = new Set(data.map((m) => m.id));
-      for (const [id, info] of offered) if (!shown.has(id)) data.push(info);
+      for (const [id, info] of await listOf(first.id)) if (!shown.has(id) && (providers.isNano(first) ? makesAsked(info, wanted) : true)) data.push(info);
     }
-    return c.json({ ...list, data });
+    return c.json({ ...envelope, data });
   }
 
-  // The video models a route may use, as the provider lists them: the models at its models' places.
+  // The video models a route may use, as their providers list them: the models at its models' places.
   async function videoModelList(c: Context<Env>): Promise<Response> {
-    const upstream = await ask(c, "/videos/models");
     const route = c.get("route");
-    if (!upstream.ok || !namesOf(route).length) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
-    const allowed = new Set(namesOf(route).flatMap((name) => { const r = resolve(store, route, name); return r.ok ? r.places.map((p) => p.model) : []; }));
-    const list = (await upstream.json()) as { data?: { id?: string }[] };
-    return c.json({ ...list, data: (list.data ?? []).filter((m) => typeof m.id === "string" && allowed.has(m.id)) });
+    const all = store.providers();
+    if (!all.length) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
+    const allowed = namesOf(route).length
+      ? new Set(namesOf(route).flatMap((name) => { const r = resolve(store, route, name); return r.ok ? r.places.map((p) => `${p.provider} ${p.model}`) : []; }))
+      : null;
+    const data: Record<string, unknown>[] = [];
+    let envelope: Record<string, unknown> = { object: "list" };
+    for (const provider of all) {
+      // A route that may use any model sees the first provider's list, as it may use its models.
+      if (!allowed && provider !== all[0]) continue;
+      let entries: Record<string, unknown>[];
+      if (providers.isNano(provider)) {
+        const offered = await nanogpt.offers(deps.nanogpt, unseal(deps.master, provider.key_sealed)).catch(() => null);
+        entries = (offered ?? []).filter((m) => m.makes.includes("video")).map((m) => ({ ...nanogpt.listed(m), ...(m.perSecond === null ? {} : { pricing: { per_second: m.perSecond } }) }));
+      } else {
+        const upstream = await ask(c, "/videos/models", provider);
+        if (!upstream.ok) {
+          if (provider === all[0]) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+          await upstream.body?.cancel();
+          continue;
+        }
+        const list = (await upstream.json()) as { data?: Record<string, unknown>[] };
+        if (provider === all[0]) envelope = list;
+        entries = list.data ?? [];
+      }
+      for (const m of entries) if (typeof m.id === "string" && (!allowed || allowed.has(`${provider.id} ${m.id}`))) data.push(m);
+    }
+    return c.json({ ...envelope, data });
   }
 
-  async function lookUpCost(rowId: number, generationId: string, key: string): Promise<void> {
-    for (const delay of deps.costLookupDelays) {
+  // Asks the provider what a request cost, a few times. NanoGPT asks to wait half a minute
+  // after it says it does not know yet, so its later questions come further apart.
+  // "replace": the cost is recorded even when one already is.
+  async function lookUpCost(rowId: number, id: string, provider: ProviderRow, key: string, replace = false): Promise<void> {
+    const delays = providers.isNano(provider) ? deps.costLookupDelays.map((delay, i) => (i === 0 ? delay : delay * 6)) : deps.costLookupDelays;
+    for (const delay of delays) {
       await Bun.sleep(delay);
-      const found = await openrouter.generation(deps.upstream, key, generationId).catch(() => null);
+      const found = await providers.lookUp(deps, provider, key, id).catch(() => null);
       if (found) {
-        store.fillRequest(rowId, found);
+        store.fillRequest(rowId, found, { replace });
         return;
       }
+    }
+  }
+
+  // What NanoGPT says about a job right now, taken in the way the gateway's own watch takes it.
+  // A refusal as a response when it cannot be had.
+  async function nanoJob(c: Context<Env>, job: VideoJobRow, provider: ProviderRow): Promise<JobStatus | Response> {
+    try {
+      const status = await nanogpt.videoStatus(deps.nanogpt, unseal(deps.master, provider.key_sealed), job.id, c.req.raw.signal);
+      if (!status) return unreachable(c, provider);
+      const read = fromNano(status);
+      later(deps, videos.observe(job, read));
+      return read;
+    } catch {
+      return unreachable(c, provider);
     }
   }
 
@@ -489,7 +607,7 @@ export function proxy(deps: Deps) {
   app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech")));
   app.post("/audio/transcriptions", (c) => forward(c, "/audio/transcriptions", transcription));
 
-  app.get("/models", (c) => modelList(c, openrouter.modelsPath(new URL(c.req.url).searchParams)));
+  app.get("/models", (c) => modelList(c));
 
   // Video: a job is started, asked about until it is done, and its video fetched. Only the
   // route that started a job can ask about it or fetch its video. Asking is free and is not
@@ -500,7 +618,13 @@ export function proxy(deps: Deps) {
   app.get("/videos/:id", async (c) => {
     const job = store.videoJob(c.req.param("id"));
     if (!job || job.route_id !== c.get("route").id) return notAJob(c);
-    const upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}`);
+    const provider = providerOf(deps, job);
+    if (provider && providers.isNano(provider)) {
+      const status = await nanoJob(c, job, provider);
+      if (status instanceof Response) return status;
+      return c.json(nanoForClient(status, clientBase(c), job.request_id === null ? null : (store.request(job.request_id)?.cost_usd ?? null)));
+    }
+    const upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}`, provider);
     if (!upstream.ok || !(upstream.headers.get("content-type") ?? "").includes("json")) {
       return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
     }
@@ -516,7 +640,22 @@ export function proxy(deps: Deps) {
     const index = c.req.query("index") ?? "0";
     if (!/^\d{1,3}$/.test(index)) return refuse(c, 400, "invalid_request", '"index" must be a number: 0 for the first video.');
     c.env?.server?.timeout(c.req.raw, 0);
-    const upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}/content?index=${Number(index)}`);
+    const provider = providerOf(deps, job);
+    let upstream: Response;
+    if (provider && providers.isNano(provider)) {
+      // NanoGPT says where a video is in the job's answer, so the job is asked about first.
+      const status = await nanoJob(c, job, provider);
+      if (status instanceof Response) return status;
+      const link = status.links?.[Number(index)];
+      if (!link) return refuse(c, 404, "not_found", "This job has no video with that index (yet).");
+      try {
+        upstream = await nanogpt.videoContent(deps.nanogpt, unseal(deps.master, provider.key_sealed), link, c.req.raw.signal);
+      } catch {
+        return unreachable(c, provider);
+      }
+    } else {
+      upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}/content?index=${Number(index)}`, provider);
+    }
     const headers = passHeaders(upstream);
     const length = upstream.headers.get("content-length");
     if (upstream.ok && length) headers.set("content-length", length);

@@ -16,7 +16,7 @@ Young: try it, but do not bet a business on it yet. The latest release is on the
 
 **Works today**
 
-- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/videos`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Video is made as a job that the gateway watches until it is done. The images, speech and video routes make are kept and shown in the panel, unless a route or a request says no.
+- Two providers, OpenRouter and NanoGPT, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/videos`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Video is made as a job that the gateway watches until it is done. The images, speech and video routes make are kept and shown in the panel, unless a route or a request says no.
 - Models: BaseRouter's own list, each the name apps send and the places it comes from in order, with fallback from one to the next.
 - Routes: a named key per agent, a monthly budget enforced before a request is sent, an on/off switch, the models it may use.
 - A record of every request: what it made, models, tokens, cost, timings, what went wrong. Prompts and answers are not stored, except the images, speech and video that are kept.
@@ -24,7 +24,7 @@ Young: try it, but do not bet a business on it yet. The latest release is on the
 
 **Not yet**
 
-- Any provider other than OpenRouter.
+- Any provider other than OpenRouter and NanoGPT.
 - Renaming a route after it is made.
 - Embeddings.
 - Users, teams, SSO, caching and routing strategies are not planned; see [PRODUCT.md](PRODUCT.md).
@@ -41,9 +41,9 @@ docker compose up -d
 
 Or with [Bun](https://bun.sh) 1.4 or newer: `cd baserouter/gateway && bun install && bun start`.
 
-Open http://localhost:4141/. The panel asks you to choose a password, then walks you through adding your OpenRouter key, making a route and connecting to it. The [gateway README](gateway/README.md) has the same steps with `curl`, the full API and every setting. [INSTALL.md](INSTALL.md) covers running it for good: Docker, HTTPS for other machines, systemd on a Raspberry Pi, backups and updates.
+Open http://localhost:4141/. The panel asks you to choose a password, then walks you through adding your OpenRouter or NanoGPT key, making a route and connecting to it. The [gateway README](gateway/README.md) has the same steps with `curl`, the full API and every setting. [INSTALL.md](INSTALL.md) covers running it for good: Docker, HTTPS for other machines, systemd on a Raspberry Pi, backups and updates.
 
-To try it without an OpenRouter key, run `bun run demo` instead of `bun start`: the same gateway and panel in front of a stand-in OpenRouter, with a fresh database each time. Add OpenRouter with the key `fixture-openrouter-key`.
+To try it without an OpenRouter key, run `bun run demo` instead of `bun start`: the same gateway and panel in front of a stand-in OpenRouter and a stand-in NanoGPT, with a fresh database each time. Add OpenRouter with the key `fixture-openrouter-key`, NanoGPT with `fixture-nanogpt-key`.
 
 ## What is in here
 

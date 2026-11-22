@@ -8,7 +8,8 @@ import { fromSummary, modelPicker, providerName, viaChoice } from "./models.js";
 // Whether two places are the same model: the same id once the provider's own prefix is left
 // out ("openai/gpt-5-mini" at OpenRouter is "gpt-5-mini" at OpenAI).
 const sameModel = (a, b) => a.split("/").pop() === b.split("/").pop();
-const isOpenRouter = (ctx, id) => /openrouter/i.test(id) || /openrouter/i.test(providerName(ctx, id));
+// The providers that have providers of their own to choose from.
+const isOpenRouter = (ctx, id) => /openrouter|nanogpt/i.test(`${id} ${providerName(ctx, id)}`);
 
 export function modelsSheet(ctx, ui) {
   const { t, esc, data } = ctx;

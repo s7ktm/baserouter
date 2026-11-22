@@ -1,0 +1,119 @@
+{
+ "canonicalId": "moonshotai/kimi-k2.5",
+ "displayName": "Kimi K2.5",
+ "supportsProviderSelection": true,
+ "defaultPrice": {
+  "inputPer1kTokens": 0.000557,
+  "outputPer1kTokens": 0.002832,
+  "cacheReadInputPer1kTokens": 9.12e-05
+ },
+ "defaultEffectivePricing": {
+  "list_price": {
+   "inputPer1kTokens": 0.000557,
+   "outputPer1kTokens": 0.002832,
+   "cacheReadInputPer1kTokens": 9.12e-05
+  },
+  "effective_price": {
+   "inputPer1kTokens": 0.000557,
+   "outputPer1kTokens": 0.002832,
+   "cacheReadInputPer1kTokens": 9.12e-05
+  },
+  "pricing_type": "static",
+  "currency": "USD",
+  "unit": "per_1k_tokens",
+  "discount_percentage": 0,
+  "source": "registry",
+  "updated_at": "2026-11-22T19:52:24.725Z"
+ },
+ "autoPricing": {
+  "anonymized": {
+   "inputPer1kTokens": 0.000557,
+   "outputPer1kTokens": 0.002832,
+   "cacheReadInputPer1kTokens": 9.12e-05
+  }
+ },
+ "providers": [
+  {
+   "provider": "meganova",
+   "displayName": "MegaNova",
+   "pricing": {
+    "inputPer1kTokens": 0.0004725,
+    "outputPer1kTokens": 0.0023625,
+    "cacheReadInputPer1kTokens": 7.35e-05
+   },
+   "available": true,
+   "maxInputTokens": 262144,
+   "maxOutputTokens": 65536,
+   "privacy": {
+    "classification": "logs_training",
+    "retainsPrompts": true,
+    "training": true
+   },
+   "region": {
+    "code": "US",
+    "label": "United States"
+   },
+   "features": {
+    "toolCalling": true,
+    "imageInput": true,
+    "promptCaching": true
+   },
+   "tps": 42.7,
+   "ttftMs": 3981,
+   "cacheReadRate": 0.2179
+  },
+  {
+   "provider": "moonshot",
+   "displayName": "Moonshot",
+   "pricing": {
+    "inputPer1kTokens": 0.00031499999999999996,
+    "outputPer1kTokens": 0.0019950000000000002
+   },
+   "available": false,
+   "maxOutputTokens": 65536,
+   "privacy": {
+    "classification": "zdr",
+    "retainsPrompts": false,
+    "training": false
+   },
+   "region": {
+    "code": "SG",
+    "label": "Singapore"
+   },
+   "features": {
+    "toolCalling": true,
+    "imageInput": true,
+    "promptCaching": false
+   }
+  },
+  {
+   "provider": "tensorix",
+   "displayName": "TensorX",
+   "pricing": {
+    "inputPer1kTokens": 0.0005250000000000001,
+    "outputPer1kTokens": 0.00294,
+    "cacheReadInputPer1kTokens": 0.00013125000000000002
+   },
+   "available": false,
+   "supportsPromptCaching": true,
+   "maxOutputTokens": 65536,
+   "quantization": "int4",
+   "privacy": {
+    "classification": "zdr",
+    "retainsPrompts": false,
+    "training": false
+   },
+   "region": {
+    "code": "EU",
+    "label": "European Union",
+    "note": "TensorX states that all inference runs in the EU; it does not name the country."
+   },
+   "euInference": true,
+   "features": {
+    "toolCalling": true,
+    "imageInput": true,
+    "promptCaching": true
+   }
+  }
+ ]
+}

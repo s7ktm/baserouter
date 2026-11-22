@@ -1,0 +1,8 @@
+{
+ "requestId": "vid_fixture0000000000001",
+ "data": {
+  "status": "IN_PROGRESS",
+  "request_id": "vid_fixture0000000000001"
+ },
+ "model": "pruna-ai/p-video/text-to-video"
+}

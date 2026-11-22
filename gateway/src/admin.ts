@@ -5,10 +5,10 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
 import { dayStart, monthStart, nextMonthStart, localDate } from "./budget.ts";
 import type { Deps, Env } from "./deps.ts";
-import { catalogue, providersOf, type CatalogueModel, type ModelProvider } from "./catalogue.ts";
+import type { CatalogueModel, ModelProvider } from "./catalogue.ts";
 import { MODEL_NAME, namesOf, parseNames, parsePlaces, type Model } from "./models.ts";
 import { MediaKeeper } from "./media.ts";
-import * as openrouter from "./openrouter.ts";
+import * as providers from "./providers.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
 import type { MediaKind, MediaListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
 
@@ -233,17 +233,19 @@ export function admin(deps: Deps) {
   // Adds a provider after testing its key. A key that fails the test is not stored.
   app.post("/providers", async (c) => {
     const { kind, key } = await jsonBody(c);
-    if (kind !== "openrouter") return fail(c, 400, "unknown_provider", "Only OpenRouter can be added for now.");
+    const name = typeof kind === "string" && Object.hasOwn(providers.KINDS, kind) ? providers.KINDS[kind]! : null;
+    if (typeof kind !== "string" || !name) return fail(c, 400, "unknown_provider", `BaseRouter can add ${Object.values(providers.KINDS).join(" and ")} for now.`);
     if (typeof key !== "string" || !key.trim()) return fail(c, 400, "key_missing", "Paste the provider's key.");
-    if (store.providers().length > 0) return fail(c, 409, "provider_exists", "OpenRouter is already added. Remove it first to use another key.");
+    // One of each: a second key for the same provider would be a second place for every model.
+    if (store.providers().some((p) => p.kind === kind)) return fail(c, 409, "provider_exists", `${name} is already added. Remove it first to use another key.`);
 
     const secret = key.trim();
-    const result = await openrouter.check(deps.upstream, secret);
+    const result = await providers.check(deps, kind, secret);
     if (!result.ok) return fail(c, 422, "provider_test_failed", result.error);
 
     const now = deps.now();
     const row: ProviderRow = {
-      id: newId(), kind, name: "OpenRouter", key_sealed: seal(deps.master, secret), key_hint: keyHint(secret),
+      id: newId(), kind, name, key_sealed: seal(deps.master, secret), key_hint: keyHint(secret),
       status: "up", error: null, models: result.models, checked_at: now, created_at: now,
     };
     store.addProvider(row);
@@ -253,7 +255,7 @@ export function admin(deps: Deps) {
   app.post("/providers/:id/test", async (c) => {
     const provider = store.provider(c.req.param("id"));
     if (!provider) return fail(c, 404, "not_found", "There is no such provider.");
-    const result = await openrouter.check(deps.upstream, unseal(deps.master, provider.key_sealed));
+    const result = await providers.check(deps, provider.kind, unseal(deps.master, provider.key_sealed));
     store.markProvider(provider.id, result.ok ? "up" : "down", result.ok ? null : result.error, result.ok ? result.models : null, deps.now());
     return c.json({ provider: providerView(store.provider(provider.id)!) });
   });
@@ -279,7 +281,7 @@ export function admin(deps: Deps) {
     const first = store.providers()[0];
     for (const name of names) {
       if (store.modelByName(name)) continue;
-      store.addModel({ id: newId(), name, makes: offerOf(name)?.makes ?? [], places: first ? [{ provider: first.id, model: name, via: null }] : [], created_at: deps.now() });
+      store.addModel({ id: newId(), name, makes: offerOf(first?.id, name)?.makes ?? [], places: first ? [{ provider: first.id, model: name, via: null }] : [], created_at: deps.now() });
     }
   }
 
@@ -363,58 +365,50 @@ export function admin(deps: Deps) {
     });
   });
 
-  // What the provider offers, to find models in: what each makes, takes and costs (see
-  // catalogue.ts). Asked for once in ten minutes.
-  let offers: { providerId: string; at: number; list: CatalogueModel[] } | null = null;
-  const offerOf = (id: string) => offers?.list.find((m) => m.id === id) ?? null;
+  // What the providers offer, to find models in: what each model makes, takes and costs (see
+  // catalogue.ts), and which provider offers it. Each provider is asked once in ten minutes.
+  const offersAt = new Map<string, { at: number; list: CatalogueModel[] }>();
+  const offerOf = (provider: string | undefined, id: string) => (provider ? offersAt.get(provider)?.list.find((m) => m.id === id) : undefined) ?? null;
   app.get("/offers", async (c) => {
-    const provider = store.providers()[0];
-    if (!provider) return c.json({ offers: [] });
-    if (offers && offers.providerId === provider.id && deps.now() - offers.at < 10 * 60_000) return c.json({ offers: offers.list, provider: provider.id });
-    const key = unseal(deps.master, provider.key_sealed);
-    const read = async (res: Response) => (res.ok ? (((await res.json()) as { data?: unknown }).data ?? []) : (await res.body?.cancel(), null));
-    try {
-      const [all, videos] = await Promise.all([
-        openrouter.models(deps.upstream, key, AbortSignal.timeout(15_000)).then(read),
-        // Video prices are only in the video list; without them the list still stands.
-        openrouter.get(deps.upstream, key, "/videos/models", AbortSignal.timeout(15_000)).then(read).catch(() => []),
-      ]);
-      if (!all) return c.json({ offers: [] });
-      const list = catalogue(all, videos ?? []);
-      offers = { providerId: provider.id, at: deps.now(), list };
-      // Models whose kind was not known when they were made learn it now.
-      for (const m of store.models()) {
-        const kind = !m.makes.length && m.places[0] ? offerOf(m.places[0].model)?.makes : null;
-        if (kind?.length) store.updateModel(m.id, { makes: kind });
-      }
-      return c.json({ offers: list, provider: provider.id });
-    } catch {
-      return c.json({ offers: [] });
+    const all = store.providers();
+    for (const id of offersAt.keys()) if (!all.some((p) => p.id === id)) offersAt.delete(id);
+    await Promise.all(
+      all.map(async (provider) => {
+        const kept = offersAt.get(provider.id);
+        if (kept && deps.now() - kept.at < 10 * 60_000) return;
+        const list = await providers.offers(deps, provider, unseal(deps.master, provider.key_sealed)).catch(() => null);
+        if (list) offersAt.set(provider.id, { at: deps.now(), list });
+      }),
+    );
+    // Models whose kind was not known when they were made learn it now.
+    for (const m of store.models()) {
+      const kind = !m.makes.length && m.places[0] ? offerOf(m.places[0].provider, m.places[0].model)?.makes : null;
+      if (kind?.length) store.updateModel(m.id, { makes: kind });
     }
+    const offers = all.flatMap((provider) => (offersAt.get(provider.id)?.list ?? []).map((m) => ({ ...m, provider: provider.id })));
+    return c.json({ offers, ...(all[0] ? { provider: all[0].id } : {}) });
   });
 
-  // Where one model comes from: the provider's own providers for it (OpenRouter's endpoints
-  // list), with what each charges. ?model=<id>. Kept for ten minutes each.
+  // Where one model comes from: its provider's own providers for it (OpenRouter's endpoints
+  // list, NanoGPT's providers list), with what each charges. ?model=<id>, and ?provider=<id>
+  // for a provider other than the first. Kept for ten minutes each.
   const providersCache = new Map<string, { at: number; list: ModelProvider[] }>();
   app.get("/offers/endpoints", async (c) => {
     const model = c.req.query("model") ?? "";
-    // Exactly "author/name": the id becomes part of a path to OpenRouter.
+    const asked = c.req.query("provider");
+    const provider = asked ? store.provider(asked) : store.providers()[0];
+    // At OpenRouter exactly "author/name": the id becomes part of a path there.
     const parts = model.split("/");
-    if (!/^[\w~][\w.:/@+~-]{0,199}$/.test(model) || parts.length !== 2 || parts.some((p) => p === "." || p === "..")) return fail(c, 400, "model_invalid", "Give a model id, such as ?model=google/gemini-2.5-flash.");
-    const provider = store.providers()[0];
+    const bad = !MODEL_NAME.test(model) || (provider && !providers.isNano(provider) && (parts.length !== 2 || parts.some((p) => p === "." || p === "..")));
+    if (bad) return fail(c, 400, "model_invalid", "Give a model id, such as ?model=google/gemini-2.5-flash.");
     if (!provider) return c.json({ providers: [] });
-    const cached = providersCache.get(model);
+    const name = `${provider.id} ${model}`;
+    const cached = providersCache.get(name);
     if (cached && deps.now() - cached.at < 10 * 60_000) return c.json({ providers: cached.list });
     try {
-      const path = `/models/${model.split("/").map(encodeURIComponent).join("/")}/endpoints`;
-      const res = await openrouter.get(deps.upstream, unseal(deps.master, provider.key_sealed), path, AbortSignal.timeout(15_000));
-      if (!res.ok) {
-        await res.body?.cancel();
-        return c.json({ providers: [] });
-      }
-      const list = providersOf(((await res.json()) as { data?: unknown }).data);
+      const list = await providers.modelProviders(deps, provider, unseal(deps.master, provider.key_sealed), model);
       if (providersCache.size > 500) providersCache.clear();
-      providersCache.set(model, { at: deps.now(), list });
+      if (list.length) providersCache.set(name, { at: deps.now(), list });
       return c.json({ providers: list });
     } catch {
       return c.json({ providers: [] });
@@ -423,9 +417,9 @@ export function admin(deps: Deps) {
 
   // Models in BaseRouter: the name apps send, what it makes, the places it comes from in order.
   function modelView(m: Model) {
-    return { id: m.id, name: m.name, makes: m.makes.length ? m.makes : offerOf(m.places[0]?.model ?? "")?.makes ?? [], from: m.places };
+    return { id: m.id, name: m.name, makes: m.makes.length ? m.makes : offerOf(m.places[0]?.provider, m.places[0]?.model ?? "")?.makes ?? [], from: m.places };
   }
-  const badPlaces = 'Give "from" as 1 to 10 different places, each { provider, model, via? }: a provider BaseRouter holds a key for, its id for the model, and for OpenRouter which of its own providers.';
+  const badPlaces = 'Give "from" as 1 to 10 different places, each { provider, model, via? }: a provider BaseRouter holds a key for, its id for the model, and which of that provider\'s own providers, when it has them.';
   const badName = "Give the model a name of letters, digits and . : / @ + ~ - (up to 200), that no other model has.";
 
   app.get("/models", (c) => c.json({ models: store.models().map(modelView) }));
@@ -437,7 +431,7 @@ export function admin(deps: Deps) {
     if (!places) return fail(c, 400, "places_invalid", badPlaces);
     const chosen = typeof name === "string" ? name.trim() : places[0]!.model;
     if (!MODEL_NAME.test(chosen) || store.modelByName(chosen)) return fail(c, 400, "name_invalid", badName);
-    const kinds = offerOf(places[0]!.model)?.makes ?? (Array.isArray(makes) ? makes.filter((k): k is string => typeof k === "string").slice(0, 8) : []);
+    const kinds = offerOf(places[0]!.provider, places[0]!.model)?.makes ?? (Array.isArray(makes) ? makes.filter((k): k is string => typeof k === "string").slice(0, 8) : []);
     const id = newId();
     store.addModel({ id, name: chosen, makes: kinds, places, created_at: deps.now() });
     return c.json({ model: modelView(store.model(id)!) }, 201);
@@ -454,7 +448,7 @@ export function admin(deps: Deps) {
     const renamed = typeof name === "string" ? name.trim() : name === undefined ? undefined : null;
     if (renamed === null || (renamed !== undefined && (!MODEL_NAME.test(renamed) || (renamed !== before.name && store.modelByName(renamed))))) return fail(c, 400, "name_invalid", badName);
     // A new first source may make something else: its kind follows, when the provider's list says.
-    const makes = places ? offerOf(places[0]!.model)?.makes : undefined;
+    const makes = places ? offerOf(places[0]!.provider, places[0]!.model)?.makes : undefined;
     store.updateModel(id, { name: renamed, places, makes: makes?.length ? makes : undefined });
     return c.json({ model: modelView(store.model(id)!) });
   });

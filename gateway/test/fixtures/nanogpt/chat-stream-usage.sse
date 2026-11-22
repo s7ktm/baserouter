@@ -1,0 +1,10 @@
+data: {"id":"chatcmpl-00000000-0000-4000-8000-0000000000c2","object":"chat.completion.chunk","created":1795378264,"model":"openai/gpt-4.1-nano","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-00000000-0000-4000-8000-0000000000c2","object":"chat.completion.chunk","created":1795378264,"model":"openai/gpt-4.1-nano","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-00000000-0000-4000-8000-0000000000c2","object":"chat.completion.chunk","created":1795378264,"model":"openai/gpt-4.1-nano","choices":[{"index":0,"delta":{"content":", howdy, hi!"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-00000000-0000-4000-8000-0000000000c2","object":"chat.completion.chunk","created":1795378264,"model":"openai/gpt-4.1-nano","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"x_nanogpt_pricing":{"amount":0.0000045,"currency":"USD","cost":0.0000045,"inputTokens":13,"outputTokens":8,"cacheCreationInputTokens":0,"cacheReadInputTokens":0,"cacheCost":0,"requestId":"req_00000000-0000-4000-8000-00000000f1c5","costUsd":0.0000045,"usdCost":0.0000045,"paymentSource":"USD","billedToTeam":false,"billedTeamId":null,"billedTeamName":null,"usageSource":"provider","cacheUsageReported":true},"usage":{"prompt_tokens":13,"completion_tokens":8,"total_tokens":21,"reasoning_tokens":0,"completion_tokens_details":{"reasoning_tokens":0,"image_tokens":0,"audio_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0},"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0,"audio_tokens":0,"video_tokens":0},"citation_tokens":0,"num_search_queries":0,"input_tokens":13,"cost":0.0000045,"currency":"USD"}}
+
+data: [DONE]
+

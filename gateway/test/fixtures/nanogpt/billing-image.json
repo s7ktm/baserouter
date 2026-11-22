@@ -1,0 +1,17 @@
+{
+ "object": "request_billing",
+ "request_id": "media-image:00000000-0000-4000-8000-0000000000ac:1795300000000:fixtur",
+ "created_at": "2026-11-22T20:11:31.474000Z",
+ "expires_at": "2026-11-23T20:11:31.474000Z",
+ "as_of": "2026-11-22T20:12:04.349897Z",
+ "cost": "0.00255",
+ "currency": "USD",
+ "cost_scope": "primary_charge",
+ "usage": {
+  "input_tokens": 0,
+  "output_tokens": null,
+  "reasoning_tokens": null,
+  "cache_read_input_tokens": null,
+  "cache_creation_input_tokens": null
+ }
+}
