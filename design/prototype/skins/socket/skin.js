@@ -79,7 +79,7 @@ export default {
     const { data, t, counts, empty, last } = ctx;
     const summary = empty ? t("sumEmpty") : t(counts.attention ? "sumWarn" : "sumCalm", { n: counts.on, k: counts.attention });
     const lastLine = last
-      ? `<button class="last" data-action="go" data-screen="activity"><span>${t("lastUsed", { route: ctx.name(last.route), model: last.model, secs: ctx.secs(last.seconds), cost: ctx.money(last.cost) })}</span>${chevron}</button>`
+      ? `<button class="last" data-action="go" data-screen="activity"><span>${t("lastUsed", { route: ctx.name(last.route), model: ctx.esc(last.model), secs: ctx.secs(last.seconds), cost: ctx.money(last.cost) })}</span>${chevron}</button>`
       : "";
     return `<main class="bench">
       <header class="top">${this.mascot(ctx.mood)}

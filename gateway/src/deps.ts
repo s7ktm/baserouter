@@ -16,6 +16,8 @@ export interface Deps {
   running: Map<string, number>;
   // Work that outlives a response. Tests wait for it.
   background: Set<Promise<unknown>>;
+  // The host names the panel and its API may be reached by (lowercase, no port).
+  allowedHosts: string[];
   // The largest request body the one address takes.
   maxRequestBytes: number;
   // Where the images and sound routes make are kept, or null to keep none; and how much room they may take.

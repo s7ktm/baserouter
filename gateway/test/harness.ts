@@ -30,6 +30,7 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     running: new Map(),
     background: new Set(),
     maxRequestBytes: options.maxRequestBytes ?? 64 * 1024 * 1024,
+    allowedHosts: ["localhost", "127.0.0.1", "::1"],
     mediaDir: options.mediaDir ?? null,
     mediaMaxBytes: options.mediaMaxBytes ?? 1024 * 1024 * 1024,
     panelDir: join(import.meta.dir, "..", "..", "design", "prototype"),

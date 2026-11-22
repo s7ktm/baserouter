@@ -14,7 +14,9 @@ iframe{display:block;width:390px;height:844px;border:0;margin:0 auto}
 <body>
 <iframe id="page" title="page"></iframe>
 <script>
-document.getElementById("page").src = new URLSearchParams(location.search).get("src") || "index.html?bar=0";
+// Only a page of this folder: anything else (another site, a javascript: address) is ignored.
+const asked = new URLSearchParams(location.search).get("src") ?? "";
+document.getElementById("page").src = /^(index|cover|mascots)\.html(\?[^#]*)?$/.test(asked) ? asked : "index.html?bar=0";
 </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 // Starts the gateway: bun src/index.ts
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { BUN_BODY_LIMIT, createApp } from "./app.ts";
 import type { Deps } from "./deps.ts";
@@ -17,9 +17,25 @@ const maxRequestBytes = Math.round(maxRequestMb * 1024 * 1024);
 const mediaMaxMb = Number(env.BASEROUTER_MEDIA_MAX_MB ?? 1024);
 if (!(mediaMaxMb >= 0)) throw new Error("BASEROUTER_MEDIA_MAX_MB must be a number of megabytes, 0 or more.");
 const mediaMaxBytes = Math.round(mediaMaxMb * 1024 * 1024);
+// The names the panel may be reached by: this machine, the name it listens on, and any given.
+// Behind Caddy, BASEROUTER_DOMAIN; on a home network, the machine's name or address.
+const allowedHosts = [
+  ...new Set(
+    ["localhost", "127.0.0.1", "::1", host, env.BASEROUTER_DOMAIN ?? "", ...(env.BASEROUTER_ALLOWED_HOSTS ?? "").split(",")]
+      .map((name) => name.trim().toLowerCase().replace(/^\[|\]$/g, ""))
+      .filter((name) => name && name !== "0.0.0.0" && name !== "::"),
+  ),
+];
 const dataDir = env.BASEROUTER_DATA_DIR ?? join(import.meta.dir, "..", "data");
 
-mkdirSync(dataDir, { recursive: true });
+// Everything BaseRouter writes is for its own user only: the database holds the sealed
+// provider key, hashes and kept prompts. Files made before this are tightened as well.
+process.umask(0o077);
+mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+chmodSync(dataDir, 0o700);
+for (const name of ["baserouter.sqlite", "baserouter.sqlite-wal", "baserouter.sqlite-shm", "secret.key"]) {
+  if (existsSync(join(dataDir, name))) chmodSync(join(dataDir, name), 0o600);
+}
 // Kept images were in "images" before sound was kept too.
 if (existsSync(join(dataDir, "images")) && !existsSync(join(dataDir, "media"))) renameSync(join(dataDir, "images"), join(dataDir, "media"));
 const store = new Store(openDb(join(dataDir, "baserouter.sqlite")));
@@ -33,6 +49,7 @@ const deps: Deps = {
   running: new Map(),
   background: new Set(),
   maxRequestBytes,
+  allowedHosts,
   mediaDir: join(dataDir, "media"),
   mediaMaxBytes,
   panelDir: env.BASEROUTER_PANEL_DIR ?? join(import.meta.dir, "..", "..", "design", "prototype"),

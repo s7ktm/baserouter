@@ -18,6 +18,9 @@ services:
     environment:
       # All optional; see "Settings" in gateway/README.md.
       BASEROUTER_MAX_REQUEST_MB: ${BASEROUTER_MAX_REQUEST_MB:-64}
+      # The name Caddy serves it under (tls profile), and any other name it is reached by.
+      BASEROUTER_DOMAIN: ${BASEROUTER_DOMAIN:-}
+      BASEROUTER_ALLOWED_HOSTS: ${BASEROUTER_ALLOWED_HOSTS:-}
 
   caddy:
     profiles: ["tls"]

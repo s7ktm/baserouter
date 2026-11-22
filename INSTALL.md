@@ -45,7 +45,7 @@ Agents on other machines, or your phone opening the panel, need HTTPS: without i
 
 The panel is then https://baserouter.example.com/ and the one address https://baserouter.example.com/v1.
 
-**On a home network without a public name**, use a local one, for example `baserouter.home.arpa`, that your router or each device resolves to the machine. Add the line `tls internal` inside the block in `deploy/Caddyfile`; Caddy then makes its own certificate. Each device has to trust Caddy's root certificate once:
+**On a home network without a public name**, use a local one, for example `baserouter.home.arpa`, that your router or each device resolves to the machine. Add the line `tls internal` inside the block in `deploy/Caddyfile`; Caddy then makes its own certificate. Set `BASEROUTER_DOMAIN` to that name too, as above: the panel answers only to the names it knows. Each device has to trust Caddy's root certificate once:
 
 ```bash
 docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt baserouter-root.crt
@@ -105,6 +105,7 @@ Back up the whole data folder, `secret.key` included: without it, the providers'
 # Docker Compose
 docker compose stop baserouter
 docker compose cp baserouter:/data ./baserouter-backup
+chmod -R go-rwx ./baserouter-backup
 docker compose start baserouter
 ```
 

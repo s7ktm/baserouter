@@ -25,7 +25,8 @@ function passHeaders(upstream: Response): Headers {
 // A route's models are an order: when the model asked for fails, the next ones are tried.
 // OpenRouter does that itself when the request carries "models", so the gateway adds it:
 // the model asked for first, then the route's other models in the route's order. The body
-// is left exactly as written when the route has one model, or the client sent its own list.
+// is left exactly as written when the route has one model, or the client sent its own list
+// (which forward() has already checked against the route's models).
 export function withFallbacks(text: string, body: Record<string, unknown>, model: string, routeModels: string[]): string {
   if (routeModels.length < 2 || "models" in body) return text;
   return JSON.stringify({ ...body, models: [model, ...routeModels.filter((m) => m !== model)] });
@@ -63,12 +64,18 @@ const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 // prompt: for a request that makes images or speech, the words that asked for them.
 type Prepared =
   | { ok: false; response: Response }
-  | { ok: true; model: string; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null };
+  | { ok: true; model: string; alsoModels?: string[]; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null };
 
 type Prepare = (c: Context<Env>, bytes: Uint8Array, route: RouteRow) => Promise<Prepared> | Prepared;
 
 const invalid = (c: Context<Env>, message: string): Prepared => ({ ok: false, response: refuse(c, 400, "invalid_request", message) });
 const noModel = 'The request does not say which model to use. Add "model".';
+
+// What a model id may look like: OpenRouter's are "author/name", sometimes with ":variant"
+// or a leading "~". Anything else (markup, spaces, control characters) is refused, so a
+// model id is always safe to show and to record.
+export const validModelId = (id: unknown): id is string => typeof id === "string" && /^[\w~][\w.:/@+~-]{0,199}$/.test(id);
+const badModel = (c: Context<Env>, id: string) => invalid(c, `"${id.slice(0, 60).replace(/[^\w.:/@+~ -]/g, "?")}" is not a model id.`);
 
 // A JSON body with a "model". Chat requests get the route's fallbacks; the others are sent as written.
 function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
@@ -84,10 +91,19 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
     const fields = body as Record<string, unknown>;
     const model = typeof fields.model === "string" ? fields.model : "";
     if (!model) return invalid(c, noModel);
+    if (!validModelId(model)) return badModel(c, model);
+    // A client may send its own fallback list ("models"); OpenRouter would use those models
+    // too, so they are checked against the route's models like the one asked for.
+    let alsoModels: string[] = [];
+    if ("models" in fields) {
+      if (!Array.isArray(fields.models) || !fields.models.every(validModelId)) return invalid(c, '"models" must be a list of model ids.');
+      alsoModels = fields.models;
+    }
     const made = kind === "chat-modalities" ? chatKind(fields) : kind;
     return {
       ok: true,
       model,
+      alsoModels,
       body: fallbacks ? withFallbacks(text, fields, model, allowedModels(route)) : bytes,
       contentType: "application/json",
       kind: made,
@@ -102,13 +118,17 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
 const transcription: Prepare = async (c, bytes, route) => {
   const contentType = c.req.header("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) return json("transcription", false)(c, bytes, route);
-  let model: unknown;
+  let models: unknown[];
   try {
-    model = (await new Response(bytes, { headers: { "Content-Type": contentType } }).formData()).get("model");
+    models = (await new Response(bytes, { headers: { "Content-Type": contentType } }).formData()).getAll("model");
   } catch {
     return invalid(c, "The request body is not a valid form.");
   }
+  // One "model" only: with two, the gateway and OpenRouter could each read a different one.
+  if (models.length > 1) return invalid(c, 'The form has more than one "model".');
+  const model = models[0];
   if (typeof model !== "string" || !model) return invalid(c, noModel);
+  if (!validModelId(model)) return badModel(c, model);
   return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false };
 };
 
@@ -161,8 +181,9 @@ export function proxy(deps: Deps) {
     const keepSound = keepMedia && path === "/audio/speech";
 
     const models = allowedModels(route);
-    if (models.length > 0 && !models.includes(model)) {
-      return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${model}. It may use: ${models.join(", ")}.`);
+    const notAllowed = models.length > 0 ? [model, ...(prepared.alsoModels ?? [])].find((m) => !models.includes(m)) : undefined;
+    if (notAllowed !== undefined) {
+      return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${notAllowed}. It may use: ${models.join(", ")}.`);
     }
 
     const provider = store.providers()[0];

@@ -21,6 +21,8 @@ ExecStart=/usr/local/bin/bun src/index.ts
 Environment=BASEROUTER_DATA_DIR=/var/lib/baserouter
 # This machine only. Put a reverse proxy with HTTPS in front to reach it from elsewhere.
 Environment=BASEROUTER_HOST=127.0.0.1
+# The name a reverse proxy serves it under, for example:
+# Environment=BASEROUTER_ALLOWED_HOSTS=baserouter.example.com
 StateDirectory=baserouter
 StateDirectoryMode=0700
 Restart=on-failure

@@ -8,6 +8,8 @@ bun design/serve.ts
 
 - http://127.0.0.1:4173/prototype/ — the home screen, with a skin picker
 - http://127.0.0.1:4173/prototype/check.html — every skin in every state, and whether it meets the contract
+
+The gateway serves only the panel itself (`index.html`, `core/`, `skins/`, `fonts/`); the design pages here (`check.html`, `mascots.html`, `cover.html`, `frame.html`) are opened through `bun design/serve.ts`.
 - http://127.0.0.1:4173/prototype/mascots.html — every mascot in every mood, both themes, and at small sizes
 - http://127.0.0.1:4173/prototype/cover.html — the README and social cover
 

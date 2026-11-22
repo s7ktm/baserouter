@@ -79,7 +79,7 @@ export default {
     const max = Math.max(...data.spend.week, 0.01);
     const providers = counts.providers ? t("provUp", { up: counts.up, total: counts.providers }) : t("noProv");
     const says = empty ? t("petEmpty") : t(`pet_${ctx.mood}`, { k: counts.attention });
-    const tick = last ? `${ctx.name(last.route)} &gt; ${last.model}  ${ctx.secs(last.seconds)}  ${ctx.money(last.cost)}` : t("noRequests");
+    const tick = last ? `${ctx.name(last.route)} &gt; ${ctx.esc(last.model)}  ${ctx.secs(last.seconds)}  ${ctx.money(last.cost)}` : t("noRequests");
     return `<main class="shell">
       <div class="brand"><b>baserouter</b><span class="grille" aria-hidden="true"></span></div>
       <div class="left">
