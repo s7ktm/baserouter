@@ -60,3 +60,17 @@ live("a route over its budget is refused without reaching OpenRouter", async () 
   expect(res.status).toBe(402);
   expect(gw.store.requests({ limit: 200 }).length).toBe(before);
 });
+
+live("when the first model of a route fails, OpenRouter answers with the next one", async () => {
+  // openai/gpt-4o-mini cannot write 200,000 tokens, so it fails at once and the route's next
+  // model answers. (An unknown model id is refused with 400 before any fallback.)
+  const route = gw.addRoute({ allow: ["openai/gpt-4o-mini", model] });
+  const res = await gw.chat(route.key, { model: "openai/gpt-4o-mini", max_tokens: 200_000, messages: [{ role: "user", content: "Reply with the single word: ok" }] });
+  const body = (await res.json()) as { model?: string };
+  expect(res.status).toBe(200);
+  expect(body.model).toStartWith(model);
+  const row = gw.lastRequest()!;
+  expect(row).toMatchObject({ model_requested: "openai/gpt-4o-mini", failure: null, cost_source: "provider" });
+  expect(row.model_served).toStartWith(model);
+  expect(row.cost_usd).toBeGreaterThan(0);
+}, 60_000);

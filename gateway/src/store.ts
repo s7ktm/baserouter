@@ -157,6 +157,11 @@ export class Store {
     this.db.query("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
   }
 
+  // Every session except the one given ends.
+  dropOtherSessions(keep: string): void {
+    this.db.query("DELETE FROM sessions WHERE token_hash != ?").run(keep);
+  }
+
   providers(): ProviderRow[] {
     return this.db.query("SELECT * FROM providers ORDER BY created_at").all() as ProviderRow[];
   }
@@ -198,9 +203,19 @@ export class Store {
       .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.created_at);
   }
 
-  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean }): void {
-    if (change.budget_usd !== undefined) this.db.query("UPDATE routes SET budget_usd = ? WHERE id = ?").run(change.budget_usd, id);
-    if (change.enabled !== undefined) this.db.query("UPDATE routes SET enabled = ? WHERE id = ?").run(change.enabled ? 1 : 0, id);
+  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string }): void {
+    this.db.transaction(() => {
+      if (change.budget_usd !== undefined) this.db.query("UPDATE routes SET budget_usd = ? WHERE id = ?").run(change.budget_usd, id);
+      if (change.enabled !== undefined) this.db.query("UPDATE routes SET enabled = ? WHERE id = ?").run(change.enabled ? 1 : 0, id);
+      if (change.models !== undefined) this.db.query("UPDATE routes SET models = ? WHERE id = ?").run(JSON.stringify(change.models), id);
+      if (change.key_hash !== undefined && change.key_hint !== undefined) {
+        this.db.query("UPDATE routes SET key_hash = ?, key_hint = ? WHERE id = ?").run(change.key_hash, change.key_hint, id);
+      }
+    })();
+  }
+
+  allRequests(): RequestRow[] {
+    return this.db.query("SELECT * FROM requests ORDER BY id").all() as RequestRow[];
   }
 
   removeRoute(id: string): boolean {

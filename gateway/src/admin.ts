@@ -133,6 +133,42 @@ export function admin(deps: Deps) {
     await next();
   });
 
+  // Changes the password. Every other session ends; this one stays signed in.
+  app.post("/password", async (c) => {
+    const { current, password } = await jsonBody(c);
+    if (deps.now() < lockedUntil) return fail(c, 429, "too_many_tries", "Too many wrong passwords. Wait a minute, then try again.");
+    if (typeof current !== "string" || !(await Bun.password.verify(current, store.setting("admin_password")!))) {
+      if (++wrong >= MAX_WRONG) (lockedUntil = deps.now() + LOCK_MS), (wrong = 0);
+      return fail(c, 401, "wrong_password", "That password is not right.");
+    }
+    wrong = 0;
+    if (typeof password !== "string" || password.length < MIN_PASSWORD) {
+      return fail(c, 400, "password_too_short", `Choose a password of at least ${MIN_PASSWORD} characters.`);
+    }
+    store.setSetting("admin_password", await Bun.password.hash(password));
+    store.dropOtherSessions(hashKey(sessionToken(c)!));
+    return c.body(null, 204);
+  });
+
+  // Everything BaseRouter knows, in one file: routes, providers without their keys, and
+  // every request. Key hashes and sealed keys are left out.
+  app.get("/export", (c) => {
+    const now = deps.now();
+    const body = {
+      baserouter: 1,
+      exportedAt: new Date(now).toISOString(),
+      routes: store.routes().map((r) => ({
+        id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: JSON.parse(r.models) as string[],
+        icon: r.icon, color: r.color, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
+      })),
+      providers: store.providers().map((p) => ({ ...providerView(p), createdAt: new Date(p.created_at).toISOString() })),
+      requests: store.allRequests().map((r) => ({ ...requestView(r), at: new Date(r.started_at).toISOString() })),
+    };
+    c.header("Content-Disposition", `attachment; filename="baserouter-${localDate(new Date(now))}.json"`);
+    c.header("Cache-Control", "no-store");
+    return c.json(body);
+  });
+
   app.post("/logout", (c) => {
     const token = sessionToken(c);
     if (token) store.dropSession(hashKey(token));
@@ -185,6 +221,8 @@ export function admin(deps: Deps) {
   });
 
   const validBudget = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+  const validModels = (v: unknown): v is string[] =>
+    Array.isArray(v) && v.length <= 50 && v.every((m) => typeof m === "string" && m.trim() !== "" && m.length <= 200) && new Set(v.map((m: string) => m.trim())).size === v.length;
 
   // Makes a route. The answer is the only time its key is given in full.
   // icon and color are how the panel draws it; the gateway only keeps them.
@@ -192,7 +230,7 @@ export function admin(deps: Deps) {
     const { name, budget, models = [], icon = "code", color = "#2B62D9" } = await jsonBody(c);
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) return fail(c, 400, "name_invalid", "Give the route a name of up to 120 characters.");
     if (!validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
-    if (!Array.isArray(models) || !models.every((m) => typeof m === "string" && m.trim())) return fail(c, 400, "models_invalid", "Give the models as a list of model names.");
+    if (!validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
     if (typeof icon !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(icon)) return fail(c, 400, "icon_invalid", "Give the icon as a short lowercase name.");
     if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return fail(c, 400, "color_invalid", "Give the colour as #RRGGBB.");
 
@@ -208,11 +246,22 @@ export function admin(deps: Deps) {
   app.patch("/routes/:id", async (c) => {
     const id = c.req.param("id");
     if (!store.route(id)) return fail(c, 404, "not_found", "There is no such route.");
-    const { budget, enabled } = await jsonBody(c);
+    const { budget, enabled, models } = await jsonBody(c);
     if (budget !== undefined && !validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (enabled !== undefined && typeof enabled !== "boolean") return fail(c, 400, "enabled_invalid", 'Give "enabled" as true or false.');
-    store.updateRoute(id, { budget_usd: budget, enabled });
+    if (models !== undefined && !validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
+    store.updateRoute(id, { budget_usd: budget, enabled, models: (models as string[] | undefined)?.map((m) => m.trim()) });
     return c.json({ route: routeView(store.route(id)!, spendNow()) });
+  });
+
+  // Replaces a route's key. The old one stops working at once; the new one is given in
+  // full only in this answer.
+  app.post("/routes/:id/key", (c) => {
+    const id = c.req.param("id");
+    if (!store.route(id)) return fail(c, 404, "not_found", "There is no such route.");
+    const key = newRouteKey();
+    store.updateRoute(id, { key_hash: hashKey(key), key_hint: keyHint(key) });
+    return c.json({ route: routeView(store.route(id)!, spendNow()), key });
   });
 
   // Its requests stay in the activity list, without a route.

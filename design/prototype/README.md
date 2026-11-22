@@ -20,11 +20,12 @@ URL parameters for `index.html`:
 | `skin` | `socket`, `display`, `home` |
 | `state` | `default`, `calm`, `empty`, `stress` (worst case: 40 routes, very long names, huge and zero amounts). Always made-up data, also when a gateway serves the page |
 | `lang`, `theme` | `en`, `tr`; `light`, `dark`, `auto` |
-| `route` | A route id: opens its detail. With `edit=budget`, on its budget form |
+| `route` | A route id: opens its detail. With `edit=budget`, `edit=model`, `edit=key` or `edit=delete`, on that form or question; `edit=key&step=made` shows a new key |
 | `screen` | `providers`, `add-provider`, `new-route`, `activity`, `settings`, and `sign-in` on made-up data |
 | `step` | For `add-provider`: `pick`, `key`, `testing`, `ok`, `fail`, with `kind` (for example `kind=openrouter`). For `new-route`: `made`, `arrived`. For `sign-in`: `login`, `setup`, `fail` |
 | `flow=1` | Shows a flow as part of the first run, with numbered steps |
 | `filter` | For `activity`: a route id |
+| `edit=password` | For `settings`: the password form |
 | `bar=0` | Hides the picker bar |
 
 ## What is shared
@@ -85,4 +86,4 @@ This folder is also the panel the gateway ships. Served by the gateway (`cd gate
 
 Served by `bun design/serve.ts`, or opened with `?state=...` anywhere, it runs on the made-up data in `core/data.js` and nothing is saved. A provider test always succeeds, any key is accepted unless it contains `bad`, any password signs in, and the first request to a new route "arrives" by itself after three seconds.
 
-Either way, making a new key, changing a route's model list, deleting a route, changing the password and exporting do nothing yet.
+On made-up data a new key is always the same, export saves the made-up data, and signing out asks for a password that any password answers.

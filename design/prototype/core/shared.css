@@ -58,6 +58,7 @@
 .br-sheet .br-btn.main{background:var(--br-action);color:var(--br-on-action);box-shadow:inset 0 0 0 var(--br-stroke) var(--br-line)}
 .br-btn.quiet{box-shadow:none;padding:0 2px;text-decoration:underline;text-underline-offset:3px}
 .br-sheet .br-btn.danger{color:var(--br-stop)}
+.br-sheet .br-btn.main.danger{background:var(--br-stop);color:var(--br-on-stop)}
 
 .br-label{display:block;font-size:14px;color:var(--br-ink-2);margin:12px 0 6px}
 .br-field{display:flex;align-items:center;gap:8px;min-height:54px;padding:5px 5px 5px 14px;border-radius:var(--br-radius-m);

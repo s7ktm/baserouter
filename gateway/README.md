@@ -63,7 +63,7 @@ Anything that speaks the OpenAI API works the same way: point its base URL at th
 
 **A row per request.** Route, the model asked for and the model that answered, tokens, cost, where the cost came from, time to the first token, total time, and what went wrong if something did. The cost is the `usage.cost` OpenRouter reports, read from the stream as it passes. When an answer ends without it (a stream that broke off, a client that left), the gateway asks OpenRouter for that request's cost a few seconds later. A request whose cost stays unknown counts as nothing towards the budget.
 
-**A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model.
+**A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model. When a route has more than one model, the request is sent with OpenRouter's `models` fallback list: the model asked for first, then the route's other models in order, so OpenRouter tries the next one when a model fails (rate limit, outage, a request it cannot take). A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
 
 ### Refusals
 
@@ -97,9 +97,12 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `GET /api/models` | The provider's model ids, for choosing a route's model |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
-| `PATCH /api/routes/:id` `{budget?, enabled?}` | Changes the budget, switches it on or off |
+| `PATCH /api/routes/:id` `{budget?, enabled?, models?}` | Changes the budget, switches it on or off, changes its models |
+| `POST /api/routes/:id/key` | Replaces its key; the old one stops working at once. Gives the new key, once |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
+| `POST /api/password` `{current, password}` | Changes the password; every other session ends |
+| `GET /api/export` | Routes, providers without their keys, and every request, as one JSON file |
 
 ## What is kept, and how
 
@@ -138,7 +141,7 @@ To test against the real OpenRouter, put a key in `.env` at the top of the repos
 bun --env-file=../.env test live
 ```
 
-That sends two short requests and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model.
+That sends three short requests, one of them through a fallback, and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model.
 
 `bun run typecheck` checks the types.
 
@@ -153,8 +156,7 @@ This starts the gateway and its panel in front of the stand-in, with a new, empt
 ## Not here yet
 
 - Providers other than OpenRouter. There is no provider interface on purpose; it will grow out of the second provider.
-- Trying a route's next model when the first fails, and changing a route's models or name after it is made.
-- Changing the admin password, and export.
+- Changing a route's name after it is made.
 - Images, audio, video and embeddings.
 - With your own provider keys inside OpenRouter (BYOK), `usage.cost` is what OpenRouter charged, not what the provider behind it charged. Only the first is counted.
 - A cost lookup that is still waiting when the gateway stops is not picked up again on the next start.
