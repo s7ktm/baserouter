@@ -1,11 +1,11 @@
 // Route detail. Built once; every skin restyles it through the shared tokens.
 // Order follows what a person opens a route for: is it on, what has it spent,
 // how do I connect to it, which models may it use, what did it just do.
-import { modelPicker } from "./models.js";
+import { modelPicker, providerChoice } from "./models.js";
 import { sheet, cross, curl } from "./sheet.js";
 
 function snippets(route, data) {
-  const model = route.models[0] ?? "model-name";
+  const model = route.models[0]?.model ?? "model-name";
   return {
     curl: curl(data.address, model),
     python: `import os
@@ -56,10 +56,14 @@ export function routeSheet(ctx, ui) {
   // Adding a model: the provider's models, to search and pick from. Picking one adds it.
   const addModel = ui.editing === "model"
     ? `<form class="br-form br-adding" data-form="find" data-id="${route.id}">
-        ${modelPicker(ctx, ui, { mode: "add", taken: route.models, routeId: route.id })}
+        ${modelPicker(ctx, ui, { mode: "add", taken: route.models.filter((l) => !l.provider).map((l) => l.model), routeId: route.id })}
         <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
       </form>`
-    : route.models.length ? `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("addModel")}</button></p>` : "";
+    : ui.editing === "provider" ? "" : route.models.length ? `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("addModel")}</button></p>` : "";
+
+  // Where one line's model comes from: the provider's own providers for it.
+  const editingLine = ui.editing === "provider" ? route.models[ui.line] : null;
+  const where = editingLine ? providerChoice(ctx, ui, route, editingLine) : "";
 
   const code = snippets(route, data);
   const tab = ui.tab in code ? ui.tab : "curl";
@@ -96,11 +100,14 @@ export function routeSheet(ctx, ui) {
       <p class="br-note">${t("modelsNote")}</p>
       ${route.models.length
         ? `<ol class="br-list">
-        ${route.models.map((m, i) => `<li><b class="br-n">${i + 1}</b><span><code class="br-keep">${esc(m)}</code></span>${route.models.length > 1
-          ? `<button class="br-x small" data-action="remove-model" data-id="${route.id}" data-model="${esc(m)}" aria-label="${t("remove", { name: esc(m) })}">${cross}</button>`
+        ${route.models.map((l, i) => `<li><b class="br-n">${i + 1}</b><span><code class="br-keep">${esc(l.model)}</code>
+            <button class="br-from" data-action="edit" data-edit="provider" data-line="${i}" aria-pressed="${ui.editing === "provider" && ui.line === i}" aria-label="${t("whereFrom", { model: esc(l.model) })}: ${l.provider ? esc(l.provider) : t("anyProvider")}">
+              ${l.provider ? `<span class="br-keep">${esc(l.provider)}</span>` : t("anyProvider")}</button></span>${route.models.length > 1
+          ? `<button class="br-x small" data-action="remove-model" data-id="${route.id}" data-line="${i}" aria-label="${t("remove", { name: esc(l.model) })}">${cross}</button>`
           : "<span></span>"}</li>`).join("")}
       </ol>`
         : `<p class="br-note" style="margin-top:8px">${t("anyModel")}</p>`}
+      ${where}
       ${addModel}
     </section>
 

@@ -6,6 +6,7 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ### Changed
 
+- A route's model list is a list of lines, each a model and, if it names one, where it comes from: one of OpenRouter's own providers for that model (Google Vertex, Amazon Bedrock, a faster or cheaper tier...). The same model can be listed again from another provider as its fallback. When a route names providers, the gateway tries its lines itself, one request each. The panel shows each line's provider and lets it be chosen from OpenRouter's list for that model, with prices. Plain model ids still work, and the API returns lines as `{model, provider}`.
 - Choosing a model in the panel (adding one to a route, or a new route's first) is a model picker instead of a long drop-down: a search, the kinds of model (text, image, speech, transcription, video) with how many of each, and a row per model with its name, id, price and what it reads, all from OpenRouter's own list. `GET /api/models` gives that for each model instead of ids only.
 
 ### Fixed

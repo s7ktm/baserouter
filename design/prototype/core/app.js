@@ -1,7 +1,7 @@
 // The shared mechanism: one state, one set of actions, any skin on top.
 // Served by a gateway, the state is the gateway's and actions go to its API. Anywhere
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
-import { states, catalog, modelChoices, modelCatalogue } from "./data.js";
+import { states, catalog, modelChoices, modelCatalogue, providersFor } from "./data.js";
 import { modelPicker } from "./screens/models.js";
 import { api, gatewayStatus, SignedOut, toData } from "./live.js";
 import { words as core } from "./words.js";
@@ -92,7 +92,7 @@ let opener = null;
 
 function fresh() {
   return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false,
-    find: "", makes: "", more: 0, picking: false, chosen: null };
+    find: "", makes: "", more: 0, picking: false, chosen: null, line: null, providers: null };
 }
 if (signedOut) {
   view = { screen: "sign-in" };
@@ -100,6 +100,13 @@ if (signedOut) {
 } else if (data.routes.some((r) => r.id === query.get("route"))) {
   view = { screen: "route", id: query.get("route") };
   ui.editing = query.get("edit");
+  // edit=provider&line=<n>: where that line's model comes from
+  if (ui.editing === "provider") {
+    const route = data.routes.find((r) => r.id === view.id);
+    ui.line = Number(query.get("line") ?? 0);
+    if (!route.models[ui.line]) ui.editing = null;
+    else if (!live) ui.providers = { model: route.models[ui.line].model, list: providersFor(route.models[ui.line].model, query.get("state") === "stress") };
+  }
   // edit=key&step=made: the new key, shown once
   if (ui.editing === "key" && query.get("step") === "made") {
     ui.editing = null;
@@ -298,6 +305,8 @@ const actions = {
   async edit(control) {
     const editing = control.dataset.edit || null;
     if (live && editing === "model") loadModels().then(() => drawPicker(true));
+    ui.line = editing === "provider" ? Number(control.dataset.line) : null;
+    if (editing === "provider") loadProviders();
     ui.editing = editing;
     Object.assign(ui, { find: "", makes: "", more: 0 });
     ui.error = null;
@@ -327,7 +336,8 @@ const actions = {
   "remove-model"(control) {
     const route = data.routes.find((r) => r.id === control.dataset.id);
     if (!route || route.models.length < 2) return;
-    route.models = route.models.filter((m) => m !== control.dataset.model);
+    route.models = route.models.filter((_, i) => i !== Number(control.dataset.line));
+    ui.editing = null;
     render();
     if (live) send(api.setModels(route.id, route.models));
   },
@@ -430,10 +440,24 @@ const actions = {
       return;
     }
     const route = data.routes.find((r) => r.id === picker.dataset.id);
-    if (!route || route.models.includes(model)) return;
-    route.models = [...route.models, model];
+    if (!route || route.models.some((l) => l.model === model && !l.provider)) return;
+    route.models = [...route.models, { model, provider: null }];
     ui.editing = null;
     render();
+    if (live) send(api.setModels(route.id, route.models));
+  },
+  // where a route's line gets its model: one of the provider's own providers, or any ("")
+  "set-provider"(control) {
+    const route = data.routes.find((r) => r.id === control.dataset.id);
+    const line = route?.models[ui.line];
+    if (!line) return;
+    const provider = control.dataset.tag || null;
+    if (route.models.some((l, i) => i !== ui.line && l.model === line.model && l.provider === provider)) return;
+    const at = ui.line;
+    route.models = route.models.map((l, i) => (i === at ? { ...l, provider } : l));
+    ui.editing = null;
+    render();
+    app.querySelector(`.br-from[data-line="${at}"]`)?.focus();
     if (live) send(api.setModels(route.id, route.models));
   },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
@@ -558,7 +582,7 @@ const forms = {
     const route = {
       id: uniqueId(name), name: { en: name, tr: name }, icon: "code", color: colours[data.routes.length % colours.length],
       enabled: true, busy: false, today: 0, used: 0, budget: Number(values.get("budget")) || 5,
-      keyHint: demoKey.slice(-4), models: [String(values.get("model"))],
+      keyHint: demoKey.slice(-4), models: [{ model: String(values.get("model")), provider: null }],
     };
     data.routes.push(route);
     ui.step = "made";
@@ -569,7 +593,7 @@ const forms = {
     setTimeout(() => {
       if (ui.made?.id !== route.id) return;
       ui.made.first = demoFirst;
-      data.requests.unshift({ route: route.id, model: route.models[0], ...demoFirst, ago: 1, ok: true });
+      data.requests.unshift({ route: route.id, model: route.models[0].model, ...demoFirst, ago: 1, ok: true });
       route.today = route.used = demoFirst.cost;
       render();
     }, 3000);
@@ -612,6 +636,22 @@ app.addEventListener("keydown", (event) => {
 function replaceData(next) {
   for (const key of Object.keys(data)) delete data[key];
   Object.assign(data, next);
+}
+
+// The providers of the model on the line being edited, from the gateway (or the made-up data).
+async function loadProviders() {
+  const route = data.routes.find((r) => r.id === view?.id);
+  const model = route?.models[ui.line]?.model;
+  if (!model || ui.providers?.model === model) return;
+  ui.providers = null;
+  if (!live) return void (ui.providers = { model, list: providersFor(model) });
+  try {
+    const list = await api.providersOf(model);
+    if (route.models[ui.line]?.model === model) ui.providers = { model, list };
+  } catch {
+    ui.providers = { model, list: [] };
+  }
+  render();
 }
 
 // The model a new route starts with: the first suggested one the provider has, or its first.

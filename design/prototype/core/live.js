@@ -32,6 +32,7 @@ export const api = {
   login: (password) => call("POST", "/login", { password }),
   state: () => call("GET", "/state"),
   models: () => call("GET", "/models").then((answer) => answer.models),
+  providersOf: (model) => call("GET", `/models/providers?model=${encodeURIComponent(model)}`).then((answer) => answer.providers),
   toggle: (id, enabled) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { enabled }),
   budget: (id, budget) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { budget }),
   addProvider: (kind, key) => call("POST", "/providers", { kind, key }),
@@ -52,7 +53,9 @@ export const api = {
 export function toData(state) {
   const routes = state.routes.map((r) => ({
     id: r.id, name: { en: r.name, tr: r.name }, icon: r.icon, color: r.color, enabled: r.enabled, busy: r.busy,
-    today: r.today, used: r.used, budget: r.budget, keyHint: r.keyHint, models: r.models, keepMedia: r.keepMedia,
+    today: r.today, used: r.used, budget: r.budget, keyHint: r.keyHint, keepMedia: r.keepMedia,
+    // a route's lines: a model, and where it comes from (a gateway before lines sent plain ids)
+    models: (r.models ?? []).map((l) => (typeof l === "string" ? { model: l, provider: null } : l)),
   }));
   const known = new Set(routes.map((r) => r.id));
   const media = (i) => ({

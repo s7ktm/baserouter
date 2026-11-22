@@ -126,7 +126,7 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 1. **Name, status, switch.** The status is a short sentence. A route over its budget has no switch.
 2. **Budget.** Spent and limit, a meter, the date it starts again, and one button: "Change budget", or "Raise budget" as the main action when the route is stopped.
 3. **Connect.** The address, the route's key, and a snippet for curl and Python. The key is shown in full only once, when it is made; afterwards only its last four characters are shown and a lost key is replaced with a new one. "Make a new key" first says that the old key stops working at once, then shows the new key in full, this once.
-4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails. Each model but the last can be removed; "Add model" opens the model picker below, and picking a model adds it.
+4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails. Each line is a model and, under it, where it comes from ("Any provider", or the provider's own name for one); pressing that opens the choice described in "A route's models and providers". Each line but the last can be removed; "Add model" opens the model picker below, and picking a model adds it.
 5. **Keep images, sound and video.** A switch, on unless turned off: the images, speech and video this route makes are kept, to look at, listen to and watch again in activity. Below it, when there are any, a way to this route's images, to its sounds and to its videos.
 6. **Recent requests.** Five rows. A request that worked has a filled dot and its cost; one that failed has a hollow ring and the word "failed".
 7. **Delete route.** Last, and quiet. It asks before it deletes, with the answer that keeps the route under the cursor.
@@ -148,6 +148,10 @@ Three moments: pick one from a short list, paste its key, see the result of the 
 ### New route
 
 A form with three fields (name, monthly budget, first model), then the one moment the full key is shown, with the snippet under it and a line that waits for the first request and says when it arrives.
+
+### A route's models and providers
+
+The direction is in PRODUCT.md ("Routes, models and providers"): a line in a route is a model from a provider. Each line in route detail's numbered list shows the model and, beside it, where it comes from: "any provider", or the one named. Pressing that opens the model's providers, as the provider lists them, with what each charges; picking one sets it, and "Any provider" leaves it to the provider again. A route may list the same model more than once, from different places, as its own fallback.
 
 ### Choosing a model
 
@@ -298,6 +302,7 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **A video's tile is its first moment,** asked of the browser (`#t=0.1`), not a picture the gateway makes. Each tile loads a little of its video to show it; with many videos that is many small requests. A still made by the gateway would need a video decoder it does not have.
 - **A video plays with the browser's own controls,** in every skin, like sound. Skins cannot restyle them.
 - **A model shows only what fits on one line.** Its description, its prices for images or sound, and its other parameters are on OpenRouter's page, not here. A model detail view would be the next step if picking turns out to need more.
+- **A line shows its provider by OpenRouter's tag** ("google-vertex", "google-ai-studio/flex"), not its name, so the route list needs nothing more than the route itself. The provider's name, tier and prices are in the choice that opens.
 - **No sort or saved favourites in the model picker.** The provider's order is newest first. A sort (by price, by how much it reads) can follow if search and kinds turn out not to be enough.
 - **No screen for a single request.** A row in activity does not open. An image or a sound does, since it can only be seen or heard by opening it.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.

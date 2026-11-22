@@ -348,7 +348,7 @@ export class Store {
       .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.keep_media, row.created_at);
   }
 
-  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string; keep_media?: boolean }): void {
+  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: unknown[]; key_hash?: string; key_hint?: string; keep_media?: boolean }): void {
     this.db.transaction(() => {
       if (change.keep_media !== undefined) this.db.query("UPDATE routes SET keep_media = ? WHERE id = ?").run(change.keep_media ? 1 : 0, id);
       if (change.budget_usd !== undefined) this.db.query("UPDATE routes SET budget_usd = ? WHERE id = ?").run(change.budget_usd, id);

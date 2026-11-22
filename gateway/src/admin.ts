@@ -5,7 +5,8 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
 import { dayStart, monthStart, nextMonthStart, localDate } from "./budget.ts";
 import type { Deps, Env } from "./deps.ts";
-import { catalogue, type CatalogueModel } from "./catalogue.ts";
+import { catalogue, providersOf, type CatalogueModel, type ModelProvider } from "./catalogue.ts";
+import { linesOf, parseLines } from "./lines.ts";
 import { MediaKeeper } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
@@ -101,7 +102,7 @@ export function admin(deps: Deps) {
       used: spent.used,
       budget: r.budget_usd,
       keyHint: r.key_hint,
-      models: JSON.parse(r.models) as string[],
+      models: linesOf(r),
       icon: r.icon,
       color: r.color,
       keepMedia: r.keep_media === 1,
@@ -201,7 +202,7 @@ export function admin(deps: Deps) {
       baserouter: 1,
       exportedAt: new Date(now).toISOString(),
       routes: store.routes().map((r) => ({
-        id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: JSON.parse(r.models) as string[],
+        id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: linesOf(r),
         icon: r.icon, color: r.color, keepMedia: r.keep_media === 1, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
       })),
       providers: store.providers().map((p) => ({ ...providerView(p), createdAt: new Date(p.created_at).toISOString() })),
@@ -269,8 +270,7 @@ export function admin(deps: Deps) {
   });
 
   const validBudget = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
-  const validModels = (v: unknown): v is string[] =>
-    Array.isArray(v) && v.length <= 50 && v.every((m) => typeof m === "string" && m.trim() !== "" && m.length <= 200) && new Set(v.map((m: string) => m.trim())).size === v.length;
+  const badLines = "Give the models as a list of up to 50 different lines: model ids, or { model, provider } where provider is one of the provider's own (such as \"google-vertex\") or null.";
 
   // Makes a route. The answer is the only time its key is given in full.
   // icon and color are how the panel draws it; the gateway only keeps them.
@@ -278,7 +278,8 @@ export function admin(deps: Deps) {
     const { name, budget, models = [], icon = "code", color = "#2B62D9", keepMedia = true } = await jsonBody(c);
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) return fail(c, 400, "name_invalid", "Give the route a name of up to 120 characters.");
     if (!validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
-    if (!validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
+    const lines = parseLines(models);
+    if (!lines) return fail(c, 400, "models_invalid", badLines);
     if (typeof icon !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(icon)) return fail(c, 400, "icon_invalid", "Give the icon as a short lowercase name.");
     if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return fail(c, 400, "color_invalid", "Give the colour as #RRGGBB.");
     if (typeof keepMedia !== "boolean") return fail(c, 400, "keep_media_invalid", 'Give "keepMedia" as true or false.');
@@ -286,7 +287,7 @@ export function admin(deps: Deps) {
     const key = newRouteKey();
     const row: RouteRow = {
       id: newId(), name: name.trim(), key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: budget, enabled: 1,
-      models: JSON.stringify(models.map((m: string) => m.trim())), icon, color, keep_media: keepMedia ? 1 : 0, created_at: deps.now(),
+      models: JSON.stringify(lines), icon, color, keep_media: keepMedia ? 1 : 0, created_at: deps.now(),
     };
     store.addRoute(row);
     return c.json({ route: routeView(row, new Map()), key }, 201);
@@ -298,9 +299,10 @@ export function admin(deps: Deps) {
     const { budget, enabled, models, keepMedia } = await jsonBody(c);
     if (budget !== undefined && !validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (enabled !== undefined && typeof enabled !== "boolean") return fail(c, 400, "enabled_invalid", 'Give "enabled" as true or false.');
-    if (models !== undefined && !validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
+    const lines = models === undefined ? undefined : parseLines(models);
+    if (lines === null) return fail(c, 400, "models_invalid", badLines);
     if (keepMedia !== undefined && typeof keepMedia !== "boolean") return fail(c, 400, "keep_media_invalid", 'Give "keepMedia" as true or false.');
-    store.updateRoute(id, { budget_usd: budget, enabled, models: (models as string[] | undefined)?.map((m) => m.trim()), keep_media: keepMedia });
+    store.updateRoute(id, { budget_usd: budget, enabled, models: lines, keep_media: keepMedia });
     return c.json({ route: routeView(store.route(id)!, spendNow()) });
   });
 
@@ -368,6 +370,34 @@ export function admin(deps: Deps) {
       return c.json({ models: list });
     } catch {
       return c.json({ models: [] });
+    }
+  });
+
+  // Where one model comes from: the provider's own providers for it (OpenRouter's endpoints
+  // list), with what each charges. ?model=<id>. Kept for ten minutes each.
+  const providersCache = new Map<string, { at: number; list: ModelProvider[] }>();
+  app.get("/models/providers", async (c) => {
+    const model = c.req.query("model") ?? "";
+    // Exactly "author/name": the id becomes part of a path to OpenRouter.
+    const parts = model.split("/");
+    if (!/^[\w~][\w.:/@+~-]{0,199}$/.test(model) || parts.length !== 2 || parts.some((p) => p === "." || p === "..")) return fail(c, 400, "model_invalid", "Give a model id, such as ?model=google/gemini-2.5-flash.");
+    const provider = store.providers()[0];
+    if (!provider) return c.json({ providers: [] });
+    const cached = providersCache.get(model);
+    if (cached && deps.now() - cached.at < 10 * 60_000) return c.json({ providers: cached.list });
+    try {
+      const path = `/models/${model.split("/").map(encodeURIComponent).join("/")}/endpoints`;
+      const res = await openrouter.get(deps.upstream, unseal(deps.master, provider.key_sealed), path, AbortSignal.timeout(15_000));
+      if (!res.ok) {
+        await res.body?.cancel();
+        return c.json({ providers: [] });
+      }
+      const list = providersOf(((await res.json()) as { data?: unknown }).data);
+      if (providersCache.size > 500) providersCache.clear();
+      providersCache.set(model, { at: deps.now(), list });
+      return c.json({ providers: list });
+    } catch {
+      return c.json({ providers: [] });
     }
   });
 

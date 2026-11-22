@@ -18,6 +18,7 @@ export const SCENARIOS = {
   "fixture/429": "a rate limit, before any response",
   "fixture/video-fails": "a video job that fails",
   "fixture/video-slow": "a video job that never ends",
+  'provider { only: ["fixture-down"] }': "any request: that provider is down (HTTP 503)",
 } as const;
 
 const json = (file: string, status = 200, headers: Record<string, string> = {}) =>
@@ -97,6 +98,7 @@ export function startFake(port = 0): Fake {
         return json(id === IDS.speech ? "generation-speech.json" : "generation.json");
       }
       if (req.method === "GET" && url.pathname === "/videos/models") return json("videos-models.json");
+      if (req.method === "GET" && /^\/models\/[^/]+\/[^/]+\/endpoints$/.test(url.pathname)) return json("model-endpoints.json");
       const video = /^\/videos\/([^/]+)(\/content)?$/.exec(url.pathname);
       if (req.method === "GET" && video) {
         const id = decodeURIComponent(video[1]!);
@@ -117,8 +119,12 @@ export function startFake(port = 0): Fake {
       posts.push({ path: url.pathname, key, contentType: req.headers.get("content-type"), body: bytes });
 
       if (url.pathname === "/audio/transcriptions") return json("transcription.json", 200, { "X-Generation-Id": IDS.transcription });
-      const { model, stream, modalities } = JSON.parse(new TextDecoder().decode(bytes)) as { model: string; stream?: boolean; modalities?: string[] };
+      const { model, stream, modalities, provider } = JSON.parse(new TextDecoder().decode(bytes)) as { model: string; stream?: boolean; modalities?: string[]; provider?: { only?: string[] } };
+      if (url.pathname === "/chat/completions") chats.push({ key, body: new TextDecoder().decode(bytes) });
       if (model === "fixture/429") return json("error-429.json", 429, { "Retry-After": "3" });
+      if (provider?.only?.includes("fixture-down")) {
+        return new Response(JSON.stringify({ error: { code: 503, message: "No allowed providers are available for the selected model." } }), { status: 503, headers: { "Content-Type": "application/json" } });
+      }
 
       if (url.pathname === "/videos") {
         const id = videoId(jobs.size);
@@ -142,8 +148,6 @@ export function startFake(port = 0): Fake {
       }
       if (url.pathname !== "/chat/completions") return new Response("Not found", { status: 404 });
 
-      const body = new TextDecoder().decode(bytes);
-      chats.push({ key, body });
 
       if (modalities?.includes("image")) {
         if (stream) return new Response(inPieces(await fixtureBytes("chat-image-stream.sse")), { headers: SSE });

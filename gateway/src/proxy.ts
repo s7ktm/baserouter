@@ -9,8 +9,9 @@ import { hashKey, unseal } from "./secrets.ts";
 import type { Failure, Kind, ProviderRow, RouteRow, Store } from "./store.ts";
 import { readPlain, StreamScanner, type Reading } from "./usage.ts";
 import { forClient, readJob, VideoWatcher } from "./video.ts";
+import { attemptOrder, bodyFor, linesOf, modelsOf } from "./lines.ts";
 
-const allowedModels = (route: RouteRow): string[] => JSON.parse(route.models) as string[];
+const allowedModels = (route: RouteRow): string[] => modelsOf(route);
 
 // Only these response headers are passed back. The rest describe the connection
 // between the gateway and the provider, not the one to the client.
@@ -65,7 +66,9 @@ const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 // prompt: for a request that makes images or speech, the words that asked for them.
 type Prepared =
   | { ok: false; response: Response }
-  | { ok: true; model: string; alsoModels?: string[]; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null };
+  | { ok: true; model: string; alsoModels?: string[]; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null;
+      // Bodies to send, one after another, when the one before fails (see "A route's lines" in forward)
+      fallbacks?: string[] };
 
 type Prepare = (c: Context<Env>, bytes: Uint8Array, route: RouteRow) => Promise<Prepared> | Prepared;
 
@@ -101,11 +104,29 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
       alsoModels = fields.models;
     }
     const made = kind === "chat-modalities" ? chatKind(fields) : kind;
+    // A route whose lines name providers. OpenRouter takes one set of providers for a whole
+    // request, not one per model, so on chat each line is its own request, tried in order;
+    // elsewhere (images, speech, video, which take no fallback list) the asked model's first
+    // line names the provider.
+    const lines = linesOf(route);
+    let sent: Uint8Array | string = fallbacks ? withFallbacks(text, fields, model, allowedModels(route)) : bytes;
+    let tries: string[] = [];
+    if (lines.some((l) => l.provider)) {
+      if (fallbacks) {
+        if ("models" in fields) return invalid(c, `Route "${route.name}" names where its models come from and tries them in its own order. Leave out "models".`);
+        tries = attemptOrder(lines, model).map((line) => bodyFor(fields, line));
+        sent = tries.shift()!;
+      } else {
+        const line = lines.find((l) => l.model === model && l.provider);
+        if (line) sent = bodyFor(fields, line);
+      }
+    }
     return {
       ok: true,
       model,
       alsoModels,
-      body: fallbacks ? withFallbacks(text, fields, model, allowedModels(route)) : bytes,
+      fallbacks: tries,
+      body: sent,
       contentType: "application/json",
       kind: made,
       streamed: fields.stream === true,
@@ -282,9 +303,17 @@ export function proxy(deps: Deps) {
       return rowId;
     };
 
+    // A route's lines: when an answer is refused (an outage, a rate limit, no such provider for
+    // the model), the next line is tried, before anything reaches the client. Not when the
+    // provider refused BaseRouter's key or its credit, which no other line would change.
     let upstream: Response;
     try {
-      upstream = await openrouter.send(deps.upstream, key, path, prepared.body, prepared.contentType, abort.signal);
+      const bodies = [prepared.body, ...(prepared.fallbacks ?? [])];
+      for (let i = 0; ; i++) {
+        upstream = await openrouter.send(deps.upstream, key, path, bodies[i]!, prepared.contentType, abort.signal);
+        if (upstream.ok || i === bodies.length - 1 || upstream.status === 401 || upstream.status === 402 || client.aborted) break;
+        await upstream.body?.cancel().catch(() => {});
+      }
     } catch {
       if (client.aborted) {
         finish(null, "client_cancelled");

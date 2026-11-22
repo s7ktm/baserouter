@@ -1,12 +1,18 @@
 // The one source of truth. Every skin draws from this; no skin keeps its own copy.
 // Pick a state with ?state=default|calm|empty|stress.
 
+// A line in a route: a model, and where it comes from (one of the provider's own providers,
+// or null to leave it to the provider). See "Routes, models and providers" in PRODUCT.md.
+function line(model, provider = null) {
+  return { model, provider };
+}
+
 const routes = [
-  { id: "coding", name: { en: "Coding agent", tr: "Kod ajanı" }, icon: "code", color: "#2B62D9", enabled: true, busy: true, today: 0.51, used: 11.3, budget: 25, keyHint: "4f2a", models: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"] },
-  { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["openai/gpt-5-mini"] },
-  { id: "arm", name: { en: "Robot arm", tr: "Robot kol" }, icon: "robot", color: "#1C2030", enabled: true, busy: false, today: 0.31, used: 1.1, budget: 5, keyHint: "b07d", models: ["google/gemini-2.5-flash"] },
-  { id: "news", name: { en: "Newsletter bot", tr: "Bülten botu" }, icon: "mail", color: "#8A4B08", enabled: true, busy: false, today: 0, used: 3, budget: 3, keyHint: "e3a8", models: ["openai/gpt-5-mini"] },
-  { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"], keepMedia: false },
+  { id: "coding", name: { en: "Coding agent", tr: "Kod ajanı" }, icon: "code", color: "#2B62D9", enabled: true, busy: true, today: 0.51, used: 11.3, budget: 25, keyHint: "4f2a", models: [line("anthropic/claude-sonnet-5.5", "anthropic"), line("anthropic/claude-sonnet-5.5"), line("openai/gpt-5-mini")] },
+  { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: [line("openai/gpt-5-mini")] },
+  { id: "arm", name: { en: "Robot arm", tr: "Robot kol" }, icon: "robot", color: "#1C2030", enabled: true, busy: false, today: 0.31, used: 1.1, budget: 5, keyHint: "b07d", models: [line("google/gemini-2.5-flash")] },
+  { id: "news", name: { en: "Newsletter bot", tr: "Bülten botu" }, icon: "mail", color: "#8A4B08", enabled: true, busy: false, today: 0, used: 3, budget: 3, keyHint: "e3a8", models: [line("openai/gpt-5-mini")] },
+  { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: [line("ollama/llama3.2")], keepMedia: false },
 ];
 
 // newest first; "ago" is seconds; "kind" is chat unless said: image, speech, transcription or video
@@ -133,6 +139,32 @@ export const modelCatalogue = [
   model("bytedance/seedance-2.0-fast", "ByteDance: Seedance 2.0 Fast", ["video"], ["text", "image", "video", "audio"], null, null, null),
 ];
 
+// Where a model comes from: the provider's own providers for it, as OpenRouter's endpoints
+// list gives them (gateway/src/catalogue.ts, providersOf). Made up, after real ones.
+const where = (tag, name, tier, inM, outM, context, up = true) => ({ tag, name, tier, in: inM == null ? null : inM / 1e6, out: outM == null ? null : outM / 1e6, context, up });
+const providerLists = {
+  "anthropic/claude-sonnet-5.5": [
+    where("anthropic", "Anthropic", null, 3, 15, 1000000),
+    where("amazon-bedrock", "Amazon Bedrock", null, 3, 15, 1000000),
+    where("google-vertex/global", "Google Vertex", null, 3, 15, 1000000),
+    where("azure/global", "Azure", null, 3.3, 16.5, 200000, false),
+  ],
+  "google/gemini-2.5-flash": [
+    where("google-ai-studio/flex", "Google AI Studio", "flex", 0.15, 1.25, 1048576),
+    where("google-ai-studio", "Google AI Studio", null, 0.3, 2.5, 1048576),
+    where("google-ai-studio/priority", "Google AI Studio", "priority", 0.54, 4.5, 1048576),
+    where("google-vertex", "Google Vertex", null, 0.3, 2.5, 1048576, false),
+  ],
+  "openai/gpt-5-mini": [where("openai", "OpenAI", null, 0.25, 2, 400000), where("azure", "Azure", null, 0.25, 2, 400000)],
+};
+export function providersFor(model, stress = false) {
+  if (stress) {
+    return Array.from({ length: 14 }, (_, i) => where(i % 3 ? `p${i}` : `a-provider-with-a-very-long-name-${i}/eu-west-3/priority`,
+      i % 3 ? `P${i}` : `A Provider With A Very Long Name And Region ${i}`, ["flex", null, "priority"][i % 3], [1234.5, 0.000001, 0][i % 3], [9999, 0.000004, 0][i % 3], [2000000, 4096, null][i % 3], i % 4 !== 1));
+  }
+  return providerLists[model] ?? [where(model.split("/")[0], model.split("/")[0], null, null, null, null)];
+}
+
 export const states = {
   // a normal day: one provider unreachable, one route stopped at its budget, one switched off
   default: base,
@@ -185,7 +217,9 @@ function stress() {
       today: [0, 9999.99, 0.004, 12.5][i % 4],
       used: kind === 5 ? budget : [0, budget * 0.97, budget * 0.4][i % 3],
       budget, keyHint: "0000",
-      models: i % 2 ? ["some-provider/extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking"] : ["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"],
+      models: i % 2
+        ? [line("some-provider/extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking", "a-provider-with-a-very-long-name/eu-west-3/priority")]
+        : [line("openai/gpt-5-mini"), line("anthropic/claude-sonnet-5.5", "amazon-bedrock"), line("google/gemini-2.5-flash")],
     };
   });
   return {
@@ -202,23 +236,23 @@ function stress() {
     ],
     routes: many,
     requests: Array.from({ length: 30 }, (_, i) => ({
-      route: `r${i % 6}`, kind: ["chat", "transcription", "image", "speech", "video"][i % 5], model: many[i % 6].models[0], seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
+      route: `r${i % 6}`, kind: ["chat", "transcription", "image", "speech", "video"][i % 5], model: many[i % 6].models[0].model, seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
     })),
     last: { route: "r0", model: "extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking", seconds: 312.4, cost: 1234.5 },
     images: Array.from({ length: 30 }, (_, i) => ({
-      id: `s${i}`, kind: "image", route: i === 7 ? null : `r${i % 6}`, model: many[i % 6].models[0],
+      id: `s${i}`, kind: "image", route: i === 7 ? null : `r${i % 6}`, model: many[i % 6].models[0].model,
       prompt: i % 4 === 0 ? null : i % 4 === 1 ? "A" : "A very detailed picture of a ".repeat(12) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
       cost: [1234.5, 0.0004, null, 0][i % 4], bytes: [999, 52428800, 1536, 1073741824][i % 4], ago: [3, 400, 9000, 400000][i % 4],
       src: picture(i, [512, 2048, 300][i % 3], [512, 300, 2048][i % 3]),
     })),
     sounds: Array.from({ length: 30 }, (_, i) => ({
-      id: `t${i}`, kind: "audio", route: i === 3 ? null : `r${i % 6}`, model: many[(i + 1) % 6].models[0],
+      id: `t${i}`, kind: "audio", route: i === 3 ? null : `r${i % 6}`, model: many[(i + 1) % 6].models[0].model,
       prompt: i % 3 === 0 ? null : i % 3 === 1 ? "Ok" : "Read this very long announcement out loud, slowly and clearly, ".repeat(10) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
       cost: [1234.5, 0.0004, null][i % 3], bytes: [999, 52428800, 1073741824][i % 3], ago: [3, 400, 9000, 400000][i % 4],
       src: tone(220 + i * 20, 0.3),
     })),
     videos: Array.from({ length: 30 }, (_, i) => ({
-      id: `w${i}`, kind: "video", route: i === 5 ? null : `r${i % 6}`, model: many[(i + 2) % 6].models[0],
+      id: `w${i}`, kind: "video", route: i === 5 ? null : `r${i % 6}`, model: many[(i + 2) % 6].models[0].model,
       prompt: i % 3 === 0 ? null : i % 3 === 1 ? "Go" : "A long, slow, carefully lit shot of a city at night with rain on the windows, ".repeat(10) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
       cost: [1234.5, 0.0004, null][i % 3], bytes: [999, 52428800, 1073741824][i % 3], ago: [3, 400, 9000, 400000][i % 4],
       src: clip((i % 3) + 1),

@@ -73,3 +73,39 @@ export function catalogue(models: unknown, videoModels: unknown = []): Catalogue
   }
   return out;
 }
+
+// One place a model comes from, as OpenRouter's endpoints list for that model gives it.
+// tag is what a route's line names ("google-vertex", "google-ai-studio/flex"); tier is a
+// faster or cheaper service tier of the same provider, when it is one.
+export interface ModelProvider {
+  tag: string;
+  name: string;
+  tier: string | null;
+  in: number | null; // US dollars per token read, for models priced by the token
+  out: number | null;
+  context: number | null;
+  up: boolean; // OpenRouter counts it as working right now (status 0)
+}
+
+export function providersOf(data: unknown): ModelProvider[] {
+  const endpoints = object(data)?.endpoints;
+  const seen = new Set<string>();
+  const out: ModelProvider[] = [];
+  for (const item of Array.isArray(endpoints) ? endpoints : []) {
+    const e = object(item);
+    if (!e || typeof e.tag !== "string" || seen.has(e.tag)) continue;
+    seen.add(e.tag);
+    const pricing = object(e.pricing);
+    const context = typeof e.context_length === "number" && e.context_length > 0 ? e.context_length : null;
+    out.push({
+      tag: e.tag,
+      name: typeof e.provider_name === "string" && e.provider_name ? e.provider_name : e.tag,
+      tier: typeof e.service_tier === "string" && e.service_tier ? e.service_tier : null,
+      in: price(pricing?.prompt),
+      out: price(pricing?.completion),
+      context,
+      up: e.status === 0 || e.status === undefined,
+    });
+  }
+  return out;
+}

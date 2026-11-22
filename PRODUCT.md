@@ -23,6 +23,19 @@ It is not for enterprises that need organisations, teams, SSO, audit logs or pol
 
 Model aliases and fallback order live inside a route's settings. They are not a separate section.
 
+## Routes, models and providers
+
+A route says which models its agent may use, in order: the first is used, the next takes over when it fails. That order is the whole routing logic; there are no strategies to configure.
+
+The direction, decided on 2026-11-22: **a route's model is a model from a provider.** The same model can come from more than one place (Gemini through OpenRouter, or from Google directly), so a line in a route names both, and two routes can use the same model from different providers. A route can then list the same model twice, from two providers, and fall back from one to the other when the first is down. This is what makes a route more than an allow-list.
+
+It is built one step at a time, as providers are added:
+
+1. **With OpenRouter alone.** OpenRouter itself serves each model through several providers (Gemini through Google AI Studio or Google Vertex, Claude through Anthropic, Amazon Bedrock or Google Vertex). A line in a route can name one of them, or leave it to OpenRouter. OpenRouter cannot take a different provider for each model in one request, so when a route names providers, the gateway tries the route's lines itself, one request each.
+2. **With a second provider.** A line names a provider BaseRouter holds a key for, and the gateway falls back across them. The same model has different ids at different providers; the route gives it the one name its agent uses.
+
+What a provider and model are, their prices and what they can do, always comes from the provider itself, never from a list kept by hand.
+
 ## Screens
 
 No sidebar. On mobile, one centred column; on desktop, the same layout with more room.

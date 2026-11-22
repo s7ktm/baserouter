@@ -74,3 +74,31 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "" }) {
     ${mode === "choose" && ui.chosen ? `<p class="br-actions"><button type="button" class="br-btn quiet" data-action="pick-close">${t("keepChosen", { id: esc(ui.chosen) })}</button></p>` : ""}
   </div>`;
 }
+
+// Where one line of a route gets its model: "Any provider" (the provider chooses, and moves on
+// when one is down), or one of the provider's own providers for that model, with what it
+// charges. ui.providers holds the list once it has arrived: { model, list }.
+export function providerChoice(ctx, ui, route, line) {
+  const { t, esc, num } = ctx;
+  const list = ui.providers?.model === line.model ? ui.providers.list : null;
+  const taken = (tag) => route.models.some((l, i) => i !== ui.line && l.model === line.model && (l.provider ?? "") === tag);
+  const row = (tag, name, tier, facts, up = true) => `<li><button type="button" class="br-model" data-action="set-provider" data-id="${route.id}" data-tag="${esc(tag)}"
+      aria-pressed="${(line.provider ?? "") === tag}"${taken(tag) ? " disabled" : ""}${(line.provider ?? "") === tag ? " data-autofocus" : ""}>
+    <span><strong class="br-keep">${name}${tier ? ` <span class="br-tier">${esc(tier)}</span>` : ""}</strong>${tag ? `<code class="br-keep">${esc(tag)}</code>` : ""}<small>${[facts, up ? "" : t("providerDown"), taken(tag) ? t("alreadyListed") : ""].filter(Boolean).join(" · ")}</small></span>
+    <i class="br-mark">${(line.provider ?? "") === tag ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' : ""}</i></button></li>`;
+  const facts = (p) => [
+    p.in != null && p.out != null && (p.in > 0 || p.out > 0) ? t("perTokens", { in: ctx.money(p.in * 1e6), out: ctx.money(p.out * 1e6) }) : "",
+    p.context ? t("contextOf", { n: p.context >= 1e6 ? `${num(p.context / 1e6, Number.isInteger(Math.round(p.context / 1e5) / 10) ? 0 : 1)}M` : `${Math.round(p.context / 1000)}K` }) : "",
+  ].filter(Boolean).join(" · ");
+  return `<div class="br-where">
+    <h4 class="br-label">${t("whereFrom", { model: `<span class="br-keep">${esc(line.model)}</span>` })}</h4>
+    <p class="br-note">${t("whereFromNote")}</p>
+    ${list === null
+      ? `<p class="br-busy" role="status"><i></i>${t("providersLoading")}</p>`
+      : `<ul class="br-models">${row("", t("anyProvider"), null, t("anyProviderNote"))}${
+          line.provider && !list.some((p) => p.tag === line.provider) ? row(line.provider, esc(line.provider), null, t("notListed")) : ""
+        }${list.map((p) => row(p.tag, esc(p.name), p.tier, facts(p), p.up)).join("")}</ul>
+         ${list.length ? "" : `<p class="br-note">${t("noProviders")}</p>`}`}
+    <p class="br-actions" style="margin-top:12px"><button class="br-btn" data-action="edit" data-edit="">${t("cancel")}</button></p>
+  </div>`;
+}

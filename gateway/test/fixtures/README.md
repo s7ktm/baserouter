@@ -31,6 +31,7 @@ The media fixtures were made on 2026-11-22 from real answers, shortened: every i
 | `video-failed.json` | `GET /videos/:id` for a job that failed: `status: "failed"` and `error` |
 | `video.mp4` | Stands in for `GET /videos/:id/content`: the real answer's `ftyp` box, then made-up bytes; not a playable video |
 | `videos-models.json` | `GET /videos/models`, two models, shortened |
+| `model-endpoints.json` | `GET /models/google/gemini-2.5-flash/endpoints`: where one model comes from. Made from a real answer, shortened to the fields used and two prices each; the fourth endpoint (Google Vertex, `status` -2) is added to stand for one that is not working |
 
 The video fixtures were made on 2026-11-22 from real answers of three video models, with fixture ids and the signed link's signature and account replaced: the white space before the first answer, the absolute links, `status_detail`, `generation_id` and `usage` are as seen. The finished video came as `video/mp4` with no `Content-Length` and no support for ranges. `video-failed.json` and `videos-models.json` follow the reference; a failed job was not seen live.
 
