@@ -1,0 +1,20 @@
+: OPENROUTER PROCESSING
+
+: OPENROUTER PROCESSING
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","choices":[{"index":0,"delta":{"content":"","role":"assistant","reasoning":"**Greeting**","reasoning_details":[{"type":"reasoning.summary","summary":"**Greeting**","format":"openai-responses-v1","index":0}]},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","choices":[{"index":0,"delta":{"content":"Merhaba","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","choices":[{"index":0,"delta":{"content":" dünya 👋","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","choices":[{"index":0,"delta":{"content":" The words \"usage\" and \"error\" are just text here.","role":"assistant"},"finish_reason":null,"native_finish_reason":null}]}
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop","native_finish_reason":"completed"}]}
+
+data: {"id":"gen-1795300003-FixtureStream0000001","object":"chat.completion.chunk","created":1795300003,"model":"openai/gpt-5-mini","provider":"OpenAI","service_tier":"default","choices":[{"index":0,"delta":{"content":"","role":"assistant"},"finish_reason":"stop","native_finish_reason":"completed"}],"usage":{"prompt_tokens":8,"completion_tokens":6,"total_tokens":14,"cost":1.43e-05,"is_byok":false,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0,"audio_tokens":0,"video_tokens":0},"cost_details":{"upstream_inference_cost":1.43e-05,"upstream_inference_prompt_cost":2e-06,"upstream_inference_completions_cost":1.23e-05},"completion_tokens_details":{"reasoning_tokens":2,"image_tokens":0,"audio_tokens":0}}}
+
+data: [DONE]
+
