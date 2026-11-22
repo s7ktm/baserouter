@@ -1,5 +1,8 @@
 // The shared mechanism: one state, one set of actions, any skin on top.
+// Served by a gateway, the state is the gateway's and actions go to its API. Anywhere
+// else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
 import { states, catalog, modelChoices } from "./data.js";
+import { api, gatewayStatus, SignedOut, toData } from "./live.js";
 import { words as core } from "./words.js";
 import { checkSkin, missingTokens } from "./contract.js";
 import { routeSheet } from "./screens/route.js";
@@ -7,6 +10,7 @@ import { providersSheet, addProviderSheet } from "./screens/providers.js";
 import { newRouteSheet } from "./screens/route-new.js";
 import { activitySheet } from "./screens/activity.js";
 import { settingsSheet } from "./screens/settings.js";
+import { signInSheet } from "./screens/sign-in.js";
 import { registry } from "../skins/registry.js";
 
 // Everything that is not the home screen is a sheet over it.
@@ -17,7 +21,10 @@ const screens = {
   "new-route": newRouteSheet,
   activity: activitySheet,
   settings: settingsSheet,
+  "sign-in": signInSheet,
 };
+// Sheets that cannot be closed.
+const fixed = new Set(["sign-in"]);
 
 const query = new URLSearchParams(location.search);
 const root = document.documentElement;
@@ -45,14 +52,35 @@ function pick(key, fallback, valid) {
 let skinId = pick("skin", registry[0], (v) => v in skins);
 let lang = pick("lang", (navigator.language || "").startsWith("tr") ? "tr" : "en", (v) => v in core);
 let themePref = pick("theme", "auto", (v) => ["light", "dark", "auto"].includes(v));
-const data = structuredClone(states[query.get("state")] ?? states.default);
+// live: served by a gateway, and not asked for made-up data
+const gateway = query.get("state") ? null : await gatewayStatus();
+const live = gateway !== null;
+const data = structuredClone(live ? states.empty : states[query.get("state")] ?? states.default);
+let signedOut = false;
+if (live) {
+  data.address = `${location.origin}/v1`;
+  if (!gateway.passwordSet) signedOut = true;
+  else {
+    try {
+      replaceData(toData(await api.state()));
+    } catch (err) {
+      if (!(err instanceof SignedOut)) throw err;
+      signedOut = true;
+    }
+  }
+}
+
+// In a live panel, only the providers the gateway can add are offered, and one that is
+// already added is marked so the list can leave it out.
+const liveCatalog = catalog.filter((k) => k.kind === "openrouter").map((k) => ({ ...k }));
+let liveModels = null; // the provider's model ids, once asked for
 
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
 //   screen=providers|add-provider|new-route|activity|settings
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
-const demoKey = "br-7Qm2xV9cLt4RkP0aZ8wYh3Ns";
+const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
 let view = null;
 let ui = fresh();
@@ -62,16 +90,20 @@ let opener = null;
 function fresh() {
   return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", testing: null, error: null, made: null };
 }
-if (data.routes.some((r) => r.id === query.get("route"))) {
+if (signedOut) {
+  view = { screen: "sign-in" };
+  ui.step = live && !gateway.passwordSet ? "setup" : "login";
+} else if (data.routes.some((r) => r.id === query.get("route"))) {
   view = { screen: "route", id: query.get("route") };
   ui.editing = query.get("edit");
-} else if (query.get("screen") in screens && query.get("screen") !== "route") {
+} else if (query.get("screen") in screens && query.get("screen") !== "route" && !(live && fixed.has(query.get("screen")))) {
   view = { screen: query.get("screen") };
   ui.flow = query.get("flow") === "1";
   ui.filter = query.get("filter") ?? "";
   ui.kind = query.get("kind");
   ui.step = query.get("step") ?? (view.screen === "add-provider" ? (ui.kind ? "key" : "pick") : null);
-  if (ui.step === "fail") ui.error = "401 invalid key";
+  if (ui.step === "fail") ui.error = view.screen === "sign-in" ? core[lang].wrongPassword : "401 invalid key";
+  if (view.screen === "sign-in" && ui.step !== "setup") ui.step = "login";
   if (view.screen === "new-route" && (ui.step === "made" || ui.step === "arrived") && data.routes[0]) {
     ui.made = { id: data.routes[0].id, key: demoKey, first: ui.step === "arrived" ? demoFirst : null };
     ui.step = "made";
@@ -113,7 +145,9 @@ function context() {
   const num = (n, digits = 2) => new Intl.NumberFormat(lang === "tr" ? "tr-TR" : "en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
   return {
     num,
-    data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, catalog, modelChoices, themePref,
+    data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref,
+    catalog: live ? liveCatalog.map((k) => ({ ...k, added: data.providers.some((p) => p.kind === k.kind) })) : catalog,
+    modelChoices: live ? orderModels(liveModels) : modelChoices,
     theme: theme(),
     copied: copiedId === "address",
     skins: registry.map((id) => ({ id, name: skins[id].name[lang], icon: skins[id].icon, active: id === skinId })),
@@ -134,6 +168,7 @@ function render() {
     .map((k) => `[data-${k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}="${focused.dataset[k]}"]`).join("");
 
   if (view?.screen === "route" && !data.routes.some((r) => r.id === view.id)) view = null;
+  waiting = false;
   const ctx = context();
   root.lang = lang;
   root.dataset.theme = ctx.theme;
@@ -190,6 +225,7 @@ function show(next, control, patch = {}) {
 }
 
 function close() {
+  if (fixed.has(view?.screen)) return;
   const back = opener;
   view = null;
   opener = null;
@@ -211,6 +247,7 @@ const actions = {
     if (!route || status(route) === "over") return;
     route.enabled = !route.enabled;
     render();
+    if (live) send(api.toggle(route.id, route.enabled));
   },
   copy(control) {
     navigator.clipboard?.writeText(control.dataset.copy ?? data.address).catch(() => {});
@@ -223,7 +260,8 @@ const actions = {
   },
   go(control) {
     const screen = control.dataset.screen;
-    if (!(screen in screens)) return;
+    if (!(screen in screens) || fixed.has(screen)) return;
+    if (live && screen === "new-route" && !liveModels?.length) loadModels().then(fillModels);
     // adding the very first provider starts the three-step first run
     const flow = control.dataset.flow === "1" || (screen === "add-provider" && !data.providers.length && !data.routes.length);
     show({ screen }, control, { flow, filter: control.dataset.filter ?? "", step: screen === "add-provider" ? "pick" : null });
@@ -238,6 +276,13 @@ const actions = {
     const id = control.dataset.id;
     ui.testing = id;
     render();
+    if (live) {
+      send(api.testProvider(id)).finally(() => {
+        if (ui.testing === id) ui.testing = null;
+        render();
+      });
+      return;
+    }
     setTimeout(() => {
       const provider = data.providers.find((p) => p.id === id);
       if (provider) { provider.status = "up"; delete provider.error; } // in this prototype a second test always succeeds
@@ -248,6 +293,10 @@ const actions = {
   "remove-provider"(control) {
     data.providers = data.providers.filter((p) => p.id !== control.dataset.id);
     render();
+    if (live) {
+      liveModels = null;
+      send(api.removeProvider(control.dataset.id));
+    }
   },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
   theme(control) { themePref = control.dataset.value; keep.set("theme", themePref); render(); },
@@ -255,18 +304,64 @@ const actions = {
 };
 
 const forms = {
+  "sign-in"(form, values) {
+    const password = String(values.get("password") ?? "");
+    if (!live) { // made-up data: any password opens the panel
+      view = null;
+      ui = fresh();
+      return render();
+    }
+    form.querySelector("button[type=submit]")?.setAttribute("disabled", "");
+    (ui.step === "setup" ? api.setup(password) : api.login(password))
+      .then(async () => {
+        signedOut = false;
+        await refresh(true);
+        view = null;
+        ui = fresh();
+        loadModels();
+      })
+      .catch((err) => {
+        const words = core[lang];
+        const known = { wrong_password: words.wrongPassword, too_many_tries: words.tooManyTries, password_too_short: words.passwordHint };
+        if (err.code === "already_set_up") ui.step = "login";
+        ui.error = known[err.code] ?? (err instanceof TypeError ? words.noAnswer : err.message);
+        ui.focus = true;
+      })
+      .finally(render);
+  },
   budget(form, values) {
     const route = data.routes.find((r) => r.id === form.dataset.id);
     const value = Number(values.get("budget"));
     if (route && value > 0) route.budget = value;
     ui.editing = null;
     render();
+    if (live && route && value > 0) send(api.budget(route.id, value));
   },
   provider(form, values) {
     const kind = catalog.find((k) => k.kind === ui.kind);
     const key = String(values.get("key") ?? "");
     ui.step = "testing";
     render();
+    if (live) {
+      api.addProvider(kind.kind, key)
+        .then(async ({ provider }) => {
+          liveCatalog.find((k) => k.kind === kind.kind).models = provider.models ?? 0;
+          liveModels = null;
+          await Promise.all([refresh(true), loadModels()]);
+          ui.step = "ok";
+        })
+        .catch((err) => {
+          if (err instanceof SignedOut) return signOut();
+          ui.step = "fail";
+          ui.error = err instanceof TypeError ? core[lang].noAnswer : err.message;
+        })
+        .finally(() => {
+          if (view?.screen !== "add-provider") return;
+          ui.focus = true;
+          render();
+        });
+      return;
+    }
     setTimeout(() => {
       if (view?.screen !== "add-provider") return;
       // in this prototype every key is accepted, except one that contains "bad"
@@ -284,6 +379,27 @@ const forms = {
     const name = String(values.get("name")).trim();
     if (!name) return;
     const colours = ["#2B62D9", "#14874C", "#8A4B08", "#0E6F78", "#7A3FB8"];
+    if (live) {
+      const made = { name, budget: Number(values.get("budget")) || 5, models: [String(values.get("model"))], icon: "code", color: colours[data.routes.length % colours.length] };
+      form.querySelector("button[type=submit]")?.setAttribute("disabled", "");
+      api.makeRoute(made)
+        .then(async ({ route, key }) => {
+          await refresh(true);
+          ui.error = null;
+          ui.step = "made";
+          ui.made = { id: route.id, key, first: null };
+        })
+        .catch((err) => {
+          if (err instanceof SignedOut) return signOut();
+          ui.error = err instanceof TypeError ? core[lang].noAnswer : err.message;
+        })
+        .finally(() => {
+          if (view?.screen !== "new-route") return;
+          ui.focus = true;
+          render();
+        });
+      return;
+    }
     const route = {
       id: uniqueId(name), name: { en: name, tr: name }, icon: "code", color: colours[data.routes.length % colours.length],
       enabled: true, busy: false, today: 0, used: 0, budget: Number(values.get("budget")) || 5,
@@ -322,6 +438,101 @@ app.addEventListener("submit", (event) => {
 addEventListener("keydown", (event) => {
   if (event.key === "Escape" && view) close();
 });
+
+// ---- live: keeping the panel in step with the gateway ----
+
+function replaceData(next) {
+  for (const key of Object.keys(data)) delete data[key];
+  Object.assign(data, next);
+}
+
+// The three suggested models first, when the provider has them, then the rest.
+function orderModels(ids) {
+  if (!ids?.length) return modelChoices;
+  const first = modelChoices.filter((m) => ids.includes(m));
+  return [...first, ...ids.filter((m) => !first.includes(m))];
+}
+
+async function loadModels() {
+  if (liveModels?.length || !data.providers.length) return;
+  try {
+    liveModels = await api.models();
+  } catch {}
+}
+
+// The model list arrived while the new-route form is open: fill its choices in place,
+// so nothing typed in the form is lost.
+function fillModels() {
+  const select = app.querySelector("#br-model");
+  if (!select || !liveModels?.length) return;
+  const chosen = select.value;
+  select.replaceChildren(...orderModels(liveModels).map((m) => new Option(m, m, false, m === chosen)));
+}
+
+function signOut() {
+  signedOut = true;
+  replaceData({ ...structuredClone(states.empty), address: data.address });
+  view = { screen: "sign-in" };
+  ui = { ...fresh(), step: "login", focus: true };
+  render();
+}
+
+// Asks the gateway for its state. Redraws only when something changed, and not while a
+// form is open, so nothing typed is lost; "force" redraws in any case (the caller draws).
+let seen = "";
+let waiting = false; // a redraw is owed
+async function refresh(force = false) {
+  const state = await api.state();
+  const { now, ...rest } = state;
+  const next = toData(state);
+  // the first request of a route that was just made
+  if (ui.made && !ui.made.first) {
+    const first = next.requests.findLast((q) => q.route === ui.made.id);
+    if (first) ui.made.first = { seconds: first.seconds, cost: first.cost };
+  }
+  const changed = JSON.stringify(rest) !== seen || Math.floor(now / 30_000) !== Math.floor(refresh.at / 30_000);
+  seen = JSON.stringify(rest);
+  refresh.at = now;
+  replaceData(next);
+  if (force) return void (waiting = true); // the caller draws; if it does not, the next look will
+  if (changed || waiting) {
+    if (app.querySelector(".br-sheet form")) waiting = true;
+    else render();
+  }
+}
+refresh.at = 0;
+
+// Sends a change. The screen has already been changed; whatever the answer, the
+// gateway's state is read again and drawn, which also undoes a change that did not go through.
+function send(request) {
+  return request
+    .catch((err) => {
+      if (err instanceof SignedOut) throw err;
+      console.warn("BaseRouter did not take a change:", err.message);
+    })
+    .then(() => refresh(true))
+    .then(() => {
+      if (!app.querySelector(".br-sheet form")) render();
+    })
+    .catch((err) => {
+      if (err instanceof SignedOut) signOut();
+    });
+}
+
+if (live) {
+  document.title = "BaseRouter";
+  query.set("bar", "0");
+  if (!signedOut) loadModels();
+  setInterval(() => {
+    if (signedOut || document.hidden) return;
+    refresh().catch((err) => {
+      if (err instanceof SignedOut) signOut();
+    });
+  }, 3000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !signedOut) refresh().catch(() => {});
+  });
+}
 prefersDark.addEventListener("change", () => { if (themePref === "auto") render(); });
 
 if (query.get("bar") === "0") bar.remove();

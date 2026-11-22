@@ -35,7 +35,7 @@ export const words = {
     addressOf: "Address of {name}", testAdd: "Test and add",
     addOk: "{name} is connected. {n} models are available.",
     addFail: "The key was not accepted. {name} answered: {error}.",
-    nextRoute: "Next: make a route",
+    nextRoute: "Next: make a route", allAdded: "Every provider BaseRouter can use is already added.",
 
     // new route
     routeName: "Name", routeNameHint: "What will use this route? For example: Home assistant",
@@ -54,6 +54,14 @@ export const words = {
     yourData: "Your data", exportAll: "Export everything",
     exportNote: "Routes, providers without their keys, and the request log, in one file.",
     about: "About", aboutLine: "BaseRouter 0.1. Open source under the MIT licence.",
+
+    // sign in
+    signInTitle: "Sign in", signInLead: "Enter the password of this BaseRouter.", signIn: "Sign in",
+    setupTitle: "Set a password", setupLead: "This BaseRouter is new. Choose the password that opens this panel.",
+    passwordHint: "At least 8 characters.", setPassword: "Set password",
+    wrongPassword: "That password is not right.", tooManyTries: "Too many wrong passwords. Wait a minute, then try again.",
+    noAnswer: "BaseRouter did not answer. Check that it is still running, then try again.",
+    actionFailed: "That did not work. BaseRouter answered: {error}",
   },
   tr: {
     today: "bugün", thisMonth: "bu ay", copy: "Kopyala", copied: "Kopyalandı", newRoute: "Yeni rota", off: "Kapalı",
@@ -84,7 +92,7 @@ export const words = {
     addressOf: "{name} adresi", testAdd: "Test et ve ekle",
     addOk: "{name} bağlandı. {n} model kullanılabilir.",
     addFail: "Anahtar kabul edilmedi. {name} yanıtı: {error}.",
-    nextRoute: "Sıradaki: rota oluştur",
+    nextRoute: "Sıradaki: rota oluştur", allAdded: "BaseRouter'ın kullanabildiği bütün sağlayıcılar zaten eklendi.",
 
     routeName: "İsim", routeNameHint: "Bu rotayı ne kullanacak? Örneğin: Ev asistanı",
     firstModel: "Model", modelLater: "Sonradan başka modeller ekleyebilirsin.", makeRoute: "Rotayı oluştur",
@@ -100,5 +108,12 @@ export const words = {
     yourData: "Verilerin", exportAll: "Hepsini dışa aktar",
     exportNote: "Rotalar, anahtarları olmadan sağlayıcılar ve istek kaydı, tek dosyada.",
     about: "Hakkında", aboutLine: "BaseRouter 0.1. MIT lisanslı açık kaynak.",
+
+    signInTitle: "Giriş yap", signInLead: "Bu BaseRouter'ın parolasını yaz.", signIn: "Giriş yap",
+    setupTitle: "Parola belirle", setupLead: "Bu BaseRouter yeni. Bu paneli açacak parolayı seç.",
+    passwordHint: "En az 8 karakter.", setPassword: "Parolayı belirle",
+    wrongPassword: "Bu parola doğru değil.", tooManyTries: "Çok fazla yanlış parola denendi. Bir dakika bekle, sonra yeniden dene.",
+    noAnswer: "BaseRouter yanıt vermedi. Hâlâ çalıştığından emin ol, sonra yeniden dene.",
+    actionFailed: "Bu işlem yapılamadı. BaseRouter yanıtı: {error}",
   },
 };

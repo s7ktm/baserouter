@@ -79,7 +79,7 @@ function request(over: Partial<NewRequest>): NewRequest {
 
 function storeWithRoutes(): Store {
   const store = new Store(openDb(":memory:"));
-  for (const id of ["home", "arm"]) store.addRoute({ id, name: id, key_hash: id, key_hint: "0000", budget_usd: 10, enabled: 1, models: "[]", created_at: 0 });
+  for (const id of ["home", "arm"]) store.addRoute({ id, name: id, key_hash: id, key_hint: "0000", budget_usd: 10, enabled: 1, models: "[]", icon: "code", color: "#2B62D9", created_at: 0 });
   return store;
 }
 

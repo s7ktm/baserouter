@@ -31,8 +31,9 @@ export function addProviderSheet(ctx, ui) {
   let body;
 
   if (!kind || ui.step === "pick") {
-    body = `<p class="br-lead">${t("pickSub")}</p>
-      <ul class="br-choices">${ctx.catalog.map((k) => `<li><button class="br-choice" data-action="pick" data-kind="${k.kind}">
+    const left = ctx.catalog.filter((k) => !k.added);
+    body = !left.length ? `<p class="br-lead">${t("allAdded")}</p>` : `<p class="br-lead">${t("pickSub")}</p>
+      <ul class="br-choices">${left.map((k) => `<li><button class="br-choice" data-action="pick" data-kind="${k.kind}">
         <b class="br-keep">${esc(k.name ?? t("customName"))}</b><small>${t("k_" + k.kind)}</small>${chevron}</button></li>`).join("")}</ul>`;
   } else if (ui.step === "testing") {
     body = `<p class="br-busy"><i></i>${t("testingKey")}</p>`;

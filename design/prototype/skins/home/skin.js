@@ -17,7 +17,7 @@ const glyph = (name) => `<svg viewBox="0 0 24 24">${icons[name] ?? icons.code}</
 export default {
   id: "home",
   name: { en: "Home", tr: "Ev paneli" },
-  fonts: "https://fonts.googleapis.com/css2?family=Gabarito:wght@500..900&family=Onest:wght@400..700&display=swap",
+  fonts: "fonts/home.css",
 
   strings: {
     en: {

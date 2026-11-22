@@ -93,7 +93,7 @@ Text is at least 4.5 : 1 against what it sits on. Marks that carry state (lamps,
 - Technical vocabulary on the surface: virtual key, deployment, model group, upstream.
 - Charts on the home screen beyond one small seven-day bar.
 - Anything that needs hover to be understood.
-- Typefaces fetched from a third party in the shipped product (see "Open points").
+- Typefaces fetched from a third party. They are bundled in `design/prototype/fonts/`.
 
 ## Shared tokens
 
@@ -159,6 +159,10 @@ Every request, newest first: which route, which model, how long ago, how long it
 ### Settings
 
 In order of how often they are touched: look (the skin picker, with each skin's icon), theme (light, dark, match device), language, then password, export, and about.
+
+### Sign in
+
+The one sheet that cannot be closed: no close button, and the dimmed area and Escape do nothing. Behind it the home screen is drawn empty, as on a first run, so nothing is shown before the password is given. One field and one button. On a gateway that has no password yet it sets one instead ("Set a password", at least 8 characters). A wrong password keeps the form where it is, with what went wrong above it.
 
 ## Skin: Socket
 
@@ -274,13 +278,14 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **In Socket with many routes, "New route" is at the bottom of the strip.** With 40 routes it is a long scroll away; Display and Home keep it within reach.
 - **A screen reader has not been run over the prototype.** Roles, labels, focus order and touch sizes were checked by inspection and by script.
 
-- **Typefaces are loaded from Google Fonts in the prototype.** The shipped product must bundle them: it is self-hosted, may run offline, and should not call a third party from a panel that manages API keys. All seven families are under the SIL Open Font Licence, which allows this.
 - **The mascots have no names.**
 - **The flying pigeon's raised wing** is one plain shape and reads less clearly than the other poses.
 - **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the five screens after it needed no more.
-- **Controls that do nothing yet:** in route detail, making a new key, adding or removing a model and deleting the route; in settings, changing the password and exporting.
+- **Controls that do nothing yet:** in route detail, making a new key, adding or removing a model and deleting the route; in settings, changing the password and exporting. There is also no way to sign out.
+- **Costs below a tenth of a cent read as nothing.** "Under one cent has three decimals" was drawn for costs like `$0.004`; a short request to a small model costs `$0.00002`, which shows as `$0.0000`.
+- **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
 - **No screen for a single request.** A row in activity does not open.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.
-- **The list of providers to add** shows six kinds. Only OpenRouter is planned for the first version.
+- **The list of providers to add** shows six kinds on made-up data. A panel served by a gateway offers only what that gateway can add, which today is OpenRouter, and says so once it is added.
 - **The switch in route detail is a plain token-coloured switch** in every skin, not Socket's rocker or Display's slide switch. Whether skins should be able to supply their own is undecided.
 - **Display on a wide screen** leaves the area around the device empty. Whether that is the point of the skin or a gap is undecided.

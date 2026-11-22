@@ -16,6 +16,8 @@ export interface Deps {
   running: Map<string, number>;
   // Work that outlives a response. Tests wait for it.
   background: Set<Promise<unknown>>;
+  // The folder the panel is served from, or null for no panel.
+  panelDir: string | null;
 }
 
 export type Env = {

@@ -148,7 +148,7 @@ test("a route's key is given in full once, and only its hash is kept", async () 
   expect(res.status).toBe(201);
   const { route, key } = (await res.json()) as { route: Record<string, unknown>; key: string };
   expect(key).toMatch(/^br_[0-9a-f]{48}$/);
-  expect(route).toEqual({ id: route.id, name: "Home assistant", enabled: true, busy: false, today: 0, used: 0, budget: 10, keyHint: key.slice(-4), models: ["openai/gpt-5-mini"] });
+  expect(route).toEqual({ id: route.id, name: "Home assistant", enabled: true, busy: false, today: 0, used: 0, budget: 10, keyHint: key.slice(-4), models: ["openai/gpt-5-mini"], icon: "code", color: "#2B62D9" });
 
   const stored = gw.store.route(route.id as string)!;
   expect(JSON.stringify(stored)).not.toContain(key);
@@ -167,9 +167,16 @@ test("a route's key is given in full once, and only its hash is kept", async () 
   expect(budgetsStartAgainOn).toMatch(/^\d{4}-\d{2}-01$/);
 });
 
-test("a route needs a name and a budget above zero", async () => {
+test("a route keeps the icon and colour the panel gives it", async () => {
   const auth = await signIn();
-  for (const body of [{ budget: 5 }, { name: "", budget: 5 }, { name: "x" }, { name: "x", budget: 0 }, { name: "x", budget: -1 }, { name: "x", budget: "5" }, { name: "x", budget: 5, models: "m" }]) {
+  const res = await api("POST", "/routes", { name: "Robot arm", budget: 5, icon: "robot", color: "#1C2030" }, auth);
+  expect(((await res.json()) as { route: Record<string, unknown> }).route).toMatchObject({ icon: "robot", color: "#1C2030" });
+});
+
+test("a route needs a name, a budget above zero, and a plain icon and colour", async () => {
+  const auth = await signIn();
+  for (const body of [{ budget: 5 }, { name: "", budget: 5 }, { name: "x" }, { name: "x", budget: 0 }, { name: "x", budget: -1 }, { name: "x", budget: "5" }, { name: "x", budget: 5, models: "m" },
+    { name: "x", budget: 5, icon: "<svg>" }, { name: "x", budget: 5, color: "red" }, { name: "x", budget: 5, color: "#12345" }]) {
     expect((await api("POST", "/routes", body, auth)).status).toBe(400);
   }
   expect(gw.store.routes()).toHaveLength(0);

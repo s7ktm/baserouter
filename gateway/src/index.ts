@@ -22,11 +22,12 @@ const deps: Deps = {
   costLookupDelays: [2_000, 5_000, 15_000],
   running: new Map(),
   background: new Set(),
+  panelDir: env.BASEROUTER_PANEL_DIR ?? join(import.meta.dir, "..", "..", "design", "prototype"),
 };
 
 const app = createApp(deps);
 const server = Bun.serve({ hostname: host, port, fetch: (request, server) => app.fetch(request, { server }) });
 
 const shown = ["127.0.0.1", "0.0.0.0", "::", "::1"].includes(host) ? "localhost" : host;
-console.log(`BaseRouter is running. One address: http://${shown}:${server.port}/v1`);
-if (store.setting("admin_password") === null) console.log("No admin password yet. Set one with POST /api/setup (see README.md).");
+console.log(`BaseRouter is running. Panel: http://${shown}:${server.port}/  One address: http://${shown}:${server.port}/v1`);
+if (store.setting("admin_password") === null) console.log("No admin password yet. Open the panel to set one.");
