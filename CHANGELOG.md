@@ -17,6 +17,7 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 - Kept images and sound. The images and speech routes make are kept in `gateway/data/media/`, one file each, written as they arrive (speech while it streams to the client), and shown in the panel: activity has an Images tab with a grid and a Sounds tab with a player, filtered by route, and each one opens with its prompt, model, cost and size, to download or delete. A route can switch it off, and one request can say no with the header `X-BaseRouter-Save: no`. They may take 1 GB together by default (`BASEROUTER_MEDIA_MAX_MB`; `0` keeps none), and the oldest go first when that is passed. Raw PCM sound (Gemini voices, `response_format: "pcm"`) is kept as WAV when its sample rate is known; the sound of chat answers is not kept.
 - Running it for good: a `Dockerfile` and `compose.yaml` (reachable from the machine itself, with its data in a volume), an optional Caddy in front for HTTPS (`--profile tls`), a hardened systemd unit in `deploy/`, and [INSTALL.md](INSTALL.md) with backups, updates, hosting services and why serverless is not supported.
 - The gateway stops cleanly on SIGTERM or Ctrl-C.
+- Tests, the type check and a Docker build run on every pull request.
 
 ### Fixed
 

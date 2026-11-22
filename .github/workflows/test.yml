@@ -1,0 +1,52 @@
+# Runs the tests and the type check on every pull request and on main, and checks that
+# the Docker image still builds. Needs no secrets: the tests run against a stand-in
+# OpenRouter, and the live tests skip themselves without a key.
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -t baserouter:ci .
+      - name: The image starts and answers
+        run: |
+          docker run -d --name baserouter -p 127.0.0.1:4141:4141 baserouter:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4141/api/status; then exit 0; fi
+            sleep 1
+          done
+          docker logs baserouter
+          exit 1

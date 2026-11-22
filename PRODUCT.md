@@ -31,12 +31,16 @@ No sidebar. On mobile, one centred column; on desktop, the same layout with more
 2. **Home** — One Address, today's spend, route tiles, provider status.
 3. **Route** (bottom sheet) — name, key, budget, allowed models, recent requests, connection snippet.
 4. **Providers** — tiles and the add flow (pick, paste key, test).
-5. **Activity** — request list, filter by route.
+5. **Activity** — request list, filter by route; the images and sounds routes made, to look at and listen to again.
 6. **Settings** — password, theme, language, export.
 
 ## Not in the first version
 
 Users, teams and organisations; routing strategies; guardrails; MCP; caching; SSO; Postgres; Redis.
+
+## What is kept
+
+Every request leaves a row: route, model, tokens, cost, timings, what went wrong. Prompts and answers are not stored. The one exception is what a route makes that cannot be seen again otherwise: generated images and speech are kept, with the words that asked for them, so they can be looked at and listened to in activity. This is on by default; a route can switch it off, and a single request can say no. Everything is kept on the machine BaseRouter runs on, and nowhere else.
 
 ## Principles
 
