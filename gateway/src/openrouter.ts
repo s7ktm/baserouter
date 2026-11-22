@@ -25,6 +25,11 @@ export function get(up: Upstream, key: string, path: string, signal?: AbortSigna
   return up.fetch(`${up.baseUrl}${path}`, { headers: auth(key), signal });
 }
 
+// Whether BaseRouter can use a model OpenRouter lists. Its ":batch" entries are the same models
+// at batch prices, served only by OpenRouter's separate Batch API; a normal request with one is
+// refused. They are left out of every list BaseRouter shows.
+export const usable = (id: unknown): boolean => typeof id === "string" && !id.endsWith(":batch");
+
 // The filters OpenRouter's model list takes, which a client may pass on through /v1/models.
 const LIST_FILTERS = ["output_modalities", "supported_parameters", "category"];
 
@@ -65,7 +70,7 @@ export async function check(up: Upstream, key: string): Promise<Check> {
     await res.body?.cancel();
     const list = await models(up, key, AbortSignal.timeout(15_000));
     const data = list.ok ? ((await list.json()) as { data?: unknown }).data : null;
-    return { ok: true, models: Array.isArray(data) ? data.length : null };
+    return { ok: true, models: Array.isArray(data) ? data.filter((m) => usable((m as { id?: unknown })?.id)).length : null };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

@@ -51,6 +51,10 @@ test("the fixture video list gives the stand-in's video models their prices", as
   expect(list.map((m) => m.perSecond)).toEqual([0.02, 0.03]);
 });
 
+test("OpenRouter's :batch entries, served only by its Batch API, are left out", () => {
+  expect(catalogue([model("a/text", ["text"]), model("a/text:batch", ["text"]), model("a/text:free", ["text"])]).map((m) => m.id)).toEqual(["a/text", "a/text:free"]);
+});
+
 test("odd entries are skipped, not trusted", () => {
   expect(catalogue([null, 3, { id: 4 }, { id: "a/x" }, model("a/ok", ["text"], { name: "", context_length: -1, pricing: { prompt: "lots" } })], "nope")).toEqual([
     { id: "a/ok", name: "a/ok", makes: ["text"], takes: ["text"], context: null, in: null, out: null, perSecond: null, free: false },

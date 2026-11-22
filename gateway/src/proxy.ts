@@ -447,7 +447,7 @@ export function proxy(deps: Deps) {
     const upstream = await ask(c, path);
     if (!upstream.ok) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
     const list = (await upstream.json()) as { data?: Record<string, unknown>[] };
-    const offered = new Map((list.data ?? []).filter((m) => typeof m.id === "string").map((m) => [m.id as string, m]));
+    const offered = new Map((list.data ?? []).filter((m) => openrouter.usable(m.id)).map((m) => [m.id as string, m]));
     const names = namesOf(c.get("route"));
     const asNamed = (name: string) => {
       const model = store.modelByName(name);

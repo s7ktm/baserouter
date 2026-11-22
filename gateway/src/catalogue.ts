@@ -4,6 +4,8 @@
 // make images, speech, transcriptions or video. Embeddings, reranking and moderation models
 // have no endpoint here yet.
 
+import { usable } from "./openrouter.ts";
+
 // What a model makes, in the panel's words. OpenRouter's "audio" (sound out of a chat
 // answer) is speech too.
 export type Makes = "text" | "image" | "speech" | "transcription" | "video";
@@ -52,7 +54,7 @@ export function catalogue(models: unknown, videoModels: unknown = []): Catalogue
   const out: CatalogueModel[] = [];
   for (const item of Array.isArray(models) ? models : []) {
     const m = object(item);
-    if (!m || typeof m.id !== "string") continue;
+    if (!m || typeof m.id !== "string" || !usable(m.id)) continue;
     const architecture = object(m.architecture);
     const makes = [...new Set(strings(architecture?.output_modalities).map((k) => MAKES[k]).filter((k): k is Makes => k !== undefined))];
     if (!makes.length) continue;
