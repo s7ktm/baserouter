@@ -8,7 +8,7 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 Security fixes. Update if you run 0.2.0, above all if the panel can be reached from other machines.
 
-If you reach the panel by a name other than `localhost` or the machine's own address (a name on your home network, or a domain without the Caddy profile), add that name to `BASEROUTER_ALLOWED_HOSTS`: the panel now answers only to names it knows. Behind Caddy, `BASEROUTER_DOMAIN` is enough.
+If you open the panel by anything other than `localhost` or `127.0.0.1` (the machine's address on your network, a name on your home network, or a domain without the Caddy profile), add that name or address to `BASEROUTER_ALLOWED_HOSTS`, for example `BASEROUTER_ALLOWED_HOSTS=192.168.1.20`: the panel now answers only to names it knows. Behind Caddy, `BASEROUTER_DOMAIN` is enough. The one address (`/v1`) is not affected.
 
 ### Security
 
