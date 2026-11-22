@@ -12,17 +12,31 @@ BaseRouter is a self-hosted AI gateway with the simplicity of a smart-home panel
 
 It is not for enterprises that need organisations, teams, SSO, audit logs or policy engines.
 
-## The whole product in four words
+## The whole product in five words
 
 | Concept | What it is | Example |
 |---|---|---|
 | **One Address** | The single endpoint everything connects to. The most visible thing on the home screen. | `http://localhost:…/v1` |
 | **Provider** | An API key you add once. It is on or off, healthy or not. | OpenRouter |
-| **Route** | A named key for one agent or app, with its own budget, allowed models and on/off switch. | "Home assistant" |
+| **Model** | A model BaseRouter offers, under the name apps use, and the sources it comes from, in order. Defined once, for every route. | `gpt-5-mini`: OpenAI, then OpenRouter |
+| **Route** | A named key for one agent or app: its own budget, the models it may use, and an on/off switch. | "Home assistant" |
 | **Spend** | What was spent per route, per provider, per day. Budgets are enforced before a request is sent. | Today $1.24 |
 
-Model aliases and fallback order live inside a route's settings. They are not a separate section.
+A model's name and the sources it comes from live on the model; a route only says which models it may use.
 
+## Providers, models and routes
+
+In words: a **model** is what apps ask for, by name; a **source** is where it comes from (a provider, and that provider's model).
+
+Three things, each answering one question. Decided and its screens approved on 2026-11-22.
+
+- **A provider** answers *how do I reach it*: a key, and whether it works. It is also where models are found: what it offers, what each makes and costs, all as the provider says.
+- **A model** answers *what do apps ask for, and where does it come from*. It is defined once in BaseRouter, for every route: the name apps send (by default the provider's own id, so existing apps work unchanged), what it makes (from the provider, never chosen by hand), and the sources it comes from, in order. When the first source fails, the next is used, for every route at once. A source is a provider and that provider's id for the model; the same model has different ids at different providers (`gpt-5-mini` at OpenAI, `openai/gpt-5-mini` at OpenRouter). A source may also be a different model, as a deliberate fallback; it is then shown as one.
+- **A route** answers *who is asking, and what may it spend*: one agent or app, with its own key, monthly budget, on/off switch, the models it may use, and what it made. A route holds no routing logic: no order, no providers. A route that names no models may use every model in BaseRouter, and also any model the first provider offers, by the provider's own id, as before models existed.
+
+Adding a model is finding it, in Manage models: picking a model a provider offers makes it a model in BaseRouter, with that one source. Renaming it and adding fallback sources is done on the model, when wanted, never required. A route authorizes models that are already in BaseRouter; it never takes one straight from a provider. The first run is four steps: add a provider, add a model, make a route, connect.
+
+Replaced by this: a route's ordered model list with a provider on each line (built in the branch before this decision, not released).
 ## Screens
 
 No sidebar. On mobile, one centred column; on desktop, the same layout with more room.
@@ -31,8 +45,9 @@ No sidebar. On mobile, one centred column; on desktop, the same layout with more
 2. **Home** — One Address, today's spend, route tiles, provider status.
 3. **Route** (bottom sheet) — name, key, budget, allowed models, recent requests, connection snippet.
 4. **Providers** — tiles and the add flow (pick, paste key, test).
-5. **Activity** — request list, filter by route; the images, sounds and videos routes made, to look at, listen to and watch again.
-6. **Settings** — password, theme, language, export.
+5. **Models** — the models BaseRouter offers, where each comes from, and which routes use it. Reached from the home screen, like providers; the only place models are added.
+6. **Activity** — request list, filter by route; the images, sounds and videos routes made, to look at, listen to and watch again.
+7. **Settings** — password, theme, language, export.
 
 ## Not in the first version
 

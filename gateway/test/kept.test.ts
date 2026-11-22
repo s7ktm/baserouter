@@ -412,7 +412,7 @@ test("sound is told apart by its first bytes", () => {
 
 test("a database with kept images becomes one with kept media", () => {
   const db = new Database(":memory:");
-  for (const step of MIGRATIONS.slice(0, 4)) db.exec(step);
+  for (const step of MIGRATIONS.slice(0, 4)) db.exec(step as string);
   db.exec("PRAGMA user_version = 4");
   db.exec(`INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, models, keep_images, created_at) VALUES ('r', 'r', 'h', '0000', 1, '[]', 0, 0);
     INSERT INTO images (id, route_id, created_at, media_type, bytes, file) VALUES ('i', 'r', 1, 'image/png', 70, 'a.png');`);

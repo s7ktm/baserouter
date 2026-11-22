@@ -1,6 +1,7 @@
 // Route detail. Built once; every skin restyles it through the shared tokens.
 // Order follows what a person opens a route for: is it on, what has it spent,
 // how do I connect to it, which models may it use, what did it just do.
+import { fromSummary, modelPicker } from "./models.js";
 import { sheet, cross, curl } from "./sheet.js";
 
 function snippets(route, data) {
@@ -52,15 +53,13 @@ export function routeSheet(ctx, ui) {
             <p class="br-actions"><button class="br-btn main" data-action="new-key" data-id="${route.id}">${t("newKey")}</button><button class="br-btn" data-action="edit" data-edit="" data-autofocus>${t("cancel")}</button></p>`
          : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="key">${t("newKey")}</button></p>`}`;
 
-  // Models the route does not have yet, to add one.
-  const choices = ctx.modelChoices.filter((m) => !route.models.includes(m));
-  const addModel = ui.editing === "model" && choices.length
-    ? `<form class="br-form" data-form="model" data-id="${route.id}">
-        <label class="br-label" for="br-add-model">${t("modelToAdd")}</label>
-        <span class="br-select"><select class="br-input wide br-keep" id="br-add-model" name="model" data-autofocus>${choices.map((m) => `<option>${esc(m)}</option>`).join("")}</select></span>
-        <p class="br-actions" style="margin-top:12px"><button class="br-btn main" type="submit">${t("add")}</button><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
+  // Authorizing a model: one of BaseRouter's models. Models are added in Manage models.
+  const allow = ui.editing === "model"
+    ? `<form class="br-form br-adding" data-form="find" data-id="${route.id}">
+        ${modelPicker(ctx, ui, { mode: "allow", taken: route.models, routeId: route.id })}
+        <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
       </form>`
-    : route.models.length && choices.length ? `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("addModel")}</button></p>` : "";
+    : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("allowModel")}</button><button class="br-btn quiet" data-action="go" data-screen="models">${t("manageModels")}</button></p>`;
 
   const code = snippets(route, data);
   const tab = ui.tab in code ? ui.tab : "curl";
@@ -93,16 +92,17 @@ export function routeSheet(ctx, ui) {
     </section>
 
     <section class="br-sec">
-      <h3>${t("models")}</h3>
-      <p class="br-note">${t("modelsNote")}</p>
+      <h3>${t("mayUse")}</h3>
+      <p class="br-note">${t("mayUseNote")}</p>
       ${route.models.length
-        ? `<ol class="br-list">
-        ${route.models.map((m, i) => `<li><b class="br-n">${i + 1}</b><span><code class="br-keep">${esc(m)}</code></span>${route.models.length > 1
-          ? `<button class="br-x small" data-action="remove-model" data-id="${route.id}" data-model="${esc(m)}" aria-label="${t("remove", { name: esc(m) })}">${cross}</button>`
-          : "<span></span>"}</li>`).join("")}
-      </ol>`
+        ? `<ul class="br-list br-allowed">${route.models.map((name) => {
+            const m = (data.models ?? []).find((x) => x.name === name);
+            return `<li><span><button class="br-open-model" data-action="go" data-screen="models" data-model="${esc(name)}"><code class="br-keep">${esc(name)}</code></button>
+                <small>${m ? `${m.makes.map((k) => t(`makes_${k}`)).join(", ")} · <span class="br-keep">${esc(fromSummary(ctx, m))}</span>` : t("modelGone")}</small></span>
+              ${route.models.length > 1 ? `<button class="br-x small" data-action="remove-model" data-id="${route.id}" data-model="${esc(name)}" aria-label="${t("remove", { name: esc(name) })}">${cross}</button>` : "<span></span>"}</li>`;
+          }).join("")}</ul>`
         : `<p class="br-note" style="margin-top:8px">${t("anyModel")}</p>`}
-      ${addModel}
+      ${allow}
     </section>
 
     <section class="br-sec">

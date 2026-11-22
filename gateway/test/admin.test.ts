@@ -251,7 +251,14 @@ test("a route's models can be changed, in order, and the change is enforced at o
   expect((await got(res)).route).toMatchObject({ models: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"] });
   expect((await ask("anthropic/claude-sonnet-5.5")).status).toBe(200);
 
-  for (const models of ["m", [""], ["a", "a"], [1]]) expect((await api("PATCH", `/routes/${route.id}`, { models }, auth)).status).toBe(400);
+  // The names a route lists that are not models in BaseRouter yet become models, at the provider.
+  const listed = (await (await api("GET", "/models", undefined, auth)).json()) as { models: { name: string; from: unknown[] }[] };
+  expect(listed.models.map((m) => m.name).sort()).toEqual(["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"]);
+  expect(listed.models[0]!.from).toEqual([{ provider: gw.store.providers()[0]!.id, model: listed.models[0]!.name, via: null }]);
+
+  for (const models of ["m", [""], ["a/b", "a/b"], [1], ["has space"]]) {
+    expect((await api("PATCH", `/routes/${route.id}`, { models }, auth)).status).toBe(400);
+  }
 });
 
 test("a new key replaces the old one at once, and is given in full only once", async () => {

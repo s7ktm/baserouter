@@ -1,7 +1,8 @@
 // The shared mechanism: one state, one set of actions, any skin on top.
 // Served by a gateway, the state is the gateway's and actions go to its API. Anywhere
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
-import { states, catalog, modelChoices } from "./data.js";
+import { states, catalog, modelChoices, offers, providersFor } from "./data.js";
+import { modelPicker } from "./screens/models.js";
 import { api, gatewayStatus, SignedOut, toData } from "./live.js";
 import { words as core } from "./words.js";
 import { checkSkin, missingTokens } from "./contract.js";
@@ -9,6 +10,7 @@ import { routeSheet } from "./screens/route.js";
 import { providersSheet, addProviderSheet } from "./screens/providers.js";
 import { newRouteSheet } from "./screens/route-new.js";
 import { activitySheet } from "./screens/activity.js";
+import { modelsSheet } from "./screens/model-list.js";
 import { settingsSheet } from "./screens/settings.js";
 import { signInSheet } from "./screens/sign-in.js";
 import { registry } from "../skins/registry.js";
@@ -20,6 +22,7 @@ const screens = {
   "add-provider": addProviderSheet,
   "new-route": newRouteSheet,
   activity: activitySheet,
+  models: modelsSheet,
   settings: settingsSheet,
   "sign-in": signInSheet,
 };
@@ -56,6 +59,7 @@ let themePref = pick("theme", "auto", (v) => ["light", "dark", "auto"].includes(
 const gateway = query.get("state") ? null : await gatewayStatus();
 const live = gateway !== null;
 const data = structuredClone(live ? states.empty : states[query.get("state")] ?? states.default);
+if (!live && query.get("models") === "none") data.models = []; // a new route with no models to choose from
 let signedOut = false;
 if (live) {
   data.address = `${location.origin}/v1`;
@@ -73,13 +77,14 @@ if (live) {
 // In a live panel, only the providers the gateway can add are offered, and one that is
 // already added is marked so the list can leave it out.
 const liveCatalog = catalog.filter((k) => k.kind === "openrouter").map((k) => ({ ...k }));
-let liveModels = null; // the provider's model ids, once asked for
+let liveModels = null; // what the provider offers (see gateway/src/catalogue.ts), once asked for
 
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
 //   screen=providers|add-provider|new-route|activity|settings
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
+//   find=<words> makes=text|image|speech|transcription|video (choosing a model: route edit=model, new-route edit=model)
 //   show=images|sounds|videos (activity: what was kept)   media=<id> (one of them)   edit=delete-media
 const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
@@ -89,7 +94,8 @@ let copiedId = null;
 let opener = null;
 
 function fresh() {
-  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false };
+  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false,
+    find: "", makes: "", more: 0, picking: false, chosen: null, where: null, model: null, place: null, providers: null };
 }
 if (signedOut) {
   view = { screen: "sign-in" };
@@ -118,6 +124,24 @@ if (signedOut) {
     ui.made = { id: data.routes[0].id, key: demoKey, first: ui.step === "arrived" ? demoFirst : null };
     ui.step = "made";
   }
+}
+
+// Choosing a model, from the URL: the search, the category, and for a new route whether the field is open.
+ui.find = query.get("find") ?? "";
+ui.makes = ["text", "image", "speech", "transcription", "video"].includes(query.get("makes")) ? query.get("makes") : "";
+ui.where = query.get("where");
+if (view?.screen === "new-route") {
+  ui.picking = ui.editing === "model";
+  ui.chosen = defaultModel();
+}
+// Models: model=<name> opens one; edit=rename|place|delete, or edit=via&place=<n> for where
+// one of its OpenRouter places comes from; edit=add on the list.
+if (view?.screen === "models") {
+  ui.model = (data.models ?? []).some((m) => m.name === query.get("model")) ? query.get("model") : null;
+  ui.place = Number(query.get("place") ?? 0);
+  const place = (data.models ?? []).find((m) => m.name === ui.model)?.from[ui.place];
+  if (ui.editing === "via" && !place) ui.editing = null;
+  if (ui.editing === "via" && !live) ui.providers = { model: place.model, list: providersFor(place.model, query.get("state") === "stress") };
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -157,7 +181,9 @@ function context() {
     num,
     data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref,
     catalog: live ? liveCatalog.map((k) => ({ ...k, added: data.providers.some((p) => p.kind === k.kind) })) : catalog,
-    modelChoices: live ? orderModels(liveModels) : modelChoices,
+    // what the providers offer, to find models in (gateway/src/catalogue.ts)
+    offers: live ? liveModels ?? [] : data.offers ?? offers,
+    loadingOffers: live && !liveModels?.length,
     theme: theme(),
     copied: copiedId === "address",
     skins: registry.map((id) => ({ id, name: skins[id].name[lang], icon: skins[id].icon, active: id === skinId })),
@@ -278,16 +304,19 @@ const actions = {
   go(control) {
     const screen = control.dataset.screen;
     if (!(screen in screens) || fixed.has(screen)) return;
-    if (live && screen === "new-route" && !liveModels?.length) loadModels().then(fillModels);
+    if (live && screen === "models" && control.dataset.edit === "add") loadModels().then(() => drawPicker(true));
     // adding the very first provider starts the three-step first run
     const flow = control.dataset.flow === "1" || (screen === "add-provider" && !data.providers.length && !data.routes.length);
-    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null });
+    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null, model: control.dataset.model ?? null, editing: control.dataset.edit ?? null });
   },
   close,
   async edit(control) {
     const editing = control.dataset.edit || null;
-    if (live && editing === "model") await loadModels();
+    if (live && ["model", "add", "place", "replace"].includes(editing)) loadModels().then(() => drawPicker(true));
+    ui.place = editing === "via" || editing === "replace" ? Number(control.dataset.place) : null;
+    if (editing === "via") loadProviders();
     ui.editing = editing;
+    Object.assign(ui, { find: "", makes: "", more: 0, where: null });
     ui.error = null;
     ui.saved = false;
     ui.focus = Boolean(editing);
@@ -315,7 +344,8 @@ const actions = {
   "remove-model"(control) {
     const route = data.routes.find((r) => r.id === control.dataset.id);
     if (!route || route.models.length < 2) return;
-    route.models = route.models.filter((m) => m !== control.dataset.model);
+    route.models = route.models.filter((name) => name !== control.dataset.model);
+    ui.editing = null;
     render();
     if (live) send(api.setModels(route.id, route.models));
   },
@@ -402,20 +432,125 @@ const actions = {
       send(api.removeProvider(control.dataset.id));
     }
   },
+  // choosing a model (core/screens/models.js): only the picker is drawn again
+  makes(control) { ui.makes = control.dataset.makes; ui.more = 0; drawPicker(); },
+  "more-models"() { ui.more++; drawPicker(); },
+  "pick-open"() { Object.assign(ui, { picking: true, find: "", makes: "", more: 0 }); drawPicker(true); },
+  "pick-close"() { ui.picking = false; drawPicker(); },
+  where(control) { ui.where = control.dataset.where; ui.more = 0; ui.makes = ""; drawPicker(); },
+  // A row of the picker: a model in BaseRouter (its name), or one a provider offers
+  // ("<provider>|<id>"), which becomes a model in BaseRouter first, unless it already is one.
+  "pick-model"(control) {
+    const picker = control.closest("#br-picker");
+    const mode = picker?.dataset.mode;
+    const value = control.dataset.model;
+    const offer = value.includes("|") ? context().offers.find((o) => `${o.provider}|${o.id}` === value) : null;
+    // A source changed: the pick takes its place, in its position. The model's name stays.
+    if (mode === "replace") {
+      const model = data.models.find((m) => m.name === picker.dataset.for);
+      const at = ui.place;
+      if (!model || !offer || !model.from[at]) return;
+      if (model.from.some((p, i) => i !== at && p.provider === offer.provider && p.model === offer.id && !p.via)) return;
+      model.from = model.from.map((p, i) => (i === at ? { provider: offer.provider, model: offer.id, via: null } : p));
+      if (at === 0 && offer.makes?.length) model.makes = offer.makes;
+      ui.editing = null;
+      render();
+      app.querySelector(`.br-change[data-place="${at}"]`)?.focus();
+      if (live) send(api.updateModel(model.id, { from: model.from }));
+      return;
+    }
+    if (mode === "place") {
+      const model = data.models.find((m) => m.name === picker.dataset.for);
+      if (!model || !offer || model.from.some((p) => p.provider === offer.provider && p.model === offer.id && !p.via)) return;
+      model.from.push({ provider: offer.provider, model: offer.id, via: null });
+      ui.editing = null;
+      render();
+      if (live) send(api.updateModel(model.id, { from: model.from }));
+      return;
+    }
+    const known = offer && (data.models ?? []).some((m) => m.from.some((p) => p.provider === offer.provider && p.model === offer.id));
+    const name = offer ? ensureModel(offer) : value;
+    // A provider's model that is not in BaseRouter yet is made one first (a new route's model is
+    // made when the route is: the gateway makes a model of every name a route lists).
+    const made = live && offer && !known ? api.createModel({ name, from: [{ provider: offer.provider, model: offer.id }] }).catch(() => {}) : Promise.resolve();
+    if (mode === "choose") {
+      Object.assign(ui, { chosen: name, picking: false });
+      drawPicker();
+      return app.querySelector("#br-picker .br-btn")?.focus();
+    }
+    if (mode === "add") {
+      Object.assign(ui, { model: name, editing: null, focus: true });
+      render();
+      if (live) send(made);
+      return;
+    }
+    const route = data.routes.find((r) => r.id === picker.dataset.id);
+    if (!route || route.models.includes(name)) return;
+    route.models = [...route.models, name];
+    ui.editing = null;
+    render();
+    if (live) send(made.then(() => api.setModels(route.id, route.models)));
+  },
+  // Models: one opened, a place removed, where an OpenRouter place comes from, deleting one
+  "open-model"(control) { Object.assign(ui, { model: control.dataset.model || null, editing: null, error: null, focus: true }); render(); },
+  "remove-place"(control) {
+    const model = data.models.find((m) => m.name === ui.model);
+    if (!model || model.from.length < 2) return;
+    model.from = model.from.filter((_, i) => i !== Number(control.dataset.place));
+    ui.editing = null;
+    render();
+    if (live) send(api.updateModel(model.id, { from: model.from }));
+  },
+  "set-via"(control) {
+    const model = data.models.find((m) => m.name === ui.model);
+    const at = ui.place;
+    const place = model?.from[at];
+    if (!place) return;
+    const via = control.dataset.tag || null;
+    if (model.from.some((p, i) => i !== at && p.provider === place.provider && p.model === place.model && p.via === via)) return;
+    model.from = model.from.map((p, i) => (i === at ? { ...p, via } : p));
+    ui.editing = null;
+    render();
+    app.querySelector(`.br-from[data-place="${at}"]`)?.focus();
+    if (live) send(api.updateModel(model.id, { from: model.from }));
+  },
+  "delete-model"(control) {
+    const name = control.dataset.model;
+    const gone = data.models.find((m) => m.name === name);
+    data.models = data.models.filter((m) => m.name !== name);
+    for (const route of data.routes) route.models = route.models.filter((n) => n !== name);
+    Object.assign(ui, { model: null, editing: null, focus: true });
+    render();
+    if (live && gone?.id) send(api.deleteModel(gone.id));
+  },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
   theme(control) { themePref = control.dataset.value; keep.set("theme", themePref); render(); },
   lang(control) { lang = control.dataset.value; keep.set("lang", lang); render(); },
 };
 
 const forms = {
-  model(form, values) {
-    const route = data.routes.find((r) => r.id === form.dataset.id);
-    const model = String(values.get("model") ?? "");
-    if (!route || !model || route.models.includes(model)) return;
-    route.models = [...route.models, model];
-    ui.editing = null;
+  // the model search: Enter picks the first model found (see the keydown listener)
+  find() {},
+  // A model's new name. Routes that use it follow.
+  rename(form, values) {
+    const from = form.dataset.model;
+    const name = String(values.get("name") ?? "").trim();
+    const model = data.models.find((m) => m.name === from);
+    if (!model) return;
+    if (!/^[\w~][\w.:/@+~-]{0,199}$/.test(name)) return void ((ui.error = core[lang].nameInvalid), render());
+    if (name !== from && data.models.some((m) => m.name === name)) return void ((ui.error = core[lang].nameTaken), render());
+    if (live) {
+      // The gateway checks the name too; what it says is shown in the form.
+      return void api.updateModel(model.id, { name })
+        .then(() => refresh(true))
+        .then(() => Object.assign(ui, { model: name, editing: null, error: null, focus: true }))
+        .catch(failed)
+        .finally(render);
+    }
+    model.name = name;
+    for (const route of data.routes) route.models = route.models.map((n) => (n === from ? name : n));
+    Object.assign(ui, { model: name, editing: null, error: null, focus: true });
     render();
-    if (live) send(api.setModels(route.id, route.models));
   },
   password(form, values) {
     const done = () => { ui.editing = null; ui.error = null; ui.saved = true; };
@@ -496,7 +631,7 @@ const forms = {
       if (key.includes("bad")) { ui.step = "fail"; ui.error = "401 invalid key"; }
       else {
         const name = kind.name ?? new URL(String(values.get("address"))).host;
-        data.providers.push({ id: `${kind.kind}-${data.providers.length + 1}`, name, status: "up", keyHint: key ? key.slice(-4) : null, models: kind.models });
+        data.providers.push({ id: data.providers.some((p) => p.id === kind.kind) ? `${kind.kind}-${data.providers.length + 1}` : kind.kind, name, status: "up", keyHint: key ? key.slice(-4) : null, models: kind.models });
         ui.step = "ok";
       }
       ui.focus = true;
@@ -567,6 +702,19 @@ addEventListener("keydown", (event) => {
   if (event.key === "Escape" && view) close();
 });
 
+// Typing a model search draws the picker again, and nothing else.
+app.addEventListener("input", (event) => {
+  if (!event.target.matches("[data-find]")) return;
+  ui.find = event.target.value;
+  ui.more = 0;
+  drawPicker();
+});
+app.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.matches("[data-find]")) return;
+  event.preventDefault();
+  app.querySelector("#br-picker .br-model")?.click();
+});
+
 // ---- live: keeping the panel in step with the gateway ----
 
 function replaceData(next) {
@@ -574,27 +722,63 @@ function replaceData(next) {
   Object.assign(data, next);
 }
 
-// The three suggested models first, when the provider has them, then the rest.
-function orderModels(ids) {
-  if (!ids?.length) return modelChoices;
-  const first = modelChoices.filter((m) => ids.includes(m));
-  return [...first, ...ids.filter((m) => !first.includes(m))];
+// Where an OpenRouter place of the open model can come from, from the gateway (or the made-up data).
+async function loadProviders() {
+  const place = (data.models ?? []).find((m) => m.name === ui.model)?.from[ui.place];
+  const model = place?.model;
+  if (!model || ui.providers?.model === model) return;
+  ui.providers = null;
+  if (!live) return void (ui.providers = { model, list: providersFor(model) });
+  try {
+    ui.providers = { model, list: await api.offerEndpoints(model) };
+  } catch {
+    ui.providers = { model, list: [] };
+  }
+  render();
+}
+
+// A provider's model as a model in BaseRouter: the one it already is, or a new one named after
+// the provider's id (or "<provider>/<id>" when that name is taken), with that one place.
+function ensureModel(offer) {
+  data.models ??= [];
+  const known = data.models.find((m) => m.from.some((p) => p.provider === offer.provider && p.model === offer.id));
+  if (known) return known.name;
+  const name = data.models.some((m) => m.name === offer.id) ? `${offer.provider}/${offer.id}` : offer.id;
+  data.models.push({ name, makes: offer.makes, from: [{ provider: offer.provider, model: offer.id, via: null }] });
+  return name;
+}
+
+// The model a new route starts with: the first suggested one the provider has, or its first.
+function defaultModel() {
+  const names = (data.models ?? []).map((m) => m.name);
+  return names.find((n) => modelChoices.some((c) => c.endsWith(n) || n.endsWith(c))) ?? names[0] ?? modelChoices[0];
 }
 
 async function loadModels() {
   if (liveModels?.length || !data.providers.length) return;
   try {
-    liveModels = await api.models();
+    liveModels = await api.offers();
   } catch {}
 }
 
-// The model list arrived while the new-route form is open: fill its choices in place,
-// so nothing typed in the form is lost.
-function fillModels() {
-  const select = app.querySelector("#br-model");
-  if (!select || !liveModels?.length) return;
-  const chosen = select.value;
-  select.replaceChildren(...orderModels(liveModels).map((m) => new Option(m, m, false, m === chosen)));
+// Draws the model picker again in place: while a search is typed, when a category is
+// chosen, when the provider's models arrive. The rest of the sheet, and anything typed into
+// it, is left alone. The search keeps its focus and caret.
+function drawPicker(focusFind = false) {
+  const picker = app.querySelector("#br-picker");
+  if (!picker) return;
+  const ctx = context();
+  if (picker.dataset.mode === "choose" && !ui.chosen) ui.chosen = defaultModel();
+  const find = picker.querySelector("[data-find]");
+  const typing = find && document.activeElement === find ? find.selectionStart : null;
+  const route = data.routes.find((r) => r.id === picker.dataset.id);
+  const taken = picker.dataset.mode === "allow" ? route?.models ?? [] : [];
+  picker.outerHTML = modelPicker({ ...ctx, t: ctx.shared }, ui, { mode: picker.dataset.mode, taken, routeId: picker.dataset.id, forModel: picker.dataset.for });
+  const again = app.querySelector("#br-picker [data-find]");
+  if (again && (typing !== null || focusFind)) {
+    again.focus();
+    if (typing !== null) again.setSelectionRange(typing, typing);
+  }
 }
 
 // An action that did not go through: say so in the open sheet, or ask to sign in again.

@@ -9,8 +9,7 @@ import { hashKey, unseal } from "./secrets.ts";
 import type { Failure, Kind, ProviderRow, RouteRow, Store } from "./store.ts";
 import { readPlain, StreamScanner, type Reading } from "./usage.ts";
 import { forClient, readJob, VideoWatcher } from "./video.ts";
-
-const allowedModels = (route: RouteRow): string[] => JSON.parse(route.models) as string[];
+import { bodyFor, namesOf, resolve, type Place } from "./models.ts";
 
 // Only these response headers are passed back. The rest describe the connection
 // between the gateway and the provider, not the one to the client.
@@ -21,16 +20,6 @@ function passHeaders(upstream: Response): Headers {
     if (value) headers.set(name, value);
   }
   return headers;
-}
-
-// A route's models are an order: when the model asked for fails, the next ones are tried.
-// OpenRouter does that itself when the request carries "models", so the gateway adds it:
-// the model asked for first, then the route's other models in the route's order. The body
-// is left exactly as written when the route has one model, or the client sent its own list
-// (which forward() has already checked against the route's models).
-export function withFallbacks(text: string, body: Record<string, unknown>, model: string, routeModels: string[]): string {
-  if (routeModels.length < 2 || "models" in body) return text;
-  return JSON.stringify({ ...body, models: [model, ...routeModels.filter((m) => m !== model)] });
 }
 
 // What a chat request makes, from the "modalities" it asks for.
@@ -65,8 +54,11 @@ const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 // prompt: for a request that makes images or speech, the words that asked for them.
 type Prepared =
   | { ok: false; response: Response }
-  | { ok: true; model: string; alsoModels?: string[]; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null };
+  | { ok: true; model: string; alsoModels?: string[]; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null;
+      // The body as read, so it can be sent to another place of the model: a JSON object, or a form.
+      fields?: Record<string, unknown>; form?: Form };
 
+type Form = Awaited<ReturnType<Response["formData"]>>;
 type Prepare = (c: Context<Env>, bytes: Uint8Array, route: RouteRow) => Promise<Prepared> | Prepared;
 
 const invalid = (c: Context<Env>, message: string): Prepared => ({ ok: false, response: refuse(c, 400, "invalid_request", message) });
@@ -78,8 +70,8 @@ const noModel = 'The request does not say which model to use. Add "model".';
 export const validModelId = (id: unknown): id is string => typeof id === "string" && /^[\w~][\w.:/@+~-]{0,199}$/.test(id);
 const badModel = (c: Context<Env>, id: string) => invalid(c, `"${id.slice(0, 60).replace(/[^\w.:/@+~ -]/g, "?")}" is not a model id.`);
 
-// A JSON body with a "model". Chat requests get the route's fallbacks; the others are sent as written.
-function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
+// A JSON body with a "model".
+function json(kind: Kind | "chat-modalities"): Prepare {
   return (c, bytes, route) => {
     const text = new TextDecoder().decode(bytes);
     let body: unknown;
@@ -105,7 +97,8 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
       ok: true,
       model,
       alsoModels,
-      body: fallbacks ? withFallbacks(text, fields, model, allowedModels(route)) : bytes,
+      fields,
+      body: bytes,
       contentType: "application/json",
       kind: made,
       streamed: fields.stream === true,
@@ -122,19 +115,20 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
 // clients send it. Either way it is sent on as it came; only "model" is read from it.
 const transcription: Prepare = async (c, bytes, route) => {
   const contentType = c.req.header("content-type") ?? "";
-  if (!contentType.includes("multipart/form-data")) return json("transcription", false)(c, bytes, route);
-  let models: unknown[];
+  if (!contentType.includes("multipart/form-data")) return json("transcription")(c, bytes, route);
+  let form: Form;
   try {
-    models = (await new Response(bytes, { headers: { "Content-Type": contentType } }).formData()).getAll("model");
+    form = await new Response(bytes, { headers: { "Content-Type": contentType } }).formData();
   } catch {
     return invalid(c, "The request body is not a valid form.");
   }
+  const models = form.getAll("model");
   // One "model" only: with two, the gateway and OpenRouter could each read a different one.
   if (models.length > 1) return invalid(c, 'The form has more than one "model".');
   const model = models[0];
   if (typeof model !== "string" || !model) return invalid(c, noModel);
   if (!validModelId(model)) return badModel(c, model);
-  return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false };
+  return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false, form };
 };
 
 // The one address as the client reached it, for the links in a video job's answer. Behind
@@ -152,7 +146,7 @@ const notAJob = (c: Context<Env>) => refuse(c, 404, "not_found", "This route has
 // "callback_url" is refused: OpenRouter would send it the job's end, signed links included,
 // around the gateway.
 function video(store: Store): Prepare {
-  const asJson = json("video", false);
+  const asJson = json("video");
   return async (c, bytes, route) => {
     const prepared = await asJson(c, bytes, route);
     if (!prepared.ok) return prepared;
@@ -164,6 +158,24 @@ function video(store: Store): Prepare {
     }
     return prepared;
   };
+}
+
+// One place to send a request to: its provider, the key BaseRouter holds for it, and the body
+// with that place's model id.
+type Attempt = { provider: ProviderRow; key: string; body: Uint8Array | string; contentType: string };
+
+async function bodyAt(prepared: Extract<Prepared, { ok: true }>, place: Place): Promise<{ body: Uint8Array | string; contentType: string }> {
+  if (prepared.fields) return { body: bodyFor(prepared.fields, place, prepared.model) ?? prepared.body, contentType: prepared.contentType };
+  if (prepared.form && place.model !== prepared.model) {
+    const form = new FormData();
+    prepared.form.forEach((value, name) => form.append(name, name === "model" ? place.model : (value as string | Blob)));
+    // The boundary is taken from the encoded body itself: the content type Bun gives for an
+    // encoded form can name a different one.
+    const body = new Uint8Array(await new Request("http://form.invalid/", { method: "POST", body: form }).arrayBuffer());
+    const boundary = /^--([^\r\n]+)\r\n/.exec(new TextDecoder().decode(body.subarray(0, 200)))?.[1];
+    if (boundary) return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+  }
+  return { body: prepared.body, contentType: prepared.contentType };
 }
 
 // A client asks for one request's images or sound not to be kept with "X-BaseRouter-Save: no".
@@ -217,15 +229,26 @@ export function proxy(deps: Deps) {
     const keepVideo = keepMedia && kind === "video";
     const keepSound = keepMedia && path === "/audio/speech";
 
-    const models = allowedModels(route);
-    const notAllowed = models.length > 0 ? [model, ...(prepared.alsoModels ?? [])].find((m) => !models.includes(m)) : undefined;
+    // The model asked for, and the places it comes from: tried in order, the next when one is
+    // refused (see "Models" in models.ts). A client's own fallback list ("models") is checked
+    // like the model, and passed on only when the model is sent exactly as asked.
+    const names = namesOf(route);
+    const notAllowed = [model, ...(prepared.alsoModels ?? [])].find((m) => !resolve(store, route, m).ok);
     if (notAllowed !== undefined) {
-      return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${notAllowed}. It may use: ${models.join(", ")}.`);
+      return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${notAllowed}. It may use: ${names.join(", ")}.`);
     }
-
-    const provider = store.providers()[0];
-    if (!provider) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
-    const key = unseal(deps.master, provider.key_sealed);
+    const resolved = resolve(store, route, model);
+    const providers = store.providers();
+    const attempts: Attempt[] = [];
+    for (const place of resolved.ok ? resolved.places : []) {
+      const at = providers.find((p) => p.id === place.provider);
+      if (at) attempts.push({ provider: at, key: unseal(deps.master, at.key_sealed), ...(await bodyAt(prepared, place)) });
+    }
+    if (!attempts.length) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
+    if (prepared.alsoModels?.length && (attempts.length > 1 || attempts[0]!.body !== prepared.body)) {
+      return refuse(c, 400, "invalid_request", `In BaseRouter, what takes over when ${model} fails is set on the model. Leave out "models".`);
+    }
+    let { provider, key } = attempts[0]!;
 
     // An answer can take, or pause for, longer than Bun's idle timeout (10 seconds), which would cut it.
     c.env?.server?.timeout(c.req.raw, 0);
@@ -282,9 +305,17 @@ export function proxy(deps: Deps) {
       return rowId;
     };
 
+    // A route's lines: when an answer is refused (an outage, a rate limit, no such provider for
+    // the model), the next line is tried, before anything reaches the client. Not when the
+    // provider refused BaseRouter's key or its credit, which no other line would change.
     let upstream: Response;
     try {
-      upstream = await openrouter.send(deps.upstream, key, path, prepared.body, prepared.contentType, abort.signal);
+      for (let i = 0; ; i++) {
+        ({ provider, key } = attempts[i]!);
+        upstream = await openrouter.send(deps.upstream, key, path, attempts[i]!.body, attempts[i]!.contentType, abort.signal);
+        if (upstream.ok || i === attempts.length - 1 || upstream.status === 401 || upstream.status === 402 || client.aborted) break;
+        await upstream.body?.cancel().catch(() => {});
+      }
     } catch {
       if (client.aborted) {
         finish(null, "client_cancelled");
@@ -409,13 +440,36 @@ export function proxy(deps: Deps) {
     return upstream;
   }
 
-  // A model list, with only the route's models when it is limited to some.
+  // The models a route may use, in OpenAI's shape, by the names apps send. Each carries what
+  // the provider says about the model at its first place. A route that may use any model also
+  // sees the provider's own list after BaseRouter's models.
   async function modelList(c: Context<Env>, path: string): Promise<Response> {
     const upstream = await ask(c, path);
-    const models = allowedModels(c.get("route"));
-    if (!upstream.ok || models.length === 0) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+    if (!upstream.ok) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+    const list = (await upstream.json()) as { data?: Record<string, unknown>[] };
+    const offered = new Map((list.data ?? []).filter((m) => typeof m.id === "string").map((m) => [m.id as string, m]));
+    const names = namesOf(c.get("route"));
+    const asNamed = (name: string) => {
+      const model = store.modelByName(name);
+      const info = offered.get(model?.places[0]?.model ?? name);
+      return info ? { ...info, id: name } : null;
+    };
+    const data: Record<string, unknown>[] = (names.length ? names : store.models().map((m) => m.name)).map(asNamed).filter((m) => m !== null);
+    if (!names.length) {
+      const shown = new Set(data.map((m) => m.id));
+      for (const [id, info] of offered) if (!shown.has(id)) data.push(info);
+    }
+    return c.json({ ...list, data });
+  }
+
+  // The video models a route may use, as the provider lists them: the models at its models' places.
+  async function videoModelList(c: Context<Env>): Promise<Response> {
+    const upstream = await ask(c, "/videos/models");
+    const route = c.get("route");
+    if (!upstream.ok || !namesOf(route).length) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+    const allowed = new Set(namesOf(route).flatMap((name) => { const r = resolve(store, route, name); return r.ok ? r.places.map((p) => p.model) : []; }));
     const list = (await upstream.json()) as { data?: { id?: string }[] };
-    return c.json({ ...list, data: (list.data ?? []).filter((m) => typeof m.id === "string" && models.includes(m.id)) });
+    return c.json({ ...list, data: (list.data ?? []).filter((m) => typeof m.id === "string" && allowed.has(m.id)) });
   }
 
   async function lookUpCost(rowId: number, generationId: string, key: string): Promise<void> {
@@ -429,19 +483,19 @@ export function proxy(deps: Deps) {
     }
   }
 
-  app.post("/chat/completions", (c) => forward(c, "/chat/completions", json("chat-modalities", true)));
+  app.post("/chat/completions", (c) => forward(c, "/chat/completions", json("chat-modalities")));
   // OpenAI's name for it; OpenRouter's own is /images.
-  app.post("/images/generations", (c) => forward(c, "/images", json("image", false)));
-  app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech", false)));
+  app.post("/images/generations", (c) => forward(c, "/images", json("image")));
+  app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech")));
   app.post("/audio/transcriptions", (c) => forward(c, "/audio/transcriptions", transcription));
 
-  app.get("/models", (c) => modelList(c, "/models"));
+  app.get("/models", (c) => modelList(c, openrouter.modelsPath(new URL(c.req.url).searchParams)));
 
   // Video: a job is started, asked about until it is done, and its video fetched. Only the
   // route that started a job can ask about it or fetch its video. Asking is free and is not
   // recorded; the job's one row is the request that started it.
   app.post("/videos", (c) => forward(c, "/videos", video(store)));
-  app.get("/videos/models", (c) => modelList(c, "/videos/models"));
+  app.get("/videos/models", (c) => videoModelList(c));
 
   app.get("/videos/:id", async (c) => {
     const job = store.videoJob(c.req.param("id"));

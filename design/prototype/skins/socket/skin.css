@@ -49,7 +49,10 @@ button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .key svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* providers: plugs with cables running into the strip */
-.feed-h{font:600 13px/1 var(--body);color:var(--ink-2);margin:0 4px 8px}
+.feed-h{display:flex;align-items:center;justify-content:space-between;gap:12px;font:600 13px/1 var(--body);color:var(--ink-2);margin:0 4px 2px}
+.feed-h .models{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 4px 0 10px;font:700 14px/1 var(--body);color:var(--ink)}
+.feed-h .models b{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.feed-h .models svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .plugs{display:grid;grid-template-columns:repeat(3,1fr) 56px;gap:8px;padding:0 10px;position:relative;z-index:1}
 .plug{display:flex;flex-direction:column;align-items:center;min-width:0}
 .plug .head{width:100%;min-height:58px;border-radius:14px 14px 8px 8px;background:var(--ink);color:var(--bench);

@@ -17,7 +17,8 @@ Young: try it, but do not bet a business on it yet. The latest release is on the
 **Works today**
 
 - One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/videos`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Video is made as a job that the gateway watches until it is done. The images, speech and video routes make are kept and shown in the panel, unless a route or a request says no.
-- Routes: a named key per agent, a monthly budget enforced before a request is sent, an on/off switch, a list of allowed models with OpenRouter's fallback between them.
+- Models: BaseRouter's own list, each the name apps send and the places it comes from in order, with fallback from one to the next.
+- Routes: a named key per agent, a monthly budget enforced before a request is sent, an on/off switch, the models it may use.
 - A record of every request: what it made, models, tokens, cost, timings, what went wrong. Prompts and answers are not stored, except the images, speech and video that are kept.
 - The panel in three skins (Socket, Display, Home), in English and Turkish, light and dark, behind an admin password.
 

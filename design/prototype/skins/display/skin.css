@@ -105,7 +105,7 @@ button:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
 @keyframes blink{50%{opacity:.25}}
 
 /* function keys */
-.fn{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:22px}
+.fn{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px}
 .fn .cap{min-height:52px;border-radius:26px;padding:0 6px;font:600 13.5px/1.1 var(--label);text-align:center}
 .fn .go{grid-column:1/-1;background:var(--blue);color:var(--on-blue);font:700 16px/1 var(--label);min-height:56px;
   box-shadow:0 4px 0 color-mix(in srgb,var(--blue) 55%,#000),0 7px 10px -5px rgba(0,0,0,.35)}
@@ -159,7 +159,7 @@ button:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
 .rk .nm span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .rk .of{white-space:normal}
 /* the function keys stay within reach however many routes there are */
-.fn{position:sticky;bottom:0;z-index:3;grid-template-columns:52px 1fr 1fr 1fr;gap:8px;margin:22px -16px -28px;
+.fn{position:sticky;bottom:0;z-index:3;grid-template-columns:52px repeat(4,1fr);gap:6px;margin:22px -16px -28px;
   padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:var(--shell);box-shadow:0 -1px 0 var(--key-edge)}
 .fn .go{grid-column:auto;min-height:52px;padding:0}
 .fn .go span{display:none}

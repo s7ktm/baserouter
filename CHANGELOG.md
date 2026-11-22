@@ -4,6 +4,20 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Changed in behaviour
+
+- A route's other models are no longer a fallback list. What takes over when a model fails is set on the model in BaseRouter, as its sources. A route that relied on OpenRouter trying its other models should give its model a second source.
+
+### Changed
+
+- Models in BaseRouter. A model is the name apps send, what it makes, and the sources it comes from, in order: a provider and its id for the model, and for OpenRouter which of its own providers (Google Vertex, Amazon Bedrock, a faster or cheaper tier...). When a source fails, the next is tried, for chat, images, sound and video alike. A route only says which models it may use. The panel has a Models screen (from Providers and from a route): rename a model (its routes follow), add a fallback from any provider, choose OpenRouter's provider for a source, delete it. `GET/POST/PATCH/DELETE /api/models`.
+- Routes made before keep working: every name they list becomes a model, at the first provider, when the gateway starts.
+- Choosing a model in the panel (adding one to a route, or a new route's first) is a model picker instead of a long drop-down: a search, the kinds of model (text, image, speech, transcription, video) with how many of each, and a row per model with its name, id, price and what it reads, all from OpenRouter's own list. That list is now `GET /api/offers`, and `GET /api/models` is BaseRouter's own models.
+
+### Fixed
+
+- The model list (`/v1/models`, and the panel's choice of a route's models) left out most models that only make images, sound or video, because OpenRouter lists only text models unless asked for all. Every model is listed now, and an app can pass OpenRouter's filters on: `/v1/models?output_modalities=image`, `?supported_parameters=tools`, `?category=`.
+
 ### Added
 
 - Video through OpenRouter. `POST /v1/videos` starts a job with the route's key, its budget and its models; `GET /v1/videos/:id` asks how far it has got; `GET /v1/videos/:id/content` fetches the video; `GET /v1/videos/models` lists the models that make video. Only the route that started a job can ask about it, fetch it or continue it.

@@ -19,7 +19,8 @@ export function providersSheet(ctx, ui) {
   return sheet(ctx, ui, {
     title: t("providers"),
     body: `${cards ? `<ul class="br-cards">${cards}</ul>` : `<p class="br-lead">${t("provNone")}</p>`}
-      <p class="br-actions" style="margin-top:16px"><button class="br-btn main" data-action="go" data-screen="add-provider">+ ${t("addProvider")}</button></p>`,
+      <p class="br-actions" style="margin-top:16px"><button class="br-btn main" data-action="go" data-screen="add-provider">+ ${t("addProvider")}</button>${
+        cards ? `<button class="br-btn" data-action="go" data-screen="models">${t("models")} <span class="br-count">${ctx.num((data.models ?? []).length, 0)}</span></button>` : ""}</p>`,
   });
 }
 
@@ -27,7 +28,7 @@ export function addProviderSheet(ctx, ui) {
   const { t, esc } = ctx;
   const kind = ctx.catalog.find((k) => k.kind === ui.kind);
   const kindName = kind && (kind.name ?? t("customName"));
-  const step = ui.flow ? { n: 1, of: 3 } : null;
+  const step = ui.flow ? { n: 1, of: 4 } : null;
   let body;
 
   if (!kind || ui.step === "pick") {
@@ -40,7 +41,7 @@ export function addProviderSheet(ctx, ui) {
   } else if (ui.step === "ok") {
     body = `<p class="br-lead">${t("addOk", { name: esc(kindName), n: kind.models })}</p>
       <p class="br-actions" style="margin-top:18px">${ui.flow
-        ? `<button class="br-btn main" data-action="go" data-screen="new-route" data-flow="1">${t("nextRoute")}</button>`
+        ? `<button class="br-btn main" data-action="go" data-screen="models" data-flow="1" data-edit="add">${t("nextModel")}</button>`
         : `<button class="br-btn main" data-action="close">${t("done")}</button>`}</p>`;
   } else {
     // "key", and "fail" which is the same form with what went wrong above it

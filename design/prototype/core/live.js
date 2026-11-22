@@ -31,7 +31,13 @@ export const api = {
   setup: (password) => call("POST", "/setup", { password }),
   login: (password) => call("POST", "/login", { password }),
   state: () => call("GET", "/state"),
-  models: () => call("GET", "/models").then((answer) => answer.models),
+  // what the provider offers, each with the provider's id, to find models in
+  offers: () => call("GET", "/offers").then((answer) => (answer.offers ?? []).map((o) => ({ ...o, provider: answer.provider }))),
+  offerEndpoints: (model) => call("GET", `/offers/endpoints?model=${encodeURIComponent(model)}`).then((answer) => answer.providers),
+  // models in BaseRouter
+  createModel: (model) => call("POST", "/models", model),
+  updateModel: (id, change) => call("PATCH", `/models/${encodeURIComponent(id)}`, change),
+  deleteModel: (id) => call("DELETE", `/models/${encodeURIComponent(id)}`),
   toggle: (id, enabled) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { enabled }),
   budget: (id, budget) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { budget }),
   addProvider: (kind, key) => call("POST", "/providers", { kind, key }),
@@ -52,7 +58,9 @@ export const api = {
 export function toData(state) {
   const routes = state.routes.map((r) => ({
     id: r.id, name: { en: r.name, tr: r.name }, icon: r.icon, color: r.color, enabled: r.enabled, busy: r.busy,
-    today: r.today, used: r.used, budget: r.budget, keyHint: r.keyHint, models: r.models, keepMedia: r.keepMedia,
+    today: r.today, used: r.used, budget: r.budget, keyHint: r.keyHint, keepMedia: r.keepMedia,
+    // the names of the models a route may use
+    models: (r.models ?? []).map((l) => (typeof l === "string" ? l : l.model)),
   }));
   const known = new Set(routes.map((r) => r.id));
   const media = (i) => ({
@@ -77,5 +85,7 @@ export function toData(state) {
     sounds: (state.sounds ?? []).map(media),
     videos: (state.videos ?? []).map(media),
     mediaSpace: state.mediaSpace ?? { images: 0, sounds: 0, videos: 0, bytes: 0, keeping: false, max: 0 },
+    // models in BaseRouter: the name apps send, what it makes, the places it comes from in order
+    models: (state.models ?? []).map((m) => ({ id: m.id, name: m.name, makes: m.makes ?? [], from: m.from ?? [] })),
   };
 }

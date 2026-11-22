@@ -1,5 +1,6 @@
 // New route: a short form, then the one moment the full key is shown,
 // with a line that watches for the first request.
+import { modelPicker } from "./models.js";
 import { sheet, curl } from "./sheet.js";
 
 export function newRouteSheet(ctx, ui) {
@@ -12,7 +13,7 @@ export function newRouteSheet(ctx, ui) {
     const first = ui.made.first;
     return sheet(ctx, ui, {
       title: t("routeReady", { name: `<span class="br-keep">${ctx.name(route)}</span>` }),
-      step: ui.flow ? { n: 3, of: 3 } : null,
+      step: ui.flow ? { n: 4, of: 4 } : null,
       body: `
         <span class="br-label">${t("key")}</span>
         <div class="br-field"><code class="br-keep">${esc(ui.made.key)}</code><button class="br-btn" data-action="copy" data-copy-id="new-key" data-copy="${esc(ui.made.key)}">${copyLabel("new-key")}</button></div>
@@ -29,13 +30,23 @@ export function newRouteSheet(ctx, ui) {
     });
   }
 
-  const step = ui.flow ? { n: 2, of: 3 } : null;
+  const step = ui.flow ? { n: 3, of: 4 } : null;
   if (!data.providers.length) {
     return sheet(ctx, ui, {
       title: t("newRoute"),
       step,
       body: `<p class="br-lead">${t("needProvider")}</p>
         <p class="br-actions" style="margin-top:16px"><button class="br-btn main" data-action="go" data-screen="add-provider">+ ${t("addProvider")}</button></p>`,
+    });
+  }
+
+  // A route uses models from BaseRouter's own list; with none yet, the way is Manage models.
+  if (!(data.models ?? []).length) {
+    return sheet(ctx, ui, {
+      title: t("newRoute"),
+      step,
+      body: `<p class="br-lead">${t("needModel")}</p>
+        <p class="br-actions" style="margin-top:16px"><button class="br-btn main" data-action="go" data-screen="models" data-edit="add"${ui.flow ? ' data-flow="1"' : ""}>${t("manageModels")}</button></p>`,
     });
   }
 
@@ -49,8 +60,8 @@ export function newRouteSheet(ctx, ui) {
       <p class="br-note" style="margin-top:8px">${t("routeNameHint")}</p>
       <label class="br-label" for="br-new-budget">${t("monthly")}</label>
       <input class="br-input wide" id="br-new-budget" name="budget" type="number" inputmode="decimal" min="1" step="1" value="5" required>
-      <label class="br-label" for="br-model">${t("firstModel")}</label>
-      <span class="br-select"><select class="br-input wide br-keep" id="br-model" name="model">${ctx.modelChoices.map((m) => `<option>${esc(m)}</option>`).join("")}</select></span>
+      ${ui.picking ? "" : `<span class="br-label">${t("firstModel")}</span>`}
+      ${modelPicker(ctx, ui, { mode: "choose" })}
       <p class="br-note" style="margin-top:8px">${t("modelLater")}</p>
       <p class="br-actions" style="margin-top:16px"><button class="br-btn main" type="submit">${t("makeRoute")}</button></p>
     </form>`,

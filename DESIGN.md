@@ -126,7 +126,7 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 1. **Name, status, switch.** The status is a short sentence. A route over its budget has no switch.
 2. **Budget.** Spent and limit, a meter, the date it starts again, and one button: "Change budget", or "Raise budget" as the main action when the route is stopped.
 3. **Connect.** The address, the route's key, and a snippet for curl and Python. The key is shown in full only once, when it is made; afterwards only its last four characters are shown and a lost key is replaced with a new one. "Make a new key" first says that the old key stops working at once, then shows the new key in full, this once.
-4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails. Each model but the last can be removed; "Add model" picks one of the provider's models.
+4. **Models it may use.** Not ordered: order and fallbacks belong to the model (see "Models"). Each row is a model's name, what it makes and where it comes from, and opens the model; each can be removed from the route. "Authorize a model" opens the picker on BaseRouter's models only; "Manage models" is beside it. With none listed the route may use every model, and says so.
 5. **Keep images, sound and video.** A switch, on unless turned off: the images, speech and video this route makes are kept, to look at, listen to and watch again in activity. Below it, when there are any, a way to this route's images, to its sounds and to its videos.
 6. **Recent requests.** Five rows. A request that worked has a filled dot and its cost; one that failed has a hollow ring and the word "failed".
 7. **Delete route.** Last, and quiet. It asks before it deletes, with the answer that keeps the route under the cursor.
@@ -135,7 +135,7 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 
 Everything that is not the home screen is a sheet over it: one frame, one way in and one way out. While a sheet is open, the home screen behind it cannot be reached by keyboard or screen reader. Escape, the close button and the dimmed area all close it, and focus returns to whatever opened it. A sheet that opens with a form puts the cursor in its first field.
 
-Every skin offers a way from its home screen to each of the five screens below. Where that way sits is the skin's choice: in Socket the plugs open providers and the last-request line opens activity; in Display they are function keys; in Home they are the bottom bar and the provider pills.
+Every skin offers a way from its home screen to each of the six screens below (providers, adding one, Models, a new route, activity, settings). Where that way sits is the skin's choice: in Socket the plugs open providers and the last-request line opens activity; in Display they are function keys; in Home they are the bottom bar and the provider pills.
 
 ### Providers
 
@@ -149,9 +149,32 @@ Three moments: pick one from a short list, paste its key, see the result of the 
 
 A form with three fields (name, monthly budget, first model), then the one moment the full key is shown, with the snippet under it and a line that waits for the first request and says when it arrives.
 
+### Models
+
+From the decision in PRODUCT.md ("Providers, models and routes"); approved by the maintainer on 2026-11-22.
+
+A shared screen, built once, and the only place models are added: "Manage models". Every skin offers it from its home screen, as it offers providers (Socket beside its plugs, Display as a function key, Home in its bar), and Providers and a route link to it. A route never takes a model straight from a provider; it authorizes models that are already here.
+
+- **The list.** Each model on one row: the name apps send, what it makes, where it comes from ("OpenAI, then OpenRouter"), and how many routes use it. The main action is "Add a model", which opens the model picker; picking one a provider offers makes it a model here, with that one source.
+- **One model,** opened in the same sheet:
+  1. **Name apps use.** Shown as code, with "Rename". Routes that use the model follow the new name; apps that send the old one are refused, which the rename says first.
+  2. **Sources.** A numbered list, because the order is real: each source is a provider and that provider's id for the model, and, for OpenRouter, which of its own providers ("Any provider", or one named). Each source but the last can be removed. "Add a backup source" opens the picker on every provider; "Change" on a source opens it too, and the pick takes that source's place, in its position, while the model keeps its name. A source that is a different model says so.
+  3. **Used by.** The routes that may use it, each opening its route.
+  4. **Delete model.** Last and quiet; it asks first and names the routes that lose it.
+
+### Choosing a model### Choosing a model
+
+Built once and used wherever a model is chosen: adding one to BaseRouter, allowing one on a route, a new route's first model, and a fallback source on a model. Everything in it is what the provider says about its models, as it says it; nothing is ranked or recommended.
+
+- **A search,** by name or id. Every word typed must appear. Enter picks the first model found.
+- **What it lists** depends on where it is. On a route and in a new route: only BaseRouter's models, by their own names, with "Manage models" below for more. In Manage models: what the providers offer, with a chip per provider when there is more than one.
+- **Kinds,** as chips under it: All, Text, Image, Speech, Transcription, Video, each with how many models match the search. They are what the model makes, from OpenRouter's own description of each model. A kind with no match is not shown. Models that make only embeddings, rankings or moderation decisions are not listed, because the gateway has no way to use them yet.
+- **The list,** in the provider's own order, thirty at a time with "Show more". A row is the model's name, its id, and one line of plain facts: its kind (under All), its price (per million tokens read and written for text models, "from $x a second" for video, "Free"), how much it reads at once, and what else it reads (images, files, sound, video). A fact the provider does not give is left out, not guessed.
+- On a route, every row allows its model. On a model, a row adds a fallback source. In a new route the field shows the chosen model with "Change"; opened, a row becomes the choice and the field folds back. Typing in the search, choosing a kind or showing more redraws only the picker, so a route name being typed is never lost.
+
 ### First run
 
-Not a screen of its own. When nothing is set up, adding the first provider turns the two flows above into one numbered sequence: add a provider, make a route, connect. The numbers appear only here, because only here is it a sequence.
+Not a screen of its own. When nothing is set up, adding the first provider turns the flows above into one numbered sequence of four: add a provider, add a model (Models, with the picker open on that provider's offer), make a route with it, connect. The numbers appear only here, because only here is it a sequence. A new route made when BaseRouter has no models yet says so and leads to Manage models.
 
 ### Activity
 
@@ -288,6 +311,9 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
 - **A video's tile is its first moment,** asked of the browser (`#t=0.1`), not a picture the gateway makes. Each tile loads a little of its video to show it; with many videos that is many small requests. A still made by the gateway would need a video decoder it does not have.
 - **A video plays with the browser's own controls,** in every skin, like sound. Skins cannot restyle them.
+- **A model shows only what fits on one line.** Its description, its prices for images or sound, and its other parameters are on OpenRouter's page, not here. A model detail view would be the next step if picking turns out to need more.
+- **A source shows its OpenRouter provider by tag** ("google-vertex", "google-ai-studio/flex"), not its name, so the route list needs nothing more than the route itself. The provider's name, tier and prices are in the choice that opens.
+- **No sort or saved favourites in the model picker.** The provider's order is newest first. A sort (by price, by how much it reads) can follow if search and kinds turn out not to be enough.
 - **No screen for a single request.** A row in activity does not open. An image or a sound does, since it can only be seen or heard by opening it.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.
 - **The list of providers to add** shows six kinds on made-up data. A panel served by a gateway offers only what that gateway can add, which today is OpenRouter, and says so once it is added.

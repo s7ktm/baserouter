@@ -25,8 +25,24 @@ export function get(up: Upstream, key: string, path: string, signal?: AbortSigna
   return up.fetch(`${up.baseUrl}${path}`, { headers: auth(key), signal });
 }
 
+// The filters OpenRouter's model list takes, which a client may pass on through /v1/models.
+const LIST_FILTERS = ["output_modalities", "supported_parameters", "category"];
+
+// The path of the model list. Without "output_modalities", OpenRouter lists only the models
+// that write text, leaving out most that only make images, sound or video; "all" lists every
+// one. A client's own filters are passed on, and only those.
+export function modelsPath(asked: URLSearchParams = new URLSearchParams()): string {
+  const query = new URLSearchParams();
+  for (const name of LIST_FILTERS) {
+    const value = asked.get(name);
+    if (value && /^[\w,.:-]{1,200}$/.test(value)) query.set(name, value);
+  }
+  if (!query.has("output_modalities")) query.set("output_modalities", "all");
+  return `/models?${query}`;
+}
+
 export function models(up: Upstream, key: string, signal?: AbortSignal): Promise<Response> {
-  return up.fetch(`${up.baseUrl}/models`, { headers: auth(key), signal });
+  return up.fetch(`${up.baseUrl}${modelsPath()}`, { headers: auth(key), signal });
 }
 
 // What the provider itself said went wrong, in its own words.

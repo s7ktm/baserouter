@@ -80,7 +80,7 @@ The `kind` of a chat request comes from the `modalities` it asks for: `image` wh
 
 Where a cost is filled in afterwards it is still OpenRouter's own figure, so `cost_source` is `provider` either way; until it is known it is `unknown`. That is a gap in the budget for speech: its cost arrives a few seconds after the sound, so a route making many speech requests at once can go further past its budget than one making chat requests, and a speech request whose cost OpenRouter never gives counts as nothing.
 
-A route with several models sends them as a fallback list only on chat requests; OpenRouter's image, audio and video endpoints do not take one.
+What takes over when a model fails is set on the model in BaseRouter (see "Models" below), and works the same for images, sound and video.
 
 **Video.** OpenRouter makes a video as a job: it is started, asked about until it is done, and its video fetched. The gateway passes on all four steps with the route's key.
 
@@ -107,7 +107,16 @@ A route with several models sends them as a fallback list only on chat requests;
 - Images, sound and video together may take `BASEROUTER_MEDIA_MAX_MB`, 1 GB by default. When that is passed, the oldest are removed first. `0` keeps none.
 - When a route is removed, what it made stays, without a route. Deleting one removes its file once no other row has the same bytes.
 
-**A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model. When a route has more than one model, the request is sent with OpenRouter's `models` fallback list: the model asked for first, then the route's other models in order, so OpenRouter tries the next one when a model fails (rate limit, outage, a request it cannot take). A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
+**Models.** BaseRouter keeps its own list of models: the name apps send, what the model makes, and the sources it comes from, in order. A source is a provider BaseRouter holds a key for, that provider's id for the model, and for OpenRouter which of its own providers serves it (`via`: `google-vertex`, a tier such as `google-ai-studio/flex`, or none for OpenRouter's own choice). A route only names the models it may use. See "Providers, models and routes" in [PRODUCT.md](../PRODUCT.md).
+
+- A request is sent to the asked model's first source, with that source's model id and, with a `via`, OpenRouter's `provider.only` (the client's other `provider` wishes are kept). When OpenRouter refuses it (an outage, a rate limit, a provider that does not serve the model), the next source is tried, before anything reaches the client; not when it refuses BaseRouter's key or credit. One request from the client is one row, whichever source answered. This holds for chat, images, speech, transcriptions and video.
+- A model with one source at its own name and no `via` is sent byte for byte, as before models existed.
+- A route made with `models` may only use those (HTTP 403 otherwise). A route with an empty list may use every model in BaseRouter, and also any model its first provider offers, by that provider's id, as before models existed.
+- A name a route lists that is not a model in BaseRouter becomes one when the route is saved, at the first provider, under the provider's own id. Routes made before models existed are moved over the same way when the gateway starts.
+- A client's own `models` fallback list is passed on only when the asked model goes to its one source as asked; otherwise it is refused (HTTP 400), because what takes over is set on the model.
+- A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
+
+**The model list.** `GET /v1/models`, opened with a route's key, lists the models the route may use, by the names apps send, in OpenAI's shape (`client.models.list()` works). Each carries what OpenRouter says about the model at its first source: name, prices, context length, what it takes and makes (`architecture.input_modalities`, `output_modalities`), its parameters. A route that may use any model sees BaseRouter's models first, then the rest of OpenRouter's list. OpenRouter is asked for every model (on its own it lists only those that write text), and an app can ask for some only, with OpenRouter's filters: `?output_modalities=image` (or `image,video`; `text`, `audio`, `speech`, `transcription`, `embeddings`, `all`), `?supported_parameters=tools`, `?category=programming`. Other query parameters are not passed on; a filter value OpenRouter does not know is answered with its HTTP 400. Video models, with their resolutions, lengths and prices, are at `GET /v1/videos/models`, as OpenRouter names them, limited to those at the route's models' sources.
 
 ### Refusals
 
@@ -119,6 +128,7 @@ Errors from the gateway itself have the shape OpenAI clients expect: `{"error": 
 | 402 | `budget_used_up` | The route has used up its monthly budget; `metadata` has the amounts and the date it starts again |
 | 403 | `route_off` | The route is switched off |
 | 403 | `model_not_allowed` | The route may not use that model, or a model in the request's own `models` list |
+| 400 | `invalid_request` (`models`) | The request sends its own `models` list for a model BaseRouter sends elsewhere |
 | 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either), names no model, names something that is not a model id, or (in a form) names more than one; a video job with `callback_url`, or a bad `index` |
 | 404 | `not_found` | A video job id this route did not start |
 | 413 | `request_too_large` | The body is larger than `BASEROUTER_MAX_REQUEST_MB`; `metadata.max_bytes` has the limit. The management API (`/api`) takes up to 1 MB |
@@ -140,9 +150,14 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
 | `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, and the last 60 kept images, sounds and videos each |
-| `GET /api/models` | The provider's model ids, for choosing a route's model |
-| `GET /api/routes` | Lists routes with what each spent today and this month |
-| `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
+| `GET /api/models` | BaseRouter's models: `id`, `name` (what apps send), what it `makes`, and `from`, its sources in order (`{provider, model, via}`) |
+| `POST /api/models` `{name?, from}` | Makes a model. Without a name it is named after its first source's model id |
+| `PATCH /api/models/:id` `{name?, from?}` | Renames it (the routes that list it follow; apps that send the old name are refused) or changes its sources |
+| `DELETE /api/models/:id` | Deletes it; the routes that list it lose it |
+| `GET /api/offers` | What the provider offers, to find models in, in OpenRouter's order: for each, `id`, `name`, what it `makes` (`text`, `image`, `speech`, `transcription`, `video`), what it `takes`, its `context`, its price per token read (`in`) and written (`out`) for text models, its lowest price per second (`perSecond`) for video models, and whether it is `free`; and which `provider` offers them. Models the gateway cannot use (embeddings, reranking, moderation) are left out. Asked of OpenRouter once in ten minutes |
+| `GET /api/offers/endpoints?model=<id>` | Where one of OpenRouter's models can come from: its providers for it, each with its `tag` (what a source's `via` names), `name`, `tier`, prices per token (`in`, `out`), `context` and whether it works right now (`up`). Asked once in ten minutes per model |
+| `GET /api/routes` | Lists routes with what each spent today and this month; `models` are the names of the models each may use |
+| `POST /api/routes` `{name, budget, models?, icon?, color?}` (`models`: names of models it may use) | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
 | `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images, sound and video |
 | `POST /api/routes/:id/key` | Replaces its key; the old one stops working at once. Gives the new key, once |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
@@ -151,13 +166,13 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `GET /api/media/:id` | One file's bytes, or a `Range` of them; `?download=1` to save it |
 | `DELETE /api/media/:id` | Deletes it |
 | `POST /api/password` `{current, password}` | Changes the password; every other session ends |
-| `GET /api/export` | Routes, providers without their keys, every request, and what is known about each kept image and sound (not the files themselves: those are in `data/media/`), as one JSON file |
+| `GET /api/export` | Routes, providers without their keys, models, every request, and what is known about each kept image and sound (not the files themselves: those are in `data/media/`), as one JSON file |
 
 ## What is kept, and how
 
 Everything is in `gateway/data/`, which git ignores.
 
-- `baserouter.sqlite` holds providers, routes, requests, video jobs, settings and sessions.
+- `baserouter.sqlite` holds providers, models, routes, requests, video jobs, settings and sessions.
 - A route's key is never stored. Only its SHA-256 hash and its last four characters are. A lost key cannot be recovered.
 - A provider's key is stored encrypted (AES-256-GCM) and is never given back by the API.
 - The folder and everything in it can be read by BaseRouter's own user only (it sets this on every start).
