@@ -54,6 +54,53 @@ export const api = {
   logout: () => call("POST", "/logout"),
 };
 
+// The playground: a chat sent as a route (POST /api/routes/:id/try). The answer is read as it
+// streams: "onText" gets each piece of it. Resolves with the request's row, which the gateway
+// adds to the end of the stream (what answered, tokens, cost, timings), and what went wrong
+// inside the stream, if something did. Nothing of the conversation is kept anywhere.
+export async function tryChat(routeId, body, { signal, onText }) {
+  const res = await fetch(`/api/routes/${encodeURIComponent(routeId)}/try`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, stream: true }),
+    credentials: "same-origin",
+    signal,
+  });
+  if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) {
+    const answer = await res.json().catch(() => null);
+    if (res.status === 401 && answer?.error?.code === "signed_out") throw new SignedOut();
+    if (!res.ok) throw Object.assign(new Error(messageOf(answer?.error) ?? `HTTP ${res.status}`), { code: answer?.error?.code ?? null });
+    // an answer that came whole, from a provider that did not stream it
+    const text = answer?.choices?.[0]?.message?.content;
+    if (typeof text === "string" && text) onText(text);
+    return { row: null, error: messageOf(answer?.error) };
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let rest = "", event = "", row = null, error = null;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const lines = (rest + value).split("\n");
+    rest = lines.pop();
+    for (const raw of lines) {
+      const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+      if (line === "") event = "";
+      else if (line.startsWith("event:")) event = line.slice(6).trim();
+      if (!line.startsWith("data:")) continue;
+      let doc;
+      try { doc = JSON.parse(line.slice(5)); } catch { continue; } // "[DONE]", or a line cut short
+      if (event === "baserouter.request") row = doc;
+      else {
+        if (doc?.error) error = messageOf(doc.error) ?? "error";
+        const piece = doc?.choices?.[0]?.delta?.content;
+        if (typeof piece === "string" && piece) onText(piece);
+      }
+    }
+  }
+  return { row, error };
+}
+const messageOf = (error) => (error == null ? null : typeof error === "string" ? error : typeof error.message === "string" ? error.message : null);
+
 // The gateway's state, in the shape of core/data.js, so skins and screens draw it
 // exactly as they draw the made-up data. Requests of a removed route are left out.
 export function toData(state) {
@@ -69,7 +116,7 @@ export function toData(state) {
     ago: Math.max(0, Math.round((state.now - i.at) / 1000)),
   });
   const request = (q) => ({
-    route: q.route, kind: q.kind ?? "chat", model: q.model ?? q.requestedModel ?? "", seconds: q.totalMs / 1000, cost: q.cost ?? 0,
+    id: q.id, route: q.route, kind: q.kind ?? "chat", model: q.model ?? q.requestedModel ?? "", seconds: q.totalMs / 1000, cost: q.cost ?? 0,
     ago: Math.max(0, Math.round((state.now - q.at) / 1000)), ok: q.ok,
   });
   return {

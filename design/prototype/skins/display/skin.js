@@ -99,7 +99,7 @@ export default {
       </div>
       <div class="fn">
         <button class="cap go" data-action="go" data-screen="new-route" aria-label="${t("newRoute")}"><b>+</b><span>${t("newRoute")}</span></button>
-        <button class="cap" data-action="go" data-screen="providers">${t("providers")}</button><button class="cap" data-action="go" data-screen="models">${t("models")}</button><button class="cap" data-action="go" data-screen="activity">${t("activity")}</button><button class="cap" data-action="go" data-screen="settings">${t("settings")}</button>
+        <button class="cap" data-action="go" data-screen="providers">${t("providers")}</button><button class="cap" data-action="go" data-screen="models">${t("models")}</button><button class="cap" data-action="go" data-screen="playground">${t("try")}</button><button class="cap" data-action="go" data-screen="activity">${t("activity")}</button><button class="cap" data-action="go" data-screen="settings">${t("settings")}</button>
       </div>
     </main>`;
   },

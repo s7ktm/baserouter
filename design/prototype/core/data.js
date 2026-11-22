@@ -196,6 +196,22 @@ export function providersFor(model, stress = false) {
   return providerLists[model] ?? [where(model.split("/")[0], model.split("/")[0], null, null, null, null)];
 }
 
+// The playground on made-up data: a question and its answer for the states a URL can show,
+// what is known about that answer, and what every message sent in the preview is answered with.
+export const playSample = {
+  ask: { en: "In two sentences: how does a homing pigeon find its way?", tr: "İki cümleyle: posta güvercini yolunu nasıl bulur?" },
+  answer: {
+    en: "Over long distances it keeps its heading by the sun and by the Earth's magnetic field. Close to home it switches to what it knows: landmarks, and by some accounts the smell of the place.",
+    tr: "Uzun mesafede yönünü güneşe ve Dünya'nın manyetik alanına bakarak korur. Eve yaklaşınca tanıdığı şeylere geçer: yer işaretleri ve bazı araştırmalara göre oranın kokusu.",
+  },
+  reply: {
+    en: "This preview has no gateway behind it, so this answer is made up. Served by a gateway, your message goes to the model you chose, as this route, and its answer arrives here as it is written.",
+    tr: "Bu önizlemenin arkasında gateway yok, bu yüzden bu yanıt uydurma. Gateway'den sunulduğunda mesajın seçtiğin modele bu rota adına gider ve yanıtı yazıldıkça buraya gelir.",
+  },
+  facts: { promptTokens: 21, completionTokens: 44, cost: 0.00041, firstMs: 620, totalMs: 1840 },
+  error: "429 rate limited: too many requests, try again in 20 seconds",
+};
+
 export const states = {
   // a normal day: one provider unreachable, one route stopped at its budget, one switched off
   default: base,

@@ -88,7 +88,7 @@ export function routeSheet(ctx, ui) {
         ${Object.keys(code).map((id) => `<button class="br-tab br-keep" role="tab" aria-selected="${id === tab}" data-action="tab" data-tab="${id}">${id === "curl" ? "curl" : "Python"}</button>`).join("")}
       </div>
       <pre class="br-code br-keep" tabindex="0">${esc(code[tab])}</pre>
-      <p class="br-actions"><button class="br-btn" data-action="copy" data-copy-id="snippet" data-copy="${esc(code[tab])}">${copyLabel("snippet")}</button></p>
+      <p class="br-actions"><button class="br-btn" data-action="copy" data-copy-id="snippet" data-copy="${esc(code[tab])}">${copyLabel("snippet")}</button><button class="br-btn" data-action="go" data-screen="playground" data-as="${route.id}">${t("tryTitle")}</button></p>
     </section>
 
     <section class="br-sec">

@@ -22,8 +22,9 @@ export function createApp(deps: Deps) {
       onError: (c) => c.json({ error: { code: "request_too_large", message: "The request is larger than the management API takes (1 MB)." } }, 413),
     }),
   );
-  app.route("/v1", proxy(deps));
-  app.route("/api", admin(deps));
+  const gate = proxy(deps);
+  app.route("/v1", gate.app);
+  app.route("/api", admin(deps, gate.chatAs));
   if (deps.panelDir) {
     const files = panel(deps.panelDir);
     app.on(["GET", "HEAD"], "/*", (c) => (/^\/(v1|api)(\/|$)/.test(c.req.path) ? c.notFound() : files(c)));

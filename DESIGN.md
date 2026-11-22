@@ -135,7 +135,7 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 
 Everything that is not the home screen is a sheet over it: one frame, one way in and one way out. While a sheet is open, the home screen behind it cannot be reached by keyboard or screen reader. Escape, the close button and the dimmed area all close it, and focus returns to whatever opened it. A sheet that opens with a form puts the cursor in its first field.
 
-Every skin offers a way from its home screen to each of the six screens below (providers, adding one, Models, a new route, activity, settings). Where that way sits is the skin's choice: in Socket the plugs open providers and the last-request line opens activity; in Display they are function keys; in Home they are the bottom bar and the provider pills.
+Every skin offers a way from its home screen to each of the seven screens below (providers, adding one, Models, a new route, activity, settings, the playground). Where that way sits is the skin's choice: in Socket the plugs open providers, the last-request line opens activity and "Try" sits beside "Models"; in Display they are function keys, six of them, three across; in Home they are the bottom bar and the provider pills.
 
 ### Providers
 
@@ -181,6 +181,20 @@ Not a screen of its own. When nothing is set up, adding the first provider turns
 Every request, newest first: which route, which model, how long ago, how long it took, what it cost. One filter, by route. Opening it from a route arrives already filtered to that route.
 
 Four tabs above the filter: requests, images, sounds and videos. Images is a grid of the images routes made and the gateway kept; sounds is a list, each row with a play mark, the words that were spoken, the model, route, when and cost; videos is a grid of wide frames, two across on a phone and three from 980 px, each showing the video's first moment with a play mark on it. All three are newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, a player for the sound, or a player for the video, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images", "All sounds" or "All videos" goes back. One whose route was removed stays, and says so. While a sound or a video plays, the panel does not redraw itself.
+
+### Playground
+
+Approved in scope by the maintainer on 2026-11-22: chat only, sent as a chosen route, reached from the home screen and from a route.
+
+A shared screen, built once, called "Try a model" on the surface ("Try" where a skin has room for one word). It answers one question: what does an app on this route get back. Every skin offers it from its home screen, and a route's Connect section opens it as that route.
+
+- **Who asks, and for what.** Two plain drop-downs at the top: the route, and one of the models that route may use that write text. They sit side by side from 980 px. While an answer is arriving they cannot be changed.
+- **The conversation.** What the person wrote sits to the right in a field; the answer is plain text on the sheet, with no label. It can go on for several turns, and the route or the model can be changed between them. A system message is one quiet control away and is not shown until asked for.
+- **An answer's states,** each different in shape, not only in colour: waiting for its first word (the busy mark and a sentence), arriving (the text, and the busy mark under it), whole, stopped by the person (what arrived, and "Stopped."), failed (a banner with what the gateway or the provider answered).
+- **What is known about an answer** is one quiet underlined line under it, how long it took and what it cost: `1.8 s, $0.00041`. Pressing it opens the rest in place: the model that answered, the provider it came from, tokens read and written, cost, time to the first word, time for the whole answer. Nothing else about the request is on the screen. A cost not known when the answer ended is filled in when the gateway learns it.
+- **The message field** stays at the bottom of the sheet under a long conversation. Enter sends and Shift+Enter starts a new line; on a touch keyboard Enter is a new line and the button sends. "Send" becomes "Stop" while an answer is arriving; "Start over" forgets the conversation.
+- **What stands in the way is said before anything is sent,** in place of the message field: a route over its budget ("Raise budget"), a route switched off ("Switch it on"), a route with no model that writes text ("Authorize a model"). With no route at all the sheet says so and leads to a new route.
+- The request is the route's in every way: it counts towards the budget, appears in its requests and in activity, and lights the route as busy on the home screen. The conversation lives in the page only. Closing the sheet stops an answer that is still arriving and keeps the conversation; leaving the page ends it.
 
 ### Settings
 
@@ -306,7 +320,9 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 
 - **The mascots have no names.**
 - **The flying pigeon's raised wing** is one plain shape and reads less clearly than the other poses.
-- **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the five screens after it needed no more.
+- **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the screens after it, the playground included, needed no more.
+- **The playground tries chat only.** Images, speech, transcriptions and video go through the same address and could follow as kinds of the same screen. It has no controls for temperature or other parameters, shows text only (not a model's reasoning, not images in an answer), and does not show the request as curl; a route's Connect section has the snippet.
+- **Display's function keys are two rows of three on every screen size,** since six words do not fit beside each other on a phone. "New route" lost its full-width key from 980 px; it is still the one blue key.
 - **A route's name cannot be changed** after it is made.
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
 - **A video's tile is its first moment,** asked of the browser (`#t=0.1`), not a picture the gateway makes. Each tile loads a little of its video to show it; with many videos that is many small requests. A still made by the gateway would need a video decoder it does not have.

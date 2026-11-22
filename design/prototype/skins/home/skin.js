@@ -12,6 +12,8 @@ const icons = {
   list: '<path d="M5 7h14M5 12h14M5 17h9"/>',
   sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   stack: '<path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/>',
+  talk: '<path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8.5 9.5h7M8.5 12.5h4"/>',
+
 };
 const glyph = (name) => `<svg viewBox="0 0 24 24">${icons[name] ?? icons.code}</svg>`;
 
@@ -99,6 +101,7 @@ export default {
     <nav class="bar">
       <button aria-current="page" aria-label="${t("home")}">${glyph("home")}<span>${t("home")}</span></button>
       <button data-action="go" data-screen="models" aria-label="${t("models")}">${glyph("stack")}<span>${t("models")}</span></button>
+      <button data-action="go" data-screen="playground" aria-label="${t("try")}">${glyph("talk")}<span>${t("try")}</span></button>
       <button data-action="go" data-screen="activity" aria-label="${t("activity")}">${glyph("list")}<span>${t("activity")}</span></button>
       <button data-action="go" data-screen="settings" aria-label="${t("settings")}">${glyph("sliders")}<span>${t("settings")}</span></button>
     </nav>`;
