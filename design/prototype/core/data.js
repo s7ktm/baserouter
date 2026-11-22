@@ -9,7 +9,7 @@ const routes = [
   { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"], keepMedia: false },
 ];
 
-// newest first; "ago" is seconds; "kind" is chat unless said: image, speech or transcription
+// newest first; "ago" is seconds; "kind" is chat unless said: image, speech, transcription or video
 const requests = [
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 2.1, cost: 0.004, ago: 12, ok: true },
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 3.4, cost: 0.011, ago: 95, ok: true },
@@ -17,6 +17,7 @@ const requests = [
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 1.2, cost: 0, ago: 610, ok: false },
   { route: "arm", model: "google/gemini-2.5-flash", seconds: 0.6, cost: 0.0004, ago: 1500, ok: true },
   { route: "news", kind: "image", model: "google/gemini-3.1-flash-lite-image", seconds: 5.4, cost: 0.034, ago: 2400, ok: true },
+  { route: "news", kind: "video", model: "google/veo-3.1-lite", seconds: 48.2, cost: 0.12, ago: 4300, ok: true },
   { route: "home", model: "openai/gpt-5-mini", seconds: 1.1, cost: 0.001, ago: 5200, ok: true },
   { route: "coding", model: "anthropic/claude-sonnet-5.5", seconds: 4.8, cost: 0.019, ago: 9100, ok: true },
   { route: "news", model: "openai/gpt-5-mini", seconds: 2.6, cost: 0.003, ago: 93000, ok: true },
@@ -66,7 +67,15 @@ const sounds = [
   { id: "a2", kind: "audio", route: "home", model: "hexgrad/kokoro-82m", prompt: "The front door is open.", cost: 0.00001, bytes: 12400, ago: 7200, src: tone(523) },
   { id: "a3", kind: "audio", route: "news", model: "elevenlabs/eleven-flash-v2.5", prompt: "Here is your newsletter for Monday.", cost: 0.0004, bytes: 96000, ago: 90000, src: tone(330) },
 ];
-const mediaSpace = { images: images.length, sounds: sounds.length, bytes: [...images, ...sounds].reduce((sum, i) => sum + i.bytes, 0), keeping: true, max: 1024 ** 3 };
+// Made-up videos: three short clips in core/videos/, three seconds of moving colour each,
+// so nothing is loaded from elsewhere. "clip" is the path from the prototype's folder.
+const clip = (n) => `core/videos/sample-${n}.mp4`;
+const videos = [
+  { id: "v1", kind: "video", route: "news", model: "google/veo-3.1-lite", prompt: "A slow pan over a calm blue sea at dawn, for the newsletter's opening.", cost: 0.12, bytes: 2480000, ago: 4300, src: clip(1) },
+  { id: "v2", kind: "video", route: "home", model: "x-ai/grok-imagine-video-1.5-lite", prompt: "Morning light moving across a green garden.", cost: 0.02, bytes: 599000, ago: 52000, src: clip(2) },
+  { id: "v3", kind: "video", route: "news", model: "bytedance/seedance-2.0-fast", prompt: "Purple and teal clouds drifting, a loop for the website header.", cost: 0.07, bytes: 1310000, ago: 260000, src: clip(3) },
+];
+const mediaSpace = { images: images.length, sounds: sounds.length, videos: videos.length, bytes: [...images, ...sounds, ...videos].reduce((sum, i) => sum + i.bytes, 0), keeping: true, max: 1024 ** 3 };
 
 const base = {
   address: "http://localhost:4141/v1",
@@ -81,6 +90,7 @@ const base = {
   last: { route: "coding", model: "claude-sonnet-5.5", seconds: 2.1, cost: 0.004 },
   images,
   sounds,
+  videos,
   mediaSpace,
 };
 
@@ -123,7 +133,8 @@ export const states = {
     last: null,
     images: [],
     sounds: [],
-    mediaSpace: { images: 0, sounds: 0, bytes: 0, keeping: true, max: 1024 ** 3 },
+    videos: [],
+    mediaSpace: { images: 0, sounds: 0, videos: 0, bytes: 0, keeping: true, max: 1024 ** 3 },
   },
 };
 
@@ -165,7 +176,7 @@ function stress() {
     ],
     routes: many,
     requests: Array.from({ length: 30 }, (_, i) => ({
-      route: `r${i % 6}`, kind: ["chat", "transcription", "image", "speech"][i % 4], model: many[i % 6].models[0], seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
+      route: `r${i % 6}`, kind: ["chat", "transcription", "image", "speech", "video"][i % 5], model: many[i % 6].models[0], seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
     })),
     last: { route: "r0", model: "extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking", seconds: 312.4, cost: 1234.5 },
     images: Array.from({ length: 30 }, (_, i) => ({
@@ -180,6 +191,12 @@ function stress() {
       cost: [1234.5, 0.0004, null][i % 3], bytes: [999, 52428800, 1073741824][i % 3], ago: [3, 400, 9000, 400000][i % 4],
       src: tone(220 + i * 20, 0.3),
     })),
-    mediaSpace: { images: 120394, sounds: 98765, bytes: 1073000000, keeping: true, max: 1024 ** 3 },
+    videos: Array.from({ length: 30 }, (_, i) => ({
+      id: `w${i}`, kind: "video", route: i === 5 ? null : `r${i % 6}`, model: many[(i + 2) % 6].models[0],
+      prompt: i % 3 === 0 ? null : i % 3 === 1 ? "Go" : "A long, slow, carefully lit shot of a city at night with rain on the windows, ".repeat(10) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
+      cost: [1234.5, 0.0004, null][i % 3], bytes: [999, 52428800, 1073741824][i % 3], ago: [3, 400, 9000, 400000][i % 4],
+      src: clip((i % 3) + 1),
+    })),
+    mediaSpace: { images: 120394, sounds: 98765, videos: 4321, bytes: 1073000000, keeping: true, max: 1024 ** 3 },
   };
 }

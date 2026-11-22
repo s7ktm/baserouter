@@ -1,5 +1,5 @@
-// Keeps the images and sound routes make, so they can be looked at and listened to again
-// in the panel.
+// Keeps the images, sound and video routes make, so they can be looked at, listened to and
+// watched again in the panel.
 //
 // Each one is a file in the media folder, named after the SHA-256 of its bytes, so the same
 // image or sound made twice is kept once. The database has a row each: which request and
@@ -9,7 +9,8 @@
 // in memory whole: the sound of /audio/speech is written while it streams to the client.
 // What a file is comes from its first bytes, not from what the answer says. Only these
 // are kept: PNG, JPEG, WebP, GIF and SVG images; MP3, WAV, Ogg (Opus, Vorbis), FLAC, AAC,
-// MP4 audio and WebM sound. Raw PCM sound has no header saying how to play it: when the
+// MP4 audio and WebM sound; MP4, WebM and QuickTime video. Raw PCM sound has no header
+// saying how to play it: when the
 // answer says its sample rate (OpenRouter's "audio/pcm;rate=24000;channels=1"), a WAV header
 // is written in front of it, so it can be played; when it does not, it is not kept.
 import { randomBytes } from "node:crypto";
@@ -69,10 +70,18 @@ const TYPES: [Type, (b: Uint8Array) => boolean][] = [
   [{ mediaType: "audio/mpeg", ext: "mp3", kind: "audio" }, (b) => b[0] === 0xff && (b[1]! & 0xe0) === 0xe0 && (b[1]! & 0x06) !== 0],
   [{ mediaType: "audio/mp4", ext: "m4a", kind: "audio" }, (b) => text(b, 4, 8) === "ftyp"],
   [{ mediaType: "audio/webm", ext: "webm", kind: "audio" }, (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3],
+  // MP4 and WebM hold sound, video or both, and their first bytes do not say which; what was
+  // asked for decides (see sniff). QuickTime is told apart by its brand.
+  [{ mediaType: "video/quicktime", ext: "mov", kind: "video" }, (b) => text(b, 4, 10) === "ftypqt"],
+  [{ mediaType: "video/mp4", ext: "mp4", kind: "video" }, (b) => text(b, 4, 8) === "ftyp"],
+  [{ mediaType: "video/webm", ext: "webm", kind: "video" }, (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3],
 ];
 
-export function sniff(bytes: Uint8Array): Type | null {
-  return TYPES.find(([, test]) => test(bytes))?.[0] ?? null;
+// What a file is, from its first bytes. "want" is what kind it is expected to be, which
+// decides for the containers that can be either (an MP4 from /videos is a video, from
+// /audio/speech it is sound).
+export function sniff(bytes: Uint8Array, want?: MediaKind): Type | null {
+  return (want && TYPES.find(([type, test]) => type.kind === want && test(bytes))?.[0]) || (TYPES.find(([, test]) => test(bytes))?.[0] ?? null);
 }
 
 // The words that asked for a file, shortened: the prompt of /images, the text /audio/speech
@@ -223,7 +232,7 @@ export class MediaFile {
       for await (const piece of Bun.file(this.#temp).stream()) again.update(piece);
       hash = again.digest("hex");
     }
-    const type = sniff(this.#head.subarray(0, this.#headSize));
+    const type = sniff(this.#head.subarray(0, this.#headSize), this.kind);
     if (this.#size === (this.pcm ? 44 : 0) || !type || type.kind !== this.kind) {
       rmSync(this.#temp, { force: true });
       return null;

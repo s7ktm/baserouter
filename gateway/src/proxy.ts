@@ -1,13 +1,14 @@
 // The one address: /v1/chat/completions, /v1/images/generations, /v1/audio/speech,
-// /v1/audio/transcriptions and /v1/models, opened with a route's key.
+// /v1/audio/transcriptions, /v1/videos and /v1/models, opened with a route's key.
 import { Hono, type Context } from "hono";
 import { gate, monthStart } from "./budget.ts";
 import { later, refuse, type Deps, type Env } from "./deps.ts";
 import { imagesIn, isPcm, MediaKeeper, pcmFormat, promptOf, type Found, type MediaFile } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, unseal } from "./secrets.ts";
-import type { Failure, Kind, ProviderRow, RouteRow } from "./store.ts";
+import type { Failure, Kind, ProviderRow, RouteRow, Store } from "./store.ts";
 import { readPlain, StreamScanner, type Reading } from "./usage.ts";
+import { forClient, readJob, VideoWatcher } from "./video.ts";
 
 const allowedModels = (route: RouteRow): string[] => JSON.parse(route.models) as string[];
 
@@ -108,7 +109,11 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
       contentType: "application/json",
       kind: made,
       streamed: fields.stream === true,
-      prompt: made === "image" ? promptOf(kind === "chat-modalities" ? "chat" : "images", fields) : kind === "speech" ? promptOf("speech", fields) : null,
+      prompt:
+        made === "image" ? promptOf(kind === "chat-modalities" ? "chat" : "images", fields)
+        : kind === "speech" ? promptOf("speech", fields)
+        : kind === "video" ? promptOf("images", fields)
+        : null,
     };
   };
 }
@@ -132,12 +137,43 @@ const transcription: Prepare = async (c, bytes, route) => {
   return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false };
 };
 
+// The one address as the client reached it, for the links in a video job's answer. Behind
+// Caddy the gateway itself is reached over plain HTTP; the client used HTTPS.
+function clientBase(c: Context<Env>): string {
+  const url = new URL(c.req.url);
+  const https = url.protocol === "https:" || c.req.header("x-forwarded-proto") === "https";
+  return `${https ? "https" : "http"}://${url.host}/v1`;
+}
+
+const notAJob = (c: Context<Env>) => refuse(c, 404, "not_found", "This route has no video job with that id.");
+
+// A video job, sent on as written. A job may continue an earlier one ("previous_job_id");
+// that must be a job of the same route, or one route could build on another's video. A
+// "callback_url" is refused: OpenRouter would send it the job's end, signed links included,
+// around the gateway.
+function video(store: Store): Prepare {
+  const asJson = json("video", false);
+  return async (c, bytes, route) => {
+    const prepared = await asJson(c, bytes, route);
+    if (!prepared.ok) return prepared;
+    const fields = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    if ("callback_url" in fields) return invalid(c, 'BaseRouter does not pass on "callback_url". Ask GET /v1/videos/{id} until the job is done.');
+    const previous = fields.previous_job_id;
+    if (previous !== undefined && (typeof previous !== "string" || store.videoJob(previous)?.route_id !== route.id)) {
+      return { ok: false, response: notAJob(c) };
+    }
+    return prepared;
+  };
+}
+
 // A client asks for one request's images or sound not to be kept with "X-BaseRouter-Save: no".
 const saveRefused = (value: string | undefined) => /^(no|false|0|off)$/i.test(value?.trim() ?? "");
 
 export function proxy(deps: Deps) {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
+  const videos = new VideoWatcher(deps, keeper);
+  videos.resume();
   const app = new Hono<Env>();
 
   app.use(async (c, next) => {
@@ -178,6 +214,7 @@ export function proxy(deps: Deps) {
     // base64 PCM spread over the stream's events, without its format, so it is not.
     const keepMedia = keeper.on && route.keep_media === 1 && !saveRefused(c.req.header("x-baserouter-save"));
     const keepImages = keepMedia && kind === "image";
+    const keepVideo = keepMedia && kind === "video";
     const keepSound = keepMedia && path === "/audio/speech";
 
     const models = allowedModels(route);
@@ -204,8 +241,8 @@ export function proxy(deps: Deps) {
 
     // Writes the one row this request gets. Whatever path the request takes, it ends here once.
     let finished = false;
-    const finish = (status: number | null, failure: Failure | null, reading?: Reading, firstTokenAt?: number | null, generationId?: string | null, images: Found[] = [], sound?: MediaFile | null) => {
-      if (finished) return;
+    const finish = (status: number | null, failure: Failure | null, reading?: Reading, firstTokenAt?: number | null, generationId?: string | null, images: Found[] = [], sound?: MediaFile | null): number | null => {
+      if (finished) return null;
       finished = true;
       client.removeEventListener("abort", clientGone);
       const running = (deps.running.get(route.id) ?? 1) - 1;
@@ -233,7 +270,8 @@ export function proxy(deps: Deps) {
         upstream_id: upstreamId,
       });
       // The provider started a response but it ended without a cost: ask for it afterwards.
-      if (cost === null && upstreamId && status !== null && status < 300) later(deps, lookUpCost(rowId, upstreamId, key));
+      // (A video job's cost comes with the job's end, from the watch in video.ts.)
+      if (cost === null && upstreamId && status !== null && status < 300 && kind !== "video") later(deps, lookUpCost(rowId, upstreamId, key));
       const made = { requestId: rowId, routeId: route.id, model: reading?.model ?? model, prompt: prepared.prompt ?? null };
       const worked = failure === null && status !== null && status < 300;
       if (keepImages && worked && images.length > 0) later(deps, keeper.keepImages(made, images));
@@ -241,6 +279,7 @@ export function proxy(deps: Deps) {
         if (worked) later(deps, sound.finish(made));
         else sound.drop();
       }
+      return rowId;
     };
 
     let upstream: Response;
@@ -286,7 +325,11 @@ export function proxy(deps: Deps) {
         if (keepImages && upstream.ok) images = imagesIn(doc);
       } catch {}
       const failure: Failure | null = !upstream.ok || !reading || reading.failed ? "upstream_error" : null;
-      finish(upstream.status, failure, reading, null, generationId, images);
+      const rowId = finish(upstream.status, failure, reading, null, generationId, images);
+      if (kind === "video" && failure === null && rowId !== null) {
+        const answer = startedVideo(c, bytes, rowId, route, model, prepared.prompt ?? null, keepVideo);
+        if (answer) return answer;
+      }
       return new Response(bytes, { status: upstream.status, headers: passHeaders(upstream) });
     }
 
@@ -330,6 +373,51 @@ export function proxy(deps: Deps) {
     return new Response(stream, { status: upstream.status, headers: passHeaders(upstream) });
   }
 
+  // A video job has started: it is remembered as the route's, watched until it ends, and its
+  // answer goes back with links to the gateway. Null when the answer is not a job after all.
+  function startedVideo(c: Context<Env>, bytes: Uint8Array, rowId: number, route: RouteRow, model: string, prompt: string | null, keep: boolean): Response | null {
+    let doc: Record<string, unknown>;
+    try {
+      doc = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    const status = readJob(doc);
+    if (!status) return null;
+    const job = { id: status.id, request_id: rowId, route_id: route.id, model, prompt, keep: keep ? 1 : 0, status: status.status, created_at: deps.now(), done_at: null };
+    store.addVideoJob(job);
+    // A job may already have ended in its first answer (a refusal after 202, say).
+    later(deps, videos.observe(job, status).then((ended) => ended || videos.watch(job.id)));
+    return c.json(forClient(doc, clientBase(c)), 202);
+  }
+
+  // A GET to OpenRouter for a request that is not recorded: a video job's status or video, the
+  // model lists. Either OpenRouter's answer, or the gateway's refusal when it cannot be had.
+  async function ask(c: Context<Env>, path: string): Promise<Response> {
+    const provider = store.providers()[0];
+    if (!provider) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
+    let upstream: Response;
+    try {
+      upstream = await openrouter.get(deps.upstream, unseal(deps.master, provider.key_sealed), path, c.req.raw.signal);
+    } catch {
+      return refuse(c, 502, "provider_unreachable", `BaseRouter could not reach ${provider.name}. Check the provider in BaseRouter, then try again.`);
+    }
+    if (upstream.status === 401) {
+      providerRefused(provider, await openrouter.errorMessage(upstream));
+      return refuse(c, 502, "provider_refused_key", `${provider.name} did not accept the key BaseRouter holds for it. Replace the provider's key in BaseRouter.`);
+    }
+    return upstream;
+  }
+
+  // A model list, with only the route's models when it is limited to some.
+  async function modelList(c: Context<Env>, path: string): Promise<Response> {
+    const upstream = await ask(c, path);
+    const models = allowedModels(c.get("route"));
+    if (!upstream.ok || models.length === 0) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+    const list = (await upstream.json()) as { data?: { id?: string }[] };
+    return c.json({ ...list, data: (list.data ?? []).filter((m) => typeof m.id === "string" && models.includes(m.id)) });
+  }
+
   async function lookUpCost(rowId: number, generationId: string, key: string): Promise<void> {
     for (const delay of deps.costLookupDelays) {
       await Bun.sleep(delay);
@@ -347,27 +435,38 @@ export function proxy(deps: Deps) {
   app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech", false)));
   app.post("/audio/transcriptions", (c) => forward(c, "/audio/transcriptions", transcription));
 
-  app.get("/models", async (c) => {
-    const route = c.get("route");
-    const provider = store.providers()[0];
-    if (!provider) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
+  app.get("/models", (c) => modelList(c, "/models"));
 
-    let upstream: Response;
-    try {
-      upstream = await openrouter.models(deps.upstream, unseal(deps.master, provider.key_sealed), c.req.raw.signal);
-    } catch {
-      return refuse(c, 502, "provider_unreachable", `BaseRouter could not reach ${provider.name}. Check the provider in BaseRouter, then try again.`);
-    }
-    if (upstream.status === 401) {
-      providerRefused(provider, await openrouter.errorMessage(upstream));
-      return refuse(c, 502, "provider_refused_key", `${provider.name} did not accept the key BaseRouter holds for it. Replace the provider's key in BaseRouter.`);
-    }
-    const models = allowedModels(route);
-    if (!upstream.ok || models.length === 0) return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+  // Video: a job is started, asked about until it is done, and its video fetched. Only the
+  // route that started a job can ask about it or fetch its video. Asking is free and is not
+  // recorded; the job's one row is the request that started it.
+  app.post("/videos", (c) => forward(c, "/videos", video(store)));
+  app.get("/videos/models", (c) => modelList(c, "/videos/models"));
 
-    // A route that is limited to some models only sees those.
-    const list = (await upstream.json()) as { data?: { id?: string }[] };
-    return c.json({ ...list, data: (list.data ?? []).filter((m) => typeof m.id === "string" && models.includes(m.id)) });
+  app.get("/videos/:id", async (c) => {
+    const job = store.videoJob(c.req.param("id"));
+    if (!job || job.route_id !== c.get("route").id) return notAJob(c);
+    const upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}`);
+    if (!upstream.ok || !(upstream.headers.get("content-type") ?? "").includes("json")) {
+      return new Response(upstream.body, { status: upstream.status, headers: passHeaders(upstream) });
+    }
+    const doc = (await upstream.json()) as Record<string, unknown>;
+    const status = readJob(doc);
+    if (status && status.id === job.id) later(deps, videos.observe(job, status));
+    return c.json(forClient(doc, clientBase(c)), upstream.status as 200);
+  });
+
+  app.get("/videos/:id/content", async (c) => {
+    const job = store.videoJob(c.req.param("id"));
+    if (!job || job.route_id !== c.get("route").id) return notAJob(c);
+    const index = c.req.query("index") ?? "0";
+    if (!/^\d{1,3}$/.test(index)) return refuse(c, 400, "invalid_request", '"index" must be a number: 0 for the first video.');
+    c.env?.server?.timeout(c.req.raw, 0);
+    const upstream = await ask(c, `/videos/${encodeURIComponent(job.id)}/content?index=${Number(index)}`);
+    const headers = passHeaders(upstream);
+    const length = upstream.headers.get("content-length");
+    if (upstream.ok && length) headers.set("content-length", length);
+    return new Response(upstream.body, { status: upstream.status, headers });
   });
 
   return app;

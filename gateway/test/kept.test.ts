@@ -57,7 +57,7 @@ test("an image from /images/generations is kept as a file, with a row that says 
       mediaType: "image/png", bytes: pngBytes.length, cost: 0.007, src: `/api/media/${list[0]!.id}`,
     },
   ]);
-  expect(space).toEqual({ images: 1, sounds: 0, bytes: pngBytes.length, keeping: true, max: 1024 * 1024 * 1024 });
+  expect(space).toEqual({ images: 1, sounds: 0, videos: 0, bytes: pngBytes.length, keeping: true, max: 1024 * 1024 * 1024 });
 
   // The image is served to a signed-in panel only, and so that nothing in it can run.
   const file = await fetch(`${gw.url}${list[0]!.src}`, { headers: auth });
@@ -199,7 +199,7 @@ const pngOf = (size: number, fill: number) => {
 test("when images take more room than allowed, the oldest go first", async () => {
   const { store, keeper, made } = keeperIn(2500);
   for (let i = 1; i <= 4; i++) await keeper.keepImages(made, [{ base64: pngOf(1000, i) }]);
-  expect(store.mediaSpace()).toEqual({ images: 2, sounds: 0, bytes: 2000 });
+  expect(store.mediaSpace()).toEqual({ images: 2, sounds: 0, videos: 0, bytes: 2000 });
   expect(files()).toHaveLength(2);
   expect(store.media({ limit: 10 }).map((i) => i.created_at)).toEqual([4, 3]);
 });

@@ -72,9 +72,10 @@ export function toData(state) {
     routes,
     requests: state.requests.filter((q) => known.has(q.route)).map(request),
     last: state.last && known.has(state.last.route) ? request(state.last) : null,
-    // Images and sounds stay when their route is removed; they are then shown without one.
+    // Images, sounds and videos stay when their route is removed; they are then shown without one.
     images: (state.images ?? []).map(media),
     sounds: (state.sounds ?? []).map(media),
-    mediaSpace: state.mediaSpace ?? { images: 0, sounds: 0, bytes: 0, keeping: false, max: 0 },
+    videos: (state.videos ?? []).map(media),
+    mediaSpace: state.mediaSpace ?? { images: 0, sounds: 0, videos: 0, bytes: 0, keeping: false, max: 0 },
   };
 }

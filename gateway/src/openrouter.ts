@@ -19,6 +19,12 @@ export function send(up: Upstream, key: string, path: string, body: Uint8Array |
   });
 }
 
+// A GET to one of OpenRouter's endpoints: a video job's status or its video, the video models.
+// "path" may carry a query.
+export function get(up: Upstream, key: string, path: string, signal?: AbortSignal): Promise<Response> {
+  return up.fetch(`${up.baseUrl}${path}`, { headers: auth(key), signal });
+}
+
 export function models(up: Upstream, key: string, signal?: AbortSignal): Promise<Response> {
   return up.fetch(`${up.baseUrl}/models`, { headers: auth(key), signal });
 }

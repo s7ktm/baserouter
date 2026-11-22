@@ -97,12 +97,74 @@ export const MIGRATIONS: string[] = [
    CREATE INDEX media_by_route ON media (route_id, created_at);
    CREATE INDEX media_by_file ON media (file);
    ALTER TABLE routes RENAME COLUMN keep_images TO keep_media;`,
+  // 6: video. A request and a kept file may now be a video, which means rebuilding the two
+  // tables (SQLite cannot change a CHECK). migrate() switches foreign keys off around this,
+  // as SQLite's own procedure says, so dropping the old requests leaves media rows alone.
+  // video_jobs: the jobs OpenRouter is making, which route started them, and whether they are done.
+  `CREATE TABLE requests_new (
+     id                INTEGER PRIMARY KEY AUTOINCREMENT,
+     route_id          TEXT REFERENCES routes(id) ON DELETE SET NULL,
+     provider_id       TEXT REFERENCES providers(id) ON DELETE SET NULL,
+     started_at        INTEGER NOT NULL,
+     model_requested   TEXT,
+     model_served      TEXT,
+     streamed          INTEGER NOT NULL,
+     prompt_tokens     INTEGER,
+     completion_tokens INTEGER,
+     cost_usd          REAL,
+     cost_source       TEXT NOT NULL CHECK (cost_source IN ('provider', 'computed', 'unknown')),
+     first_token_ms    INTEGER,
+     total_ms          INTEGER NOT NULL,
+     status            INTEGER,
+     failure           TEXT,
+     upstream_id       TEXT,
+     kind              TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'image', 'speech', 'transcription', 'video'))
+   ) STRICT;
+   INSERT INTO requests_new (id, route_id, provider_id, started_at, model_requested, model_served, streamed, prompt_tokens, completion_tokens, cost_usd, cost_source, first_token_ms, total_ms, status, failure, upstream_id, kind)
+     SELECT id, route_id, provider_id, started_at, model_requested, model_served, streamed, prompt_tokens, completion_tokens, cost_usd, cost_source, first_token_ms, total_ms, status, failure, upstream_id, kind FROM requests;
+   DROP TABLE requests;
+   ALTER TABLE requests_new RENAME TO requests;
+   CREATE INDEX requests_by_route ON requests (route_id, started_at);
+   CREATE INDEX requests_by_time ON requests (started_at);
+
+   CREATE TABLE media_new (
+     id         TEXT PRIMARY KEY,
+     request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+     route_id   TEXT REFERENCES routes(id) ON DELETE SET NULL,
+     created_at INTEGER NOT NULL,
+     model      TEXT,
+     prompt     TEXT,
+     media_type TEXT NOT NULL,
+     bytes      INTEGER NOT NULL,
+     file       TEXT NOT NULL,
+     kind       TEXT NOT NULL DEFAULT 'image' CHECK (kind IN ('image', 'audio', 'video'))
+   ) STRICT;
+   INSERT INTO media_new (id, request_id, route_id, created_at, model, prompt, media_type, bytes, file, kind) SELECT id, request_id, route_id, created_at, model, prompt, media_type, bytes, file, kind FROM media;
+   DROP TABLE media;
+   ALTER TABLE media_new RENAME TO media;
+   CREATE INDEX media_by_kind ON media (kind, created_at);
+   CREATE INDEX media_by_route ON media (route_id, created_at);
+   CREATE INDEX media_by_file ON media (file);
+
+   CREATE TABLE video_jobs (
+     id         TEXT PRIMARY KEY,
+     request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+     route_id   TEXT REFERENCES routes(id) ON DELETE SET NULL,
+     model      TEXT,
+     prompt     TEXT,
+     keep       INTEGER NOT NULL,
+     status     TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     done_at    INTEGER
+   ) STRICT;
+   CREATE INDEX video_jobs_open ON video_jobs (done_at);`,
 ];
 
 export type CostSource = "provider" | "computed" | "unknown";
 // chat: text from /chat/completions. image: /images/generations, or a chat request asking for
 // images. speech: /audio/speech, or a chat request asking for audio. transcription: /audio/transcriptions.
-export type Kind = "chat" | "image" | "speech" | "transcription";
+// video: /videos, a job that is made over minutes.
+export type Kind = "chat" | "image" | "speech" | "transcription" | "video";
 export type Failure = "upstream_error" | "stream_error" | "network_error" | "client_cancelled";
 
 export interface ProviderRow {
@@ -132,7 +194,22 @@ export interface RouteRow {
   created_at: number;
 }
 
-export type MediaKind = "image" | "audio";
+export type MediaKind = "image" | "audio" | "video";
+
+// A video job OpenRouter is making. id is OpenRouter's ("gen-vid-…"). keep: the video is to be
+// kept once it is made. status is OpenRouter's last word on it; done_at is set once it is
+// finished one way or another and its cost is recorded.
+export interface VideoJobRow {
+  id: string;
+  request_id: number | null;
+  route_id: string | null;
+  model: string | null;
+  prompt: string | null;
+  keep: number;
+  status: string;
+  created_at: number;
+  done_at: number | null;
+}
 
 export interface MediaRow {
   id: string;
@@ -182,8 +259,20 @@ export function openDb(path: string): Database {
 export function migrate(db: Database): Database {
   const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
   if (user_version > MIGRATIONS.length) throw new Error(`The database is from a newer BaseRouter (version ${user_version}). Update BaseRouter to open it.`);
-  for (let version = user_version; version < MIGRATIONS.length; version++) {
-    db.transaction(() => db.exec(`${MIGRATIONS[version]}\nPRAGMA user_version = ${version + 1};`))();
+  if (user_version === MIGRATIONS.length) return db;
+  // A step may rebuild a table that others point to. Foreign keys are off while it does
+  // (they cannot be switched inside a transaction), checked once all steps are done, and
+  // put back as they were.
+  const { foreign_keys } = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    for (let version = user_version; version < MIGRATIONS.length; version++) {
+      db.transaction(() => db.exec(`${MIGRATIONS[version]}\nPRAGMA user_version = ${version + 1};`))();
+    }
+    const broken = db.query("PRAGMA foreign_key_check").all();
+    if (broken.length > 0) throw new Error(`The database has ${broken.length} rows that point at rows that are gone.`);
+  } finally {
+    db.exec(`PRAGMA foreign_keys = ${foreign_keys ? "ON" : "OFF"}`);
   }
   return db;
 }
@@ -391,11 +480,49 @@ export class Store {
     return this.db.query("SELECT * FROM media ORDER BY created_at, id LIMIT 1").get() as MediaRow | null;
   }
 
-  // How many images and sounds, and the room their files take: the same bytes kept twice count once.
-  mediaSpace(): { images: number; sounds: number; bytes: number } {
+  addVideoJob(job: VideoJobRow): void {
+    this.db
+      .query("INSERT INTO video_jobs (id, request_id, route_id, model, prompt, keep, status, created_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(job.id, job.request_id, job.route_id, job.model, job.prompt, job.keep, job.status, job.created_at, job.done_at);
+  }
+
+  videoJob(id: string): VideoJobRow | null {
+    return this.db.query("SELECT * FROM video_jobs WHERE id = ?").get(id) as VideoJobRow | null;
+  }
+
+  openVideoJobs(): VideoJobRow[] {
+    return this.db.query("SELECT * FROM video_jobs WHERE done_at IS NULL ORDER BY created_at").all() as VideoJobRow[];
+  }
+
+  videoJobStatus(id: string, status: string): void {
+    this.db.query("UPDATE video_jobs SET status = ? WHERE id = ? AND done_at IS NULL").run(status, id);
+  }
+
+  // Marks a job finished and records it on its request: what it cost, whether it failed, how
+  // long it took from start to end. True only for the one caller that finished it, so the
+  // gateway's own watch and a client's poll arriving together record it once.
+  finishVideoJob(id: string, end: { status: string; at: number; cost: number | null; failure: Failure | null }): boolean {
+    return this.db.transaction(() => {
+      const done = this.db.query("UPDATE video_jobs SET status = ?, done_at = ? WHERE id = ? AND done_at IS NULL").run(end.status, end.at, id).changes > 0;
+      if (!done) return false;
+      const job = this.videoJob(id)!;
+      if (job.request_id !== null) {
+        this.db
+          .query(
+            `UPDATE requests SET cost_usd = COALESCE(?, cost_usd), cost_source = CASE WHEN ? IS NULL THEN cost_source ELSE 'provider' END,
+               failure = COALESCE(failure, ?), total_ms = MAX(total_ms, ? - started_at) WHERE id = ?`,
+          )
+          .run(end.cost, end.cost, end.failure, end.at, job.request_id);
+      }
+      return true;
+    })();
+  }
+
+  // How many images, sounds and videos, and the room their files take: the same bytes kept twice count once.
+  mediaSpace(): { images: number; sounds: number; videos: number; bytes: number } {
     const counts = this.db.query("SELECT kind, COUNT(*) AS n FROM media GROUP BY kind").all() as { kind: MediaKind; n: number }[];
     const count = (kind: MediaKind) => counts.find((c) => c.kind === kind)?.n ?? 0;
     const bytes = (this.db.query("SELECT COALESCE(SUM(bytes), 0) AS b FROM (SELECT file, MAX(bytes) AS bytes FROM media GROUP BY file)").get() as { b: number }).b;
-    return { images: count("image"), sounds: count("audio"), bytes };
+    return { images: count("image"), sounds: count("audio"), videos: count("video"), bytes };
   }
 }

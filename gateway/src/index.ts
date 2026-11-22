@@ -46,6 +46,9 @@ const deps: Deps = {
   upstream: { baseUrl: env.BASEROUTER_OPENROUTER_URL ?? "https://openrouter.ai/api/v1", fetch },
   now: Date.now,
   costLookupDelays: [2_000, 5_000, 15_000],
+  // Video jobs take from seconds to several minutes.
+  videoPollDelays: [5_000, 5_000, 10_000, 15_000, 30_000],
+  videoGiveUpMs: 3 * 60 * 60_000,
   running: new Map(),
   background: new Set(),
   maxRequestBytes,

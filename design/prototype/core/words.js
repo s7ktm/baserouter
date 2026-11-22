@@ -23,7 +23,7 @@ export const words = {
     modelToAdd: "Model to add", add: "Add", anyModel: "Any model the provider has.",
     deleteAsk: "Delete {name}? Its key stops working at once. Its requests stay in activity.",
     agoS: "{n} s ago", agoM: "{n} min ago", agoH: "{n} h ago", agoD: "{n} d ago",
-    kind_image: "Image", kind_speech: "Speech", kind_transcription: "Transcription",
+    kind_image: "Image", kind_speech: "Speech", kind_transcription: "Transcription", kind_video: "Video",
 
     // providers
     provNone: "No providers yet. Add one to start.",
@@ -55,11 +55,13 @@ export const words = {
     imgNone: "No images yet. The images routes make are kept here.", imgNoneFor: "No images from this route yet.",
     soundsTab: "Sounds", sndNone: "No sounds yet. The speech routes make is kept here.", sndNoneFor: "No sounds from this route yet.",
     sndBack: "All sounds", sndDelete: "Delete sound", sndDeleteAsk: "Delete this sound? It cannot be brought back.",
-    mediaOff: "Images and sound are not being kept.", mediaSub: "{images|image|images}, {sounds|sound|sounds}: {size} of {max}", imgBack: "All images",
+    videosTab: "Videos", vidNone: "No videos yet. The videos routes make are kept here.", vidNoneFor: "No videos from this route yet.",
+    vidBack: "All videos", vidDelete: "Delete video", vidDeleteAsk: "Delete this video? It cannot be brought back.",
+    mediaOff: "Images, sound and video are not being kept.", mediaSub: "{images|image|images}, {sounds|sound|sounds}, {videos|video|videos}: {size} of {max}", imgBack: "All images",
     imgDownload: "Download", imgDelete: "Delete image", imgDeleteAsk: "Delete this image? It cannot be brought back.",
     route: "Route", model: "Model", when: "When", cost: "Cost", costUnknown: "Not known yet", size: "Size",
-    keepMedia: "Keep images and sound", seeImages: "See its images", seeSounds: "Hear its sounds",
-    keepMediaNote: "The images and speech this route makes are kept, to look at and listen to again in activity. One request can say no with the header X-BaseRouter-Save: no.",
+    keepMedia: "Keep images, sound and video", seeImages: "See its images", seeSounds: "Hear its sounds", seeVideos: "Watch its videos",
+    keepMediaNote: "The images, speech and video this route makes are kept, to look at, listen to and watch again in activity. One request can say no with the header X-BaseRouter-Save: no.",
 
     // settings
     look: "Look", theme: "Theme", light: "Light", dark: "Dark", auto: "Match device", language: "Language",
@@ -96,7 +98,7 @@ export const words = {
     modelToAdd: "Eklenecek model", add: "Ekle", anyModel: "Sağlayıcının her modeli kullanılabilir.",
     deleteAsk: "Silinsin mi: {name}? Anahtarı hemen çalışmaz olur. İstekleri hareketlerde kalır.",
     agoS: "{n} sn önce", agoM: "{n} dk önce", agoH: "{n} sa önce", agoD: "{n} gün önce",
-    kind_image: "Görsel", kind_speech: "Ses", kind_transcription: "Yazıya döküm",
+    kind_image: "Görsel", kind_speech: "Ses", kind_transcription: "Yazıya döküm", kind_video: "Video",
 
     provNone: "Henüz sağlayıcı yok. Başlamak için bir tane ekle.",
     provUp: "Çalışıyor. {n} model kullanılabilir.", provDown: "Ulaşılamıyor. Son yanıt: {error}.",
@@ -125,11 +127,13 @@ export const words = {
     imgNone: "Henüz görsel yok. Rotaların ürettiği görseller burada saklanır.", imgNoneFor: "Bu rotadan henüz görsel yok.",
     soundsTab: "Sesler", sndNone: "Henüz ses yok. Rotaların ürettiği konuşmalar burada saklanır.", sndNoneFor: "Bu rotadan henüz ses yok.",
     sndBack: "Bütün sesler", sndDelete: "Sesi sil", sndDeleteAsk: "Bu ses silinsin mi? Geri getirilemez.",
-    mediaOff: "Görseller ve sesler saklanmıyor.", mediaSub: "{images} görsel, {sounds} ses: {size} / {max}", imgBack: "Bütün görseller",
+    videosTab: "Videolar", vidNone: "Henüz video yok. Rotaların ürettiği videolar burada saklanır.", vidNoneFor: "Bu rotadan henüz video yok.",
+    vidBack: "Bütün videolar", vidDelete: "Videoyu sil", vidDeleteAsk: "Bu video silinsin mi? Geri getirilemez.",
+    mediaOff: "Görseller, sesler ve videolar saklanmıyor.", mediaSub: "{images} görsel, {sounds} ses, {videos} video: {size} / {max}", imgBack: "Bütün görseller",
     imgDownload: "İndir", imgDelete: "Görseli sil", imgDeleteAsk: "Bu görsel silinsin mi? Geri getirilemez.",
     route: "Rota", model: "Model", when: "Ne zaman", cost: "Maliyet", costUnknown: "Henüz bilinmiyor", size: "Boyut",
-    keepMedia: "Görselleri ve sesleri sakla", seeImages: "Görsellerini gör", seeSounds: "Seslerini dinle",
-    keepMediaNote: "Bu rotanın ürettiği görseller ve konuşmalar saklanır, hareketlerde yeniden bakılıp dinlenebilir. Tek bir istek X-BaseRouter-Save: no başlığıyla bunu istemediğini söyleyebilir.",
+    keepMedia: "Görselleri, sesleri ve videoları sakla", seeImages: "Görsellerini gör", seeSounds: "Seslerini dinle", seeVideos: "Videolarını izle",
+    keepMediaNote: "Bu rotanın ürettiği görseller, konuşmalar ve videolar saklanır, hareketlerde yeniden bakılıp dinlenebilir, izlenebilir. Tek bir istek X-BaseRouter-Save: no başlığıyla bunu istemediğini söyleyebilir.",
 
     look: "Görünüm", theme: "Tema", light: "Açık", dark: "Koyu", auto: "Cihaza uy", language: "Dil",
     password: "Parola", changePassword: "Parolayı değiştir", signOut: "Çıkış yap",

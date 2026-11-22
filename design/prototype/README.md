@@ -27,8 +27,8 @@ URL parameters for `index.html`:
 | `step` | For `add-provider`: `pick`, `key`, `testing`, `ok`, `fail`, with `kind` (for example `kind=openrouter`). For `new-route`: `made`, `arrived`. For `sign-in`: `login`, `setup`, `fail` |
 | `flow=1` | Shows a flow as part of the first run, with numbered steps |
 | `filter` | For `activity`: a route id |
-| `show` | For `activity`: `images` or `sounds`, what was kept, instead of the requests |
-| `media` | For `activity`: an image or sound id (`i1` to `i5` and `a1` to `a3` on the default data) opens it; with `edit=delete-media`, on the question before it is deleted |
+| `show` | For `activity`: `images`, `sounds` or `videos`, what was kept, instead of the requests |
+| `media` | For `activity`: an image, sound or video id (`i1` to `i5`, `a1` to `a3` and `v1` to `v3` on the default data) opens it; with `edit=delete-media`, on the question before it is deleted |
 | `edit=password` | For `settings`: the password form |
 | `bar=0` | Hides the picker bar |
 
@@ -36,7 +36,8 @@ URL parameters for `index.html`:
 
 | File | Holds |
 |---|---|
-| `core/data.js` | The made-up data: address, spend, providers, routes, requests, kept images and sounds. Its shape is what every skin draws from |
+| `core/data.js` | The made-up data: address, spend, providers, routes, requests, kept images, sounds and videos. Its shape is what every skin draws from |
+| `core/videos/` | Three short clips of moving colour, the made-up videos, made with ffmpeg so nothing is loaded from elsewhere |
 | `core/live.js` | Talks to the gateway, and turns its state into the shape of `data.js` |
 | `core/app.js` | State, actions, language, theme, shared words, skin loading |
 | `core/contract.js` | What a skin must provide, and the check for it |

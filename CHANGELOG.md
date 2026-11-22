@@ -4,6 +4,13 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Added
+
+- Video through OpenRouter. `POST /v1/videos` starts a job with the route's key, its budget and its models; `GET /v1/videos/:id` asks how far it has got; `GET /v1/videos/:id/content` fetches the video; `GET /v1/videos/models` lists the models that make video. Only the route that started a job can ask about it, fetch it or continue it.
+- The gateway watches each video job itself until it ends, whether or not the client asks, and records its cost then: OpenRouter gives a video's cost only when the job is done. Jobs still open when the gateway stops are watched again when it starts.
+- Videos are kept like images and sound (MP4, WebM, QuickTime), with the same switch per route and the same `X-BaseRouter-Save: no`. Activity has a Videos tab: a grid of frames, each opening a player with its prompt, model, cost and size, to download or delete. A route's page links to its videos, and video requests are named in the request list.
+- The links in a video job's answer lead to the gateway, to be opened with the route's key. OpenRouter's signed storage links, which open a video without any key, are left out.
+
 ## [0.2.1] — 2026-11-22
 
 Security fixes. Update if you run 0.2.0, above all if the panel can be reached from other machines.

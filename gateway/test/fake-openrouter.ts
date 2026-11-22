@@ -16,6 +16,8 @@ export const SCENARIOS = {
   "fixture/hang": "a stream that never ends, until the client goes away",
   "fixture/error-200": "a plain request that fails after HTTP 200",
   "fixture/429": "a rate limit, before any response",
+  "fixture/video-fails": "a video job that fails",
+  "fixture/video-slow": "a video job that never ends",
 } as const;
 
 const json = (file: string, status = 200, headers: Record<string, string> = {}) =>
@@ -43,6 +45,10 @@ export const IDS = {
   transcription: "gen-stt-1795300010-FixtureTranscribe1",
 } as const;
 
+// The id in the video fixtures. Each job the fake starts gets its own, in the same shape.
+export const VIDEO_ID = "gen-vid-1795300011-FixtureVideo00000001";
+const videoId = (n: number) => `gen-vid-${1795300011 + n}-FixtureVideo${String(n).padStart(8, "0")}`;
+
 // 4,000 bytes of 16-bit PCM: what /audio/speech sends for response_format "pcm".
 export const PCM = new Uint8Array(4000).map((_, i) => (i * 7) % 256);
 
@@ -51,6 +57,8 @@ export interface Fake {
   chats: { key: string | null; body: string }[]; // every chat request received
   posts: { path: string; key: string | null; contentType: string | null; body: Uint8Array }[]; // every POST received, chat included
   lookups: string[]; // every generation id asked for
+  videoPolls: string[]; // every video job id asked about
+  videoDownloads: string[]; // every video fetched, as "<job id>/<index>"
   cancelled: Promise<void>; // settles when a "fixture/hang" stream is cancelled by its reader
   stop(): Promise<void>;
 }
@@ -59,6 +67,12 @@ export function startFake(port = 0): Fake {
   const chats: Fake["chats"] = [];
   const posts: Fake["posts"] = [];
   const lookups: string[] = [];
+  const videoPolls: string[] = [];
+  const videoDownloads: string[] = [];
+  // A job is in progress the first time it is asked about, and finished the second time.
+  const jobs = new Map<string, { model: string; polls: number }>();
+  const asJob = async (file: string, id: string, status = 200) =>
+    new Response((await fixture(file).text()).replaceAll(VIDEO_ID, id), { status, headers: { "Content-Type": "application/json" } });
   const cancelled = Promise.withResolvers<void>();
 
   const server = Bun.serve({
@@ -77,6 +91,21 @@ export function startFake(port = 0): Fake {
         lookups.push(id);
         return json(id === IDS.speech ? "generation-speech.json" : "generation.json");
       }
+      if (req.method === "GET" && url.pathname === "/videos/models") return json("videos-models.json");
+      const video = /^\/videos\/([^/]+)(\/content)?$/.exec(url.pathname);
+      if (req.method === "GET" && video) {
+        const id = decodeURIComponent(video[1]!);
+        const job = jobs.get(id);
+        if (!job) return new Response(JSON.stringify({ error: { code: 404, message: "Video generation not found" } }), { status: 404, headers: { "Content-Type": "application/json" } });
+        if (video[2]) {
+          videoDownloads.push(`${id}/${url.searchParams.get("index") ?? "0"}`);
+          return new Response(inPieces(await fixtureBytes("video.mp4"), 1000), { headers: { "Content-Type": "video/mp4", "Cache-Control": "no-store" } });
+        }
+        videoPolls.push(id);
+        job.polls++;
+        if (job.model === "fixture/video-slow" || job.polls < 2) return asJob("video-in-progress.json", id);
+        return asJob(job.model === "fixture/video-fails" ? "video-failed.json" : "video-completed.json", id);
+      }
       if (req.method !== "POST") return new Response("Not found", { status: 404 });
 
       const bytes = new Uint8Array(await req.arrayBuffer());
@@ -85,6 +114,12 @@ export function startFake(port = 0): Fake {
       if (url.pathname === "/audio/transcriptions") return json("transcription.json", 200, { "X-Generation-Id": IDS.transcription });
       const { model, stream, modalities } = JSON.parse(new TextDecoder().decode(bytes)) as { model: string; stream?: boolean; modalities?: string[] };
       if (model === "fixture/429") return json("error-429.json", 429, { "Retry-After": "3" });
+
+      if (url.pathname === "/videos") {
+        const id = videoId(jobs.size);
+        jobs.set(id, { model, polls: 0 });
+        return asJob("video-start.json", id, 202);
+      }
 
       if (url.pathname === "/images") {
         if (stream) return new Response(inPieces(await fixtureBytes("images-stream.sse")), { headers: { ...SSE, "X-Generation-Id": IDS.images } });
@@ -134,7 +169,7 @@ export function startFake(port = 0): Fake {
     },
   });
 
-  return { url: `http://127.0.0.1:${server.port}`, chats, posts, lookups, cancelled: cancelled.promise, stop: () => server.stop(true) };
+  return { url: `http://127.0.0.1:${server.port}`, chats, posts, lookups, videoPolls, videoDownloads, cancelled: cancelled.promise, stop: () => server.stop(true) };
 }
 
 if (import.meta.main) {

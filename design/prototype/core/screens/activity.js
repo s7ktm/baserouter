@@ -1,6 +1,6 @@
-// Activity: every request, newest first, with one filter: which route. Two more tabs show
-// what routes made and the gateway kept: images in a grid, sounds in a list. One of them
-// can be opened, looked at or listened to, downloaded or deleted.
+// Activity: every request, newest first, with one filter: which route. Three more tabs show
+// what routes made and the gateway kept: images in a grid, sounds in a list, videos in a grid
+// of frames. One of them can be opened, looked at, listened to or watched, downloaded or deleted.
 import { sheet } from "./sheet.js";
 
 const play = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>';
@@ -8,7 +8,7 @@ const play = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-
 export function activitySheet(ctx, ui) {
   const { t, esc, data, money } = ctx;
   const filter = data.routes.some((r) => r.id === ui.filter) ? ui.filter : "";
-  const show = ["images", "sounds"].includes(ui.show) ? ui.show : "requests";
+  const show = ["images", "sounds", "videos"].includes(ui.show) ? ui.show : "requests";
   const nameOf = (id) => {
     const route = data.routes.find((r) => r.id === id);
     return route ? ctx.name(route) : t("removedRoute");
@@ -16,21 +16,26 @@ export function activitySheet(ctx, ui) {
   const chip = (id, label) => `<button class="br-chip${id ? " br-keep" : ""}" data-action="filter" data-route="${id}" aria-pressed="${id === filter}">${label}</button>`;
   const chips = `<div class="br-chips">${chip("", t("allRoutes"))}${data.routes.map((r) => chip(r.id, ctx.name(r))).join("")}</div>`;
   const tab = (id, label) => `<button data-action="show" data-show="${id}" aria-pressed="${show === id}">${label}</button>`;
-  const tabs = `<div class="br-seg br-show" role="group" aria-label="${t("activity")}">${tab("requests", t("requestsTab"))}${tab("images", t("imagesTab"))}${tab("sounds", t("soundsTab"))}</div>`;
+  const tabs = `<div class="br-seg br-show" role="group" aria-label="${t("activity")}">${tab("requests", t("requestsTab"))}${tab("images", t("imagesTab"))}${tab("sounds", t("soundsTab"))}${tab("videos", t("videosTab"))}</div>`;
 
-  const items = show === "images" ? data.images : show === "sounds" ? data.sounds : null;
+  // The words of each kept kind: its tab, none at all, none from this route.
+  const words = { images: ["imagesTab", "imgNone", "imgNoneFor"], sounds: ["soundsTab", "sndNone", "sndNoneFor"], videos: ["videosTab", "vidNone", "vidNoneFor"] }[show];
+  const items = show === "requests" ? null : (data[show] ?? []);
   const open = items?.find((i) => i.id === ui.media);
-  if (open) return sheet(ctx, ui, { title: t(show === "images" ? "imagesTab" : "soundsTab"), sub: mediaSub(ctx), body: viewer(ctx, ui, open, nameOf) });
+  if (open) return sheet(ctx, ui, { title: t(words[0]), sub: mediaSub(ctx), body: viewer(ctx, ui, open, nameOf) });
 
   let body;
   if (items) {
     const rows = items.filter((i) => !filter || i.route === filter);
-    const none = data.mediaSpace?.keeping === false ? "mediaOff" : show === "images" ? "imgNone" : "sndNone";
+    const none = data.mediaSpace?.keeping === false ? "mediaOff" : words[1];
     body = !items.length
       ? `${tabs}<p class="br-lead">${t(none)}</p>`
       : `${tabs}${chips}
          ${!rows.length
-           ? `<p class="br-lead">${t(show === "images" ? "imgNoneFor" : "sndNoneFor")}</p>`
+           ? `<p class="br-lead">${t(words[2])}</p>`
+           : show === "videos"
+             ? `<ul class="br-grid br-films">${rows.map((i) => `<li><button class="br-thumb br-film-thumb" data-action="media" data-id="${esc(i.id)}" aria-label="${esc(i.prompt || t("videosTab"))}, ${nameOf(i.route)}, ${ctx.ago(i.ago)}">
+                 <video src="${esc(frame(i.src))}" muted playsinline preload="metadata" tabindex="-1" aria-hidden="true"></video><i class="br-play">${play}</i></button></li>`).join("")}</ul>`
            : show === "images"
              ? `<ul class="br-grid">${rows.map((i) => `<li><button class="br-thumb" data-action="media" data-id="${esc(i.id)}" aria-label="${esc(i.prompt || t("imagesTab"))}, ${nameOf(i.route)}, ${ctx.ago(i.ago)}">
                  <img src="${esc(i.src)}" alt="" loading="lazy" decoding="async"></button></li>`).join("")}</ul>`
@@ -59,24 +64,35 @@ export function activitySheet(ctx, ui) {
   });
 }
 
-// "4 images, 2 sounds: 3.4 MB of 1 GB". Images and sound share the room.
+// "4 images, 2 sounds, 1 video: 3.4 MB of 1 GB". Images, sound and video share the room.
 function mediaSub(ctx) {
   const space = ctx.data.mediaSpace;
-  if (!space?.images && !space?.sounds) return "";
-  return ctx.t("mediaSub", { images: ctx.num(space.images, 0), sounds: ctx.num(space.sounds, 0), size: size(ctx, space.bytes), max: size(ctx, space.max) });
+  if (!space?.images && !space?.sounds && !space?.videos) return "";
+  const n = (count) => ctx.num(count ?? 0, 0);
+  return ctx.t("mediaSub", { images: n(space.images), sounds: n(space.sounds), videos: n(space.videos), size: size(ctx, space.bytes), max: size(ctx, space.max) });
 }
+
+// A video's first frame, for its tile: a browser shows nothing until it has a moment to show.
+const frame = (src) => (src.startsWith("data:") || src.includes("#") ? src : `${src}#t=0.1`);
 
 function size(ctx, bytes) {
   const units = [["GB", 1024 ** 3], ["MB", 1024 ** 2], ["KB", 1024]];
-  const [unit, per] = units.find(([, per]) => bytes >= per) ?? ["KB", 1024];
+  let at = units.findIndex(([, per]) => bytes >= per);
+  if (at < 0) at = units.length - 1;
+  // 1,013 KB reads better as 1 MB: a number that would show four digits moves up a unit.
+  if (at > 0 && bytes / units[at][1] >= 999.5) at--;
+  const [unit, per] = units[at];
   const value = bytes / per;
-  return `${ctx.num(value, value >= 10 || Number.isInteger(value) ? 0 : 1)} ${unit}`;
+  return `${ctx.num(value, value >= 10 || Number.isInteger(Math.round(value * 10) / 10) ? 0 : 1)} ${unit}`;
 }
 
-// One image, large, or one sound, to listen to, with what made it.
+// One image, large, one sound to listen to, or one video to watch, with what made it.
 function viewer(ctx, ui, item, nameOf) {
   const { t, esc, money } = ctx;
   const sound = item.kind === "audio";
+  const film = item.kind === "video";
+  // back, delete, the question before deleting
+  const [back, del, ask] = film ? ["vidBack", "vidDelete", "vidDeleteAsk"] : sound ? ["sndBack", "sndDelete", "sndDeleteAsk"] : ["imgBack", "imgDelete", "imgDeleteAsk"];
   const facts = [
     [t("route"), nameOf(item.route)],
     [t("model"), `<code class="br-keep">${esc(item.model ?? "")}</code>`],
@@ -87,14 +103,16 @@ function viewer(ctx, ui, item, nameOf) {
   const download = item.src.startsWith("data:") ? item.src : `${item.src}?download=1`;
   const asking = ui.editing === "delete-media";
   return `
-    <p class="br-actions"><button class="br-btn quiet" data-action="media" data-id=""${asking ? "" : " data-autofocus"}>${t(sound ? "sndBack" : "imgBack")}</button></p>
+    <p class="br-actions"><button class="br-btn quiet" data-action="media" data-id=""${asking ? "" : " data-autofocus"}>${t(back)}</button></p>
     ${sound
       ? `<audio class="br-audio" controls preload="metadata" src="${esc(item.src)}"></audio>`
-      : `<figure class="br-shot"><img src="${esc(item.src)}" alt="${esc(item.prompt ?? "")}"></figure>`}
+      : film
+        ? `<figure class="br-shot br-film"><video src="${esc(frame(item.src))}" controls playsinline preload="metadata" aria-label="${esc(item.prompt || t("videosTab"))}"></video></figure>`
+        : `<figure class="br-shot"><img src="${esc(item.src)}" alt="${esc(item.prompt ?? "")}"></figure>`}
     ${item.prompt ? `<p class="br-prompt br-keep">${esc(item.prompt)}</p>` : ""}
     <dl class="br-facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
     ${asking
-      ? `<p class="br-lead">${t(sound ? "sndDeleteAsk" : "imgDeleteAsk")}</p>
-         <p class="br-actions"><button class="br-btn main danger" data-action="delete-media" data-id="${esc(item.id)}">${t(sound ? "sndDelete" : "imgDelete")}</button><button class="br-btn" data-action="edit" data-edit="" data-autofocus>${t("cancel")}</button></p>`
-      : `<p class="br-actions"><a class="br-btn" href="${esc(download)}" download="baserouter-${esc(item.id)}">${t("imgDownload")}</a><button class="br-btn quiet danger" data-action="edit" data-edit="delete-media">${t(sound ? "sndDelete" : "imgDelete")}</button></p>`}`;
+      ? `<p class="br-lead">${t(ask)}</p>
+         <p class="br-actions"><button class="br-btn main danger" data-action="delete-media" data-id="${esc(item.id)}">${t(del)}</button><button class="br-btn" data-action="edit" data-edit="" data-autofocus>${t("cancel")}</button></p>`
+      : `<p class="br-actions"><a class="br-btn" href="${esc(download)}" download="baserouter-${esc(item.id)}">${t("imgDownload")}</a><button class="br-btn quiet danger" data-action="edit" data-edit="delete-media">${t(del)}</button></p>`}`;
 }
