@@ -157,7 +157,7 @@ Not a screen of its own. When nothing is set up, adding the first provider turns
 
 Every request, newest first: which route, which model, how long ago, how long it took, what it cost. One filter, by route. Opening it from a route arrives already filtered to that route.
 
-Three tabs above the filter: requests, images and sounds. Images is a grid of the images routes made and the gateway kept; sounds is a list, each row with a play mark, the words that were spoken, route, when and cost. Both are newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, or a player for the sound, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images" or "All sounds" goes back. One whose route was removed stays, and says so. While a sound plays, the panel does not redraw itself.
+Three tabs above the filter: requests, images and sounds. Images is a grid of the images routes made and the gateway kept; sounds is a list, each row with a play mark, the words that were spoken, the model, route, when and cost. Both are newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, or a player for the sound, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images" or "All sounds" goes back. One whose route was removed stays, and says so. While a sound plays, the panel does not redraw itself.
 
 ### Settings
 

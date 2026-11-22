@@ -36,7 +36,7 @@ export function activitySheet(ctx, ui) {
                  <img src="${esc(i.src)}" alt="" loading="lazy" decoding="async"></button></li>`).join("")}</ul>`
              : `<ul class="br-list br-sounds">${rows.map((i) => `<li><button class="br-sound" data-action="media" data-id="${esc(i.id)}">
                  <i class="br-play">${play}</i>
-                 <span><strong class="br-keep">${esc(i.prompt || t("soundsTab"))}</strong><small>${nameOf(i.route)} · ${ctx.ago(i.ago)}</small></span>
+                 <span><strong class="br-keep">${esc(i.prompt || t("soundsTab"))}</strong><code class="br-keep">${esc(i.model ?? "")}</code><small>${nameOf(i.route)} · ${ctx.ago(i.ago)}</small></span>
                  <b>${i.cost == null ? "" : money(i.cost)}</b></button></li>`).join("")}</ul>`}`;
   } else {
     const rows = data.requests.filter((q) => !filter || q.route === filter);
