@@ -249,11 +249,16 @@ test("the image is kept when the route keeps what it makes, and not when it does
     const kept = gw.store.media({ kind: "image", limit: 10 });
     expect(kept).toHaveLength(1);
     expect(kept[0]).toMatchObject({ route_id: keeps.id, request_id: Number(made.headers.get("x-baserouter-request")), prompt: "A small blue circle on white." });
+    // The request's row names what it kept, so the panel can show the kept copy.
+    const { body } = await requestOf(made.headers.get("x-baserouter-request"));
+    expect(body.request!.media).toEqual([expect.objectContaining({ id: kept[0]!.id, kind: "image", src: `/api/media/${kept[0]!.id}` })]);
 
     const forgets = gw.addRoute({ keep_media: 0 });
-    await (await attemptImage(forgets.id, picture())).arrayBuffer();
+    const shown = await attemptImage(forgets.id, picture());
+    await shown.arrayBuffer();
     await gw.settled();
     expect(gw.store.media({ kind: "image", limit: 10 })).toHaveLength(1);
+    expect((await requestOf(shown.headers.get("x-baserouter-request"))).body.request!.media).toEqual([]);
   } finally {
     await gw.settled();
     rmSync(dir, { recursive: true, force: true });

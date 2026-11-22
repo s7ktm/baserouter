@@ -685,7 +685,7 @@ const forms = {
     const abort = new AbortController();
     play.running = abort;
     draw();
-    tryImage(route.id, { model, prompt: ask }, { signal: abort.signal })
+    tryImage(route.id, { model, prompt: ask }, { signal: abort.signal, keeps: turn.kept })
       .then(({ images, row }) => {
         turn.images = images;
         turn.state = images.length ? "done" : "failed"; // an answer with no image in it

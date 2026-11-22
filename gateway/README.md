@@ -187,7 +187,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
 | `POST /api/routes/:id/try`, `POST /api/routes/:id/try/images` | The panel's playground: sends a chat request, or an image request, as this route. See "The playground" below |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
-| `GET /api/requests/:id` | One request, with `provider`, the name of the provider that answered it |
+| `GET /api/requests/:id` | One request, with `provider`, the name of the provider that answered it, and `media`, what it made that the gateway kept (empty until it is kept, a moment after the answer) |
 | `GET /api/media?kind=&route=&limit=&before=` | Lists kept images (`kind=image`), sounds (`kind=audio`) and videos (`kind=video`), newest first, with what each request cost, and the room they take (`space`) |
 | `GET /api/media/:id` | One file's bytes, or a `Range` of them; `?download=1` to save it |
 | `DELETE /api/media/:id` | Deletes it |
@@ -221,7 +221,9 @@ So the panel can say what answered, what it cost and how long it took, the answe
   data: {"id": 12, "route": "…", "requestedModel": "smart", "model": "openai/gpt-5-mini", "provider": "OpenRouter", "promptTokens": 8, "completionTokens": 6, "cost": 0.0000143, "costSource": "provider", "firstTokenMs": 412, "totalMs": 1380, "ok": true, …}
   ```
 
-- **An answer that is not a stream** (an image, a chat sent without `stream`, a provider's refusal) comes back as it is, with the header `X-BaseRouter-Request: 12`. `GET /api/requests/12` gives the row, with `provider`, the name of the provider that answered.
+- **An answer that is not a stream** (an image, a chat sent without `stream`, a provider's refusal) comes back as it is, with the header `X-BaseRouter-Request: 12`. `GET /api/requests/12` gives the row, with `provider`, the name of the provider that answered, and `media`, the images it kept.
+
+Some models answer with a link to the image rather than the image itself. The panel shows only its own files and data URLs, so it shows such an image from the copy the gateway keeps, once it has fetched it; when the route keeps nothing, it offers the link to open.
 
 A cost that is not known when the answer ends is `null`; the row has it once the gateway has asked the provider. Answers at the one address (`/v1`) carry neither the event nor the header. The body may be up to 1 MB, like every body the management API takes. Speech, transcriptions and video are not offered here yet.
 

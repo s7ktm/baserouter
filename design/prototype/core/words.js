@@ -112,7 +112,8 @@ export const words = {
     tryKinds: "What to try", try_chat: "Chat", try_image: "Image",
     tryNoteImage: "It counts towards this route's budget and appears in its requests. The image is kept if the route keeps what it makes.",
     imageAsk: "Describe the image", makeImage: "Make image", imageWaiting: "Making the image", imageNone: "The answer held no image. Try another model.",
-    imageNotKept: "This route does not keep what it makes, so the image is shown here only.", took: "Time",
+    imageNotKept: "This route does not keep what it makes, so the image is shown here only.",
+    imageLink: "This model answered with a link to the image, which this panel cannot show inside itself.", imageOpen: "Open the image", took: "Time",
   },
   tr: {
     today: "bugün", thisMonth: "bu ay", copy: "Kopyala", copied: "Kopyalandı", newRoute: "Yeni rota", off: "Kapalı",
@@ -215,6 +216,7 @@ export const words = {
     tryKinds: "Ne denensin", try_chat: "Sohbet", try_image: "Görsel",
     tryNoteImage: "Bu rotanın bütçesinden düşer ve isteklerinde görünür. Rota ürettiklerini saklıyorsa görsel de saklanır.",
     imageAsk: "Görseli anlat", makeImage: "Görseli üret", imageWaiting: "Görsel üretiliyor", imageNone: "Yanıtta görsel yoktu. Başka bir model dene.",
-    imageNotKept: "Bu rota ürettiklerini saklamıyor; görsel yalnızca burada görünür.", took: "Süre",
+    imageNotKept: "Bu rota ürettiklerini saklamıyor; görsel yalnızca burada görünür.",
+    imageLink: "Bu model görseli bir bağlantı olarak döndürdü; panel bunu kendi içinde gösteremiyor.", imageOpen: "Görseli aç", took: "Süre",
   },
 };

@@ -493,12 +493,13 @@ export function admin(deps: Deps, sendAs: SendAs) {
     return c.json({ requests: rows.map(requestView) });
   });
 
-  // One request, as the list above gives it, with the name of the provider that answered.
+  // One request, as the list above gives it, with the name of the provider that answered and
+  // what it made that the gateway kept. An image is kept a moment after its answer has gone.
   app.get("/requests/:id", (c) => {
     const id = Number(c.req.param("id"));
     const row = Number.isInteger(id) && id > 0 ? store.request(id) : null;
     if (!row) return fail(c, 404, "not_found", "There is no such request.");
-    return c.json({ request: rowView(row) });
+    return c.json({ request: { ...rowView(row), media: store.mediaOfRequest(row.id).map(mediaView) } });
   });
 
   // Kept images, sound and video, newest first. ?kind=image|audio|video and ?route=<id> filter;

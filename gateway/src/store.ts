@@ -512,6 +512,12 @@ export class Store {
     return this.db.query(sql).all(...args, filter.limit) as MediaListed[];
   }
 
+  // What one request made and the gateway kept, in the order it was kept.
+  mediaOfRequest(requestId: number): MediaListed[] {
+    return this.db.query(`SELECT m.*, r.cost_usd FROM media m LEFT JOIN requests r ON r.id = m.request_id
+      WHERE m.request_id = ? ORDER BY m.created_at, m.id`).all(requestId) as MediaListed[];
+  }
+
   removeMedia(id: string): void {
     this.db.query("DELETE FROM media WHERE id = ?").run(id);
   }

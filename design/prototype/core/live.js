@@ -102,7 +102,10 @@ export async function tryChat(routeId, body, { signal, onText }) {
 // The playground: an image asked for as a route (POST /api/routes/:id/try/images). The answer
 // is what /v1/images/generations gives: each image as base64 or as a link. Resolves with the
 // images, as sources a page can show, and the request's row, which the gateway names in a header.
-export async function tryImage(routeId, body, { signal }) {
+// The panel shows only its own files and data URLs, so an image that came as a link (some
+// models answer that way) is shown from the copy the gateway keeps, once it has kept it; when
+// the route keeps nothing, it stays a link, to open.
+export async function tryImage(routeId, body, { signal, keeps }) {
   const res = await fetch(`/api/routes/${encodeURIComponent(routeId)}/try/images`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -116,8 +119,17 @@ export async function tryImage(routeId, body, { signal }) {
   const images = (Array.isArray(answer?.data) ? answer.data : []).map((item) =>
     typeof item?.b64_json === "string" ? `data:${item.media_type ?? typeOf(item.b64_json)};base64,${item.b64_json}` : typeof item?.url === "string" ? item.url : null).filter(Boolean);
   const id = res.headers.get("x-baserouter-request");
-  const row = id ? await call("GET", `/requests/${encodeURIComponent(id)}`).then((found) => found.request).catch(() => null) : null;
-  return { images, row };
+  const ask = () => (id ? call("GET", `/requests/${encodeURIComponent(id)}`).then((found) => found.request).catch(() => null) : Promise.resolve(null));
+  let row = await ask();
+  const links = images.filter((src) => !src.startsWith("data:")).length;
+  // A link is fetched and kept a moment after the answer: ask again for a while, then give up.
+  for (let tries = 0; links && row && (row.media ?? []).length < images.length && keeps && tries < 20 && !signal?.aborted; tries++) {
+    await new Promise((done) => setTimeout(done, 750));
+    row = (await ask()) ?? row;
+  }
+  // The kept copies are in the order of the answer's images.
+  const kept = (row?.media ?? []).map((m) => m.src);
+  return { images: images.map((src, i) => (src.startsWith("data:") ? src : kept[i] ?? src)), row };
 }
 // What a base64 image is, from how it starts, when the answer does not say.
 const typeOf = (b64) => (b64.startsWith("/9j/") ? "image/jpeg" : b64.startsWith("UklGR") ? "image/webp" : b64.startsWith("R0lG") ? "image/gif" : b64.startsWith("PHN2Zy") || b64.startsWith("PD94bWw") ? "image/svg+xml" : "image/png");

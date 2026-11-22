@@ -170,7 +170,11 @@ function made(ctx, turn, i) {
   if (turn.state === "failed") return `<p class="br-banner br-try-failed" role="alert">${turn.error ? t("actionFailed", { error: esc(turn.error) }) : t("imageNone")}</p>`;
   if (turn.state === "stopped") return `<p class="br-note">${t("tryStopped")}</p>`;
   const facts = turn.facts;
-  return `${turn.images.map((src) => `<figure class="br-shot br-try-shot"><img src="${esc(src)}" alt="${esc(turn.ask)}"></figure>`).join("")}
+  // An image the panel cannot show itself (a provider's link, when the route keeps nothing) is offered to open.
+  const own = (src) => src.startsWith("data:") || src.startsWith("/");
+  return `${turn.images.map((src) => own(src)
+      ? `<figure class="br-shot br-try-shot"><img src="${esc(src)}" alt="${esc(turn.ask)}"></figure>`
+      : `<p class="br-note">${t("imageLink")}</p><p class="br-actions"><a class="br-btn" href="${esc(src)}" target="_blank" rel="noopener noreferrer">${t("imageOpen")}</a></p>`).join("")}
     ${facts ? known(ctx, turn, i, [...who(ctx, facts), cost(ctx, facts), facts.totalMs == null ? null : [t("took"), ctx.secs(facts.totalMs / 1000)]]) : ""}
     ${turn.kept
       ? `<button class="br-btn quiet br-try-kept" data-action="go" data-screen="activity" data-show="images" data-filter="${esc(turn.route)}">${t("seeImages")}</button>`
