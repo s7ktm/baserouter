@@ -18,9 +18,9 @@ export interface Deps {
   background: Set<Promise<unknown>>;
   // The largest request body the one address takes.
   maxRequestBytes: number;
-  // Where the images routes make are kept, or null to keep none; and how much room they may take.
-  imagesDir: string | null;
-  imagesMaxBytes: number;
+  // Where the images and sound routes make are kept, or null to keep none; and how much room they may take.
+  mediaDir: string | null;
+  mediaMaxBytes: number;
   // The folder the panel is served from, or null for no panel.
   panelDir: string | null;
 }

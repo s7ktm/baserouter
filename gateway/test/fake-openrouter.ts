@@ -43,6 +43,9 @@ export const IDS = {
   transcription: "gen-stt-1795300010-FixtureTranscribe1",
 } as const;
 
+// 4,000 bytes of 16-bit PCM: what /audio/speech sends for response_format "pcm".
+export const PCM = new Uint8Array(4000).map((_, i) => (i * 7) % 256);
+
 export interface Fake {
   url: string;
   chats: { key: string | null; body: string }[]; // every chat request received
@@ -89,6 +92,12 @@ export function startFake(port = 0): Fake {
       }
       // The sound comes as bytes, with no cost in it.
       if (url.pathname === "/audio/speech") {
+        // Raw PCM has no header: just samples. OpenRouter says the format in the content type;
+        // the model "fixture/pcm-no-rate" leaves it out.
+        if ((JSON.parse(new TextDecoder().decode(bytes)) as { response_format?: string }).response_format === "pcm") {
+          const type = model === "fixture/pcm-no-rate" ? "audio/pcm" : "audio/pcm;rate=24000;channels=1";
+          return new Response(inPieces(PCM), { headers: { "Content-Type": type, "X-Generation-Id": IDS.speech } });
+        }
         return new Response(inPieces(await fixtureBytes("speech.mp3")), { headers: { "Content-Type": "audio/mpeg", "X-Generation-Id": IDS.speech } });
       }
       if (url.pathname !== "/chat/completions") return new Response("Not found", { status: 404 });

@@ -105,11 +105,13 @@ export function routeSheet(ctx, ui) {
 
     <section class="br-sec">
       <div class="br-row">
-        <span><h3>${t("keepImages")}</h3><span class="br-note">${t("keepImagesNote")}</span></span>
-        <button class="br-switch" data-action="keep-images" data-id="${route.id}" aria-pressed="${route.keepImages !== false}" aria-label="${t("keepImages")}"></button>
+        <span><h3>${t("keepMedia")}</h3><span class="br-note">${t("keepMediaNote")}</span></span>
+        <button class="br-switch" data-action="keep-media" data-id="${route.id}" aria-pressed="${route.keepMedia !== false}" aria-label="${t("keepMedia")}"></button>
       </div>
-      ${data.images?.some((i) => i.route === route.id)
-        ? `<p class="br-actions"><button class="br-btn quiet" data-action="go" data-screen="activity" data-show="images" data-filter="${route.id}">${t("seeImages")}</button></p>`
+      ${data.images?.some((i) => i.route === route.id) || data.sounds?.some((i) => i.route === route.id)
+        ? `<p class="br-actions">${data.images.some((i) => i.route === route.id)
+            ? `<button class="br-btn quiet" data-action="go" data-screen="activity" data-show="images" data-filter="${route.id}">${t("seeImages")}</button>` : ""}${data.sounds.some((i) => i.route === route.id)
+            ? `<button class="br-btn quiet" data-action="go" data-screen="activity" data-show="sounds" data-filter="${route.id}">${t("seeSounds")}</button>` : ""}</p>`
         : ""}
     </section>
 

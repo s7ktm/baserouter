@@ -6,7 +6,7 @@ const routes = [
   { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["openai/gpt-5-mini"] },
   { id: "arm", name: { en: "Robot arm", tr: "Robot kol" }, icon: "robot", color: "#1C2030", enabled: true, busy: false, today: 0.31, used: 1.1, budget: 5, keyHint: "b07d", models: ["google/gemini-2.5-flash"] },
   { id: "news", name: { en: "Newsletter bot", tr: "Bülten botu" }, icon: "mail", color: "#8A4B08", enabled: true, busy: false, today: 0, used: 3, budget: 3, keyHint: "e3a8", models: ["openai/gpt-5-mini"] },
-  { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"], keepImages: false },
+  { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"], keepMedia: false },
 ];
 
 // newest first; "ago" is seconds; "kind" is chat unless said: image, speech or transcription
@@ -38,13 +38,35 @@ function picture(n, w = 512, h = 512) {
 
 // newest first; "ago" is seconds
 const images = [
-  { id: "i1", route: "news", model: "google/gemini-3.1-flash-lite-image", prompt: "A calm sunrise over hills, for the morning newsletter header.", cost: 0.034, bytes: 812000, ago: 2400, src: picture(1, 768, 432) },
-  { id: "i2", route: "coding", model: "recraft/recraft-v4.1-flash", prompt: "A small blue circle on white.", cost: 0.007, bytes: 104000, ago: 5100, src: picture(0) },
-  { id: "i3", route: "news", model: "recraft/recraft-v4.1-flash", prompt: "An icon of a letter with a green leaf.", cost: 0.007, bytes: 98000, ago: 9600, src: picture(5) },
-  { id: "i4", route: "home", model: "google/gemini-3.1-flash-lite-image", prompt: "A floor plan sketch of a living room, top view.", cost: 0.034, bytes: 1240000, ago: 86000, src: picture(2, 432, 768) },
-  { id: "i5", route: "news", model: "recraft/recraft-v4.1-flash", prompt: "Mountains at night under a deep blue sky.", cost: 0.007, bytes: 120000, ago: 170000, src: picture(4) },
+  { id: "i1", kind: "image", route: "news", model: "google/gemini-3.1-flash-lite-image", prompt: "A calm sunrise over hills, for the morning newsletter header.", cost: 0.034, bytes: 812000, ago: 2400, src: picture(1, 768, 432) },
+  { id: "i2", kind: "image", route: "coding", model: "recraft/recraft-v4.1-flash", prompt: "A small blue circle on white.", cost: 0.007, bytes: 104000, ago: 5100, src: picture(0) },
+  { id: "i3", kind: "image", route: "news", model: "recraft/recraft-v4.1-flash", prompt: "An icon of a letter with a green leaf.", cost: 0.007, bytes: 98000, ago: 9600, src: picture(5) },
+  { id: "i4", kind: "image", route: "home", model: "google/gemini-3.1-flash-lite-image", prompt: "A floor plan sketch of a living room, top view.", cost: 0.034, bytes: 1240000, ago: 86000, src: picture(2, 432, 768) },
+  { id: "i5", kind: "image", route: "news", model: "recraft/recraft-v4.1-flash", prompt: "Mountains at night under a deep blue sky.", cost: 0.007, bytes: 120000, ago: 170000, src: picture(4) },
 ];
-const imageSpace = { count: images.length, bytes: images.reduce((sum, i) => sum + i.bytes, 0), keeping: true, max: 1024 ** 3 };
+// Made-up sounds: a short tone each, as a WAV, so nothing is loaded from elsewhere.
+function tone(hz, seconds = 1.2) {
+  const rate = 8000;
+  const n = Math.round(rate * seconds);
+  const bytes = new Uint8Array(44 + n);
+  const view = new DataView(bytes.buffer);
+  const text = (at, s) => [...s].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+  text(0, "RIFF"); view.setUint32(4, 36 + n, true); text(8, "WAVE"); text(12, "fmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate, true); view.setUint16(32, 1, true); view.setUint16(34, 8, true);
+  text(36, "data"); view.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) bytes[44 + i] = 128 + Math.round(40 * Math.sin((2 * Math.PI * hz * i) / rate) * Math.min(1, (n - i) / 800));
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return "data:audio/wav;base64," + btoa(binary);
+}
+
+const sounds = [
+  { id: "a1", kind: "audio", route: "home", model: "hexgrad/kokoro-82m", prompt: "Good morning. It is seven degrees outside and the heating is on.", cost: 0.00002, bytes: 48000, ago: 240, src: tone(440) },
+  { id: "a2", kind: "audio", route: "home", model: "hexgrad/kokoro-82m", prompt: "The front door is open.", cost: 0.00001, bytes: 12400, ago: 7200, src: tone(523) },
+  { id: "a3", kind: "audio", route: "news", model: "elevenlabs/eleven-flash-v2.5", prompt: "Here is your newsletter for Monday.", cost: 0.0004, bytes: 96000, ago: 90000, src: tone(330) },
+];
+const mediaSpace = { images: images.length, sounds: sounds.length, bytes: [...images, ...sounds].reduce((sum, i) => sum + i.bytes, 0), keeping: true, max: 1024 ** 3 };
 
 const base = {
   address: "http://localhost:4141/v1",
@@ -58,7 +80,8 @@ const base = {
   requests,
   last: { route: "coding", model: "claude-sonnet-5.5", seconds: 2.1, cost: 0.004 },
   images,
-  imageSpace,
+  sounds,
+  mediaSpace,
 };
 
 // What "Add a provider" offers. A kind with an address asks for it; key: false means no key is needed.
@@ -99,7 +122,8 @@ export const states = {
     requests: [],
     last: null,
     images: [],
-    imageSpace: { count: 0, bytes: 0, keeping: true, max: 1024 ** 3 },
+    sounds: [],
+    mediaSpace: { images: 0, sounds: 0, bytes: 0, keeping: true, max: 1024 ** 3 },
   },
 };
 
@@ -145,11 +169,17 @@ function stress() {
     })),
     last: { route: "r0", model: "extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking", seconds: 312.4, cost: 1234.5 },
     images: Array.from({ length: 30 }, (_, i) => ({
-      id: `s${i}`, route: i === 7 ? null : `r${i % 6}`, model: many[i % 6].models[0],
+      id: `s${i}`, kind: "image", route: i === 7 ? null : `r${i % 6}`, model: many[i % 6].models[0],
       prompt: i % 4 === 0 ? null : i % 4 === 1 ? "A" : "A very detailed picture of a ".repeat(12) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
       cost: [1234.5, 0.0004, null, 0][i % 4], bytes: [999, 52428800, 1536, 1073741824][i % 4], ago: [3, 400, 9000, 400000][i % 4],
       src: picture(i, [512, 2048, 300][i % 3], [512, 300, 2048][i % 3]),
     })),
-    imageSpace: { count: 120394, bytes: 1073000000, keeping: true, max: 1024 ** 3 },
+    sounds: Array.from({ length: 30 }, (_, i) => ({
+      id: `t${i}`, kind: "audio", route: i === 3 ? null : `r${i % 6}`, model: many[(i + 1) % 6].models[0],
+      prompt: i % 3 === 0 ? null : i % 3 === 1 ? "Ok" : "Read this very long announcement out loud, slowly and clearly, ".repeat(10) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
+      cost: [1234.5, 0.0004, null][i % 3], bytes: [999, 52428800, 1073741824][i % 3], ago: [3, 400, 9000, 400000][i % 4],
+      src: tone(220 + i * 20, 0.3),
+    })),
+    mediaSpace: { images: 120394, sounds: 98765, bytes: 1073000000, keeping: true, max: 1024 ** 3 },
   };
 }

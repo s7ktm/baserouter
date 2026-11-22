@@ -3,7 +3,7 @@
 import { Hono, type Context } from "hono";
 import { gate, monthStart } from "./budget.ts";
 import { later, refuse, type Deps, type Env } from "./deps.ts";
-import { ImageKeeper, imagesIn, promptOf, type Found } from "./images.ts";
+import { imagesIn, isPcm, MediaKeeper, pcmFormat, promptOf, type Found, type MediaFile } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, unseal } from "./secrets.ts";
 import type { Failure, Kind, ProviderRow, RouteRow } from "./store.ts";
@@ -60,7 +60,7 @@ async function readBody(request: Request, limit: number): Promise<Uint8Array | n
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 // What one endpoint needs to say about a request before it is sent on.
-// prompt: for a request that makes images, the words that asked for them.
+// prompt: for a request that makes images or speech, the words that asked for them.
 type Prepared =
   | { ok: false; response: Response }
   | { ok: true; model: string; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null };
@@ -92,7 +92,7 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
       contentType: "application/json",
       kind: made,
       streamed: fields.stream === true,
-      prompt: made === "image" ? promptOf(kind === "chat-modalities" ? "chat" : "images", fields) : null,
+      prompt: made === "image" ? promptOf(kind === "chat-modalities" ? "chat" : "images", fields) : kind === "speech" ? promptOf("speech", fields) : null,
     };
   };
 }
@@ -112,12 +112,12 @@ const transcription: Prepare = async (c, bytes, route) => {
   return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false };
 };
 
-// A client asks for one request's images not to be kept with "X-BaseRouter-Save: no".
+// A client asks for one request's images or sound not to be kept with "X-BaseRouter-Save: no".
 const saveRefused = (value: string | undefined) => /^(no|false|0|off)$/i.test(value?.trim() ?? "");
 
 export function proxy(deps: Deps) {
   const { store } = deps;
-  const keeper = new ImageKeeper(deps);
+  const keeper = new MediaKeeper(deps);
   const app = new Hono<Env>();
 
   app.use(async (c, next) => {
@@ -153,8 +153,12 @@ export function proxy(deps: Deps) {
     const prepared = await prepare(c, bytes, route);
     if (!prepared.ok) return prepared.response;
     const { model, kind } = prepared;
-    // Images are kept when the gateway keeps any, the route keeps them, and the request did not say no.
-    const keepImages = kind === "image" && keeper.on && route.keep_images === 1 && !saveRefused(c.req.header("x-baserouter-save"));
+    // Images and sound are kept when the gateway keeps any, the route keeps them, and the request
+    // did not say no. Sound is kept from /audio/speech; the sound of a chat answer comes as
+    // base64 PCM spread over the stream's events, without its format, so it is not.
+    const keepMedia = keeper.on && route.keep_media === 1 && !saveRefused(c.req.header("x-baserouter-save"));
+    const keepImages = keepMedia && kind === "image";
+    const keepSound = keepMedia && path === "/audio/speech";
 
     const models = allowedModels(route);
     if (models.length > 0 && !models.includes(model)) {
@@ -179,7 +183,7 @@ export function proxy(deps: Deps) {
 
     // Writes the one row this request gets. Whatever path the request takes, it ends here once.
     let finished = false;
-    const finish = (status: number | null, failure: Failure | null, reading?: Reading, firstTokenAt?: number | null, generationId?: string | null, images: Found[] = []) => {
+    const finish = (status: number | null, failure: Failure | null, reading?: Reading, firstTokenAt?: number | null, generationId?: string | null, images: Found[] = [], sound?: MediaFile | null) => {
       if (finished) return;
       finished = true;
       client.removeEventListener("abort", clientGone);
@@ -209,8 +213,12 @@ export function proxy(deps: Deps) {
       });
       // The provider started a response but it ended without a cost: ask for it afterwards.
       if (cost === null && upstreamId && status !== null && status < 300) later(deps, lookUpCost(rowId, upstreamId, key));
-      if (keepImages && failure === null && images.length > 0) {
-        later(deps, keeper.keep({ requestId: rowId, routeId: route.id, model: reading?.model ?? model, prompt: prepared.prompt ?? null }, images));
+      const made = { requestId: rowId, routeId: route.id, model: reading?.model ?? model, prompt: prepared.prompt ?? null };
+      const worked = failure === null && status !== null && status < 300;
+      if (keepImages && worked && images.length > 0) later(deps, keeper.keepImages(made, images));
+      if (sound) {
+        if (worked) later(deps, sound.finish(made));
+        else sound.drop();
       }
     };
 
@@ -263,12 +271,16 @@ export function proxy(deps: Deps) {
 
     // Every chunk goes to the client exactly as it arrived; events are scanned on the way past.
     const scanner = mode === "events" ? new StreamScanner(keepImages) : null;
+    // The sound of /audio/speech is written to its file as it passes to the client. Raw PCM
+    // is kept as WAV when its format is known, and not at all when it is not.
+    const pcm = pcmFormat(type);
+    const sound = mode === "bytes" && keepSound && (!isPcm(type) || pcm) ? keeper.start("audio", pcm) : null;
     let firstChunkAt: number | null = null;
     const reader = upstream.body!.getReader();
     const settle = (failure: Failure | null) => {
       scanner?.end(deps.now());
       const outcome = failure ?? (scanner?.failed ? "stream_error" : null);
-      finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId, scanner?.images);
+      finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId, scanner?.images, sound);
     };
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {
@@ -282,6 +294,7 @@ export function proxy(deps: Deps) {
           const now = deps.now();
           firstChunkAt ??= now;
           scanner?.feed(value, now);
+          sound?.write(value);
           controller.enqueue(value);
         } catch (err) {
           settle(client.aborted ? "client_cancelled" : "network_error");

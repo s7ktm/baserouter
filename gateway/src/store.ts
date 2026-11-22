@@ -64,7 +64,7 @@ CREATE INDEX requests_by_time ON requests (started_at);
 
 // Each step takes the database from one version to the next. Steps are never edited
 // once released; a change is a new step.
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   SCHEMA,
   // 2: how the panel draws a route
   `ALTER TABLE routes ADD COLUMN icon TEXT NOT NULL DEFAULT 'code';
@@ -87,6 +87,16 @@ const MIGRATIONS: string[] = [
    CREATE INDEX images_by_route ON images (route_id, created_at);
    CREATE INDEX images_by_file ON images (file);
    ALTER TABLE routes ADD COLUMN keep_images INTEGER NOT NULL DEFAULT 1;`,
+  // 5: sound is kept too, so images become media, with a kind
+  `ALTER TABLE images RENAME TO media;
+   ALTER TABLE media ADD COLUMN kind TEXT NOT NULL DEFAULT 'image' CHECK (kind IN ('image', 'audio'));
+   DROP INDEX images_by_time;
+   DROP INDEX images_by_route;
+   DROP INDEX images_by_file;
+   CREATE INDEX media_by_kind ON media (kind, created_at);
+   CREATE INDEX media_by_route ON media (route_id, created_at);
+   CREATE INDEX media_by_file ON media (file);
+   ALTER TABLE routes RENAME COLUMN keep_images TO keep_media;`,
 ];
 
 export type CostSource = "provider" | "computed" | "unknown";
@@ -118,12 +128,15 @@ export interface RouteRow {
   models: string;
   icon: string;
   color: string;
-  keep_images: number;
+  keep_media: number;
   created_at: number;
 }
 
-export interface ImageRow {
+export type MediaKind = "image" | "audio";
+
+export interface MediaRow {
   id: string;
+  kind: MediaKind;
   request_id: number | null;
   route_id: string | null;
   created_at: number;
@@ -131,11 +144,11 @@ export interface ImageRow {
   prompt: string | null;
   media_type: string;
   bytes: number;
-  file: string; // the file's name in the images folder: <sha256>.<ext>
+  file: string; // the file's name in the media folder: <sha256>.<ext>
 }
 
-// An image with what its request cost.
-export type ImageListed = ImageRow & { cost_usd: number | null };
+// An image or sound with what its request cost.
+export type MediaListed = MediaRow & { cost_usd: number | null };
 
 export interface RequestRow {
   id: number;
@@ -162,6 +175,11 @@ export type NewRequest = Omit<RequestRow, "id" | "streamed"> & { streamed: boole
 export function openDb(path: string): Database {
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+  return migrate(db);
+}
+
+// Brings a database up to this version, one step at a time.
+export function migrate(db: Database): Database {
   const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number };
   if (user_version > MIGRATIONS.length) throw new Error(`The database is from a newer BaseRouter (version ${user_version}). Update BaseRouter to open it.`);
   for (let version = user_version; version < MIGRATIONS.length; version++) {
@@ -237,13 +255,13 @@ export class Store {
 
   addRoute(row: RouteRow): void {
     this.db
-      .query("INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, enabled, models, icon, color, keep_images, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.keep_images, row.created_at);
+      .query("INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, enabled, models, icon, color, keep_media, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.keep_media, row.created_at);
   }
 
-  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string; keep_images?: boolean }): void {
+  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string; keep_media?: boolean }): void {
     this.db.transaction(() => {
-      if (change.keep_images !== undefined) this.db.query("UPDATE routes SET keep_images = ? WHERE id = ?").run(change.keep_images ? 1 : 0, id);
+      if (change.keep_media !== undefined) this.db.query("UPDATE routes SET keep_media = ? WHERE id = ?").run(change.keep_media ? 1 : 0, id);
       if (change.budget_usd !== undefined) this.db.query("UPDATE routes SET budget_usd = ? WHERE id = ?").run(change.budget_usd, id);
       if (change.enabled !== undefined) this.db.query("UPDATE routes SET enabled = ? WHERE id = ?").run(change.enabled ? 1 : 0, id);
       if (change.models !== undefined) this.db.query("UPDATE routes SET models = ? WHERE id = ?").run(JSON.stringify(change.models), id);
@@ -336,46 +354,48 @@ export class Store {
     return new Map(rows.map((r) => [r.route_id, { used: r.used, today: r.today }]));
   }
 
-  addImage(r: ImageRow): void {
+  addMedia(r: MediaRow): void {
     this.db
-      .query("INSERT INTO images (id, request_id, route_id, created_at, model, prompt, media_type, bytes, file) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(r.id, r.request_id, r.route_id, r.created_at, r.model, r.prompt, r.media_type, r.bytes, r.file);
+      .query("INSERT INTO media (id, kind, request_id, route_id, created_at, model, prompt, media_type, bytes, file) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(r.id, r.kind, r.request_id, r.route_id, r.created_at, r.model, r.prompt, r.media_type, r.bytes, r.file);
   }
 
-  image(id: string): ImageRow | null {
-    return this.db.query("SELECT * FROM images WHERE id = ?").get(id) as ImageRow | null;
+  mediaItem(id: string): MediaRow | null {
+    return this.db.query("SELECT * FROM media WHERE id = ?").get(id) as MediaRow | null;
   }
 
-  // Newest first. "before" is the id of the last image of the previous page.
-  images(filter: { route?: string; before?: string; limit: number }): ImageListed[] {
+  // Newest first. "before" is the id of the last one of the previous page.
+  media(filter: { kind?: MediaKind; route?: string; before?: string; limit: number }): MediaListed[] {
     const where: string[] = [];
     const args: (string | number)[] = [];
-    if (filter.route) (where.push("i.route_id = ?"), args.push(filter.route));
+    if (filter.kind) (where.push("m.kind = ?"), args.push(filter.kind));
+    if (filter.route) (where.push("m.route_id = ?"), args.push(filter.route));
     if (filter.before) {
-      const last = this.image(filter.before);
-      if (last) (where.push("(i.created_at, i.id) < (?, ?)"), args.push(last.created_at, last.id));
+      const last = this.mediaItem(filter.before);
+      if (last) (where.push("(m.created_at, m.id) < (?, ?)"), args.push(last.created_at, last.id));
     }
-    const sql = `SELECT i.*, r.cost_usd FROM images i LEFT JOIN requests r ON r.id = i.request_id
-      ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY i.created_at DESC, i.id DESC LIMIT ?`;
-    return this.db.query(sql).all(...args, filter.limit) as ImageListed[];
+    const sql = `SELECT m.*, r.cost_usd FROM media m LEFT JOIN requests r ON r.id = m.request_id
+      ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`;
+    return this.db.query(sql).all(...args, filter.limit) as MediaListed[];
   }
 
-  removeImage(id: string): void {
-    this.db.query("DELETE FROM images WHERE id = ?").run(id);
+  removeMedia(id: string): void {
+    this.db.query("DELETE FROM media WHERE id = ?").run(id);
   }
 
   fileInUse(file: string): boolean {
-    return this.db.query("SELECT 1 FROM images WHERE file = ? LIMIT 1").get(file) !== null;
+    return this.db.query("SELECT 1 FROM media WHERE file = ? LIMIT 1").get(file) !== null;
   }
 
-  oldestImage(): ImageRow | null {
-    return this.db.query("SELECT * FROM images ORDER BY created_at, id LIMIT 1").get() as ImageRow | null;
+  oldestMedia(): MediaRow | null {
+    return this.db.query("SELECT * FROM media ORDER BY created_at, id LIMIT 1").get() as MediaRow | null;
   }
 
-  // How many images, and the room their files take: the same bytes kept twice count once.
-  imageSpace(): { count: number; bytes: number } {
-    const count = (this.db.query("SELECT COUNT(*) AS n FROM images").get() as { n: number }).n;
-    const bytes = (this.db.query("SELECT COALESCE(SUM(bytes), 0) AS b FROM (SELECT file, MAX(bytes) AS bytes FROM images GROUP BY file)").get() as { b: number }).b;
-    return { count, bytes };
+  // How many images and sounds, and the room their files take: the same bytes kept twice count once.
+  mediaSpace(): { images: number; sounds: number; bytes: number } {
+    const counts = this.db.query("SELECT kind, COUNT(*) AS n FROM media GROUP BY kind").all() as { kind: MediaKind; n: number }[];
+    const count = (kind: MediaKind) => counts.find((c) => c.kind === kind)?.n ?? 0;
+    const bytes = (this.db.query("SELECT COALESCE(SUM(bytes), 0) AS b FROM (SELECT file, MAX(bytes) AS bytes FROM media GROUP BY file)").get() as { b: number }).b;
+    return { images: count("image"), sounds: count("audio"), bytes };
   }
 }

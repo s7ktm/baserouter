@@ -1,5 +1,5 @@
 // Starts the gateway: bun src/index.ts
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { BUN_BODY_LIMIT, createApp } from "./app.ts";
 import type { Deps } from "./deps.ts";
@@ -13,13 +13,15 @@ const port = Number(env.BASEROUTER_PORT ?? 4141);
 const maxRequestMb = Number(env.BASEROUTER_MAX_REQUEST_MB ?? 64);
 if (!(maxRequestMb > 0)) throw new Error("BASEROUTER_MAX_REQUEST_MB must be a number of megabytes larger than 0.");
 const maxRequestBytes = Math.round(maxRequestMb * 1024 * 1024);
-// The images routes make are kept until they take this much room; then the oldest go first. 0 keeps none.
-const imagesMaxMb = Number(env.BASEROUTER_IMAGES_MAX_MB ?? 1024);
-if (!(imagesMaxMb >= 0)) throw new Error("BASEROUTER_IMAGES_MAX_MB must be a number of megabytes, 0 or more.");
-const imagesMaxBytes = Math.round(imagesMaxMb * 1024 * 1024);
+// The images and sound routes make are kept until they take this much room; then the oldest go first. 0 keeps none.
+const mediaMaxMb = Number(env.BASEROUTER_MEDIA_MAX_MB ?? 1024);
+if (!(mediaMaxMb >= 0)) throw new Error("BASEROUTER_MEDIA_MAX_MB must be a number of megabytes, 0 or more.");
+const mediaMaxBytes = Math.round(mediaMaxMb * 1024 * 1024);
 const dataDir = env.BASEROUTER_DATA_DIR ?? join(import.meta.dir, "..", "data");
 
 mkdirSync(dataDir, { recursive: true });
+// Kept images were in "images" before sound was kept too.
+if (existsSync(join(dataDir, "images")) && !existsSync(join(dataDir, "media"))) renameSync(join(dataDir, "images"), join(dataDir, "media"));
 const store = new Store(openDb(join(dataDir, "baserouter.sqlite")));
 
 const deps: Deps = {
@@ -31,8 +33,8 @@ const deps: Deps = {
   running: new Map(),
   background: new Set(),
   maxRequestBytes,
-  imagesDir: join(dataDir, "images"),
-  imagesMaxBytes,
+  mediaDir: join(dataDir, "media"),
+  mediaMaxBytes,
   panelDir: env.BASEROUTER_PANEL_DIR ?? join(import.meta.dir, "..", "..", "design", "prototype"),
 };
 

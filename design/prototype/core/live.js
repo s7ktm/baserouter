@@ -40,8 +40,8 @@ export const api = {
   makeRoute: (route) => call("POST", "/routes", route),
   newKey: (id) => call("POST", `/routes/${encodeURIComponent(id)}/key`),
   setModels: (id, models) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { models }),
-  keepImages: (id, keepImages) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { keepImages }),
-  deleteImage: (id) => call("DELETE", `/images/${encodeURIComponent(id)}`),
+  keepMedia: (id, keepMedia) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { keepMedia }),
+  deleteMedia: (id) => call("DELETE", `/media/${encodeURIComponent(id)}`),
   deleteRoute: (id) => call("DELETE", `/routes/${encodeURIComponent(id)}`),
   password: (current, password) => call("POST", "/password", { current, password }),
   logout: () => call("POST", "/logout"),
@@ -52,9 +52,13 @@ export const api = {
 export function toData(state) {
   const routes = state.routes.map((r) => ({
     id: r.id, name: { en: r.name, tr: r.name }, icon: r.icon, color: r.color, enabled: r.enabled, busy: r.busy,
-    today: r.today, used: r.used, budget: r.budget, keyHint: r.keyHint, models: r.models, keepImages: r.keepImages,
+    today: r.today, used: r.used, budget: r.budget, keyHint: r.keyHint, models: r.models, keepMedia: r.keepMedia,
   }));
   const known = new Set(routes.map((r) => r.id));
+  const media = (i) => ({
+    id: i.id, kind: i.kind, route: known.has(i.route) ? i.route : null, model: i.model, prompt: i.prompt, cost: i.cost, bytes: i.bytes, src: i.src,
+    ago: Math.max(0, Math.round((state.now - i.at) / 1000)),
+  });
   const request = (q) => ({
     route: q.route, kind: q.kind ?? "chat", model: q.model ?? q.requestedModel ?? "", seconds: q.totalMs / 1000, cost: q.cost ?? 0,
     ago: Math.max(0, Math.round((state.now - q.at) / 1000)), ok: q.ok,
@@ -68,11 +72,9 @@ export function toData(state) {
     routes,
     requests: state.requests.filter((q) => known.has(q.route)).map(request),
     last: state.last && known.has(state.last.route) ? request(state.last) : null,
-    // Images stay when their route is removed; they are then shown without one.
-    images: (state.images ?? []).map((i) => ({
-      id: i.id, route: known.has(i.route) ? i.route : null, model: i.model, prompt: i.prompt, cost: i.cost, bytes: i.bytes, src: i.src,
-      ago: Math.max(0, Math.round((state.now - i.at) / 1000)),
-    })),
-    imageSpace: state.imageSpace ?? { count: 0, bytes: 0, keeping: false, max: 0 },
+    // Images and sounds stay when their route is removed; they are then shown without one.
+    images: (state.images ?? []).map(media),
+    sounds: (state.sounds ?? []).map(media),
+    mediaSpace: state.mediaSpace ?? { images: 0, sounds: 0, bytes: 0, keeping: false, max: 0 },
   };
 }
