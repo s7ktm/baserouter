@@ -14,6 +14,12 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
   - `POST /v1/audio/transcriptions`, as JSON or as a form with a file.
 - Each request records what it made: `chat`, `image`, `speech` or `transcription`. The activity list and the route page show it.
 - A limit on the size of a request body, 64 MB by default (`BASEROUTER_MAX_REQUEST_MB`), with a clear HTTP 413 when it is passed.
+- Running it for good: a `Dockerfile` and `compose.yaml` (reachable from the machine itself, with its data in a volume), an optional Caddy in front for HTTPS (`--profile tls`), a hardened systemd unit in `deploy/`, and [INSTALL.md](INSTALL.md) with backups, updates, hosting services and why serverless is not supported.
+- The gateway stops cleanly on SIGTERM or Ctrl-C.
+
+### Fixed
+
+- A request body more than 1 MB over the limit got an empty HTTP 413 from the server underneath instead of BaseRouter's own error. The management API now takes bodies of up to 1 MB, before and after signing in.
 
 ### Not yet
 

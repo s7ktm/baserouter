@@ -16,6 +16,8 @@ Open the panel at http://localhost:4141/. The first time, it asks you to choose 
 
 The panel is the folder `design/prototype/`, served as it is; see [its README](../design/prototype/README.md).
 
+To run it for good (Docker, HTTPS, systemd, backups, updates), see [INSTALL.md](../INSTALL.md). It stops cleanly on SIGTERM or Ctrl-C: no new requests, a few seconds for running ones, then the database is closed.
+
 ## First run without the panel
 
 The same steps as four requests.
@@ -95,7 +97,7 @@ Errors from the gateway itself have the shape OpenAI clients expect: `{"error": 
 | 403 | `route_off` | The route is switched off |
 | 403 | `model_not_allowed` | The route may not use that model |
 | 400 | `invalid_request` | The body is not JSON (or, for a transcription, not a form either) or names no model |
-| 413 | `request_too_large` | The body is larger than `BASEROUTER_MAX_REQUEST_MB`; `metadata.max_bytes` has the limit |
+| 413 | `request_too_large` | The body is larger than `BASEROUTER_MAX_REQUEST_MB`; `metadata.max_bytes` has the limit. The management API (`/api`) takes up to 1 MB |
 | 503 | `no_provider` | No provider has been added |
 | 502 | `provider_unreachable` | OpenRouter could not be reached |
 | 502 | `provider_refused_key` | OpenRouter did not accept the key BaseRouter holds for it |

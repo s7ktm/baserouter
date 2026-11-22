@@ -1,0 +1,44 @@
+# BaseRouter with Docker Compose. See INSTALL.md.
+#
+#   docker compose up -d                  the gateway, reachable from this machine only
+#   docker compose --profile tls up -d    the same, plus Caddy in front with HTTPS
+#                                         (set BASEROUTER_DOMAIN first; set the admin password before this)
+
+services:
+  baserouter:
+    build: .
+    image: baserouter:local
+    restart: unless-stopped
+    # This machine only. To let other machines reach it, use the tls profile below rather
+    # than opening this port: without HTTPS, keys and the password cross the network as plain text.
+    ports:
+      - "127.0.0.1:${BASEROUTER_PORT:-4141}:4141"
+    volumes:
+      - baserouter-data:/data
+    environment:
+      # All optional; see "Settings" in gateway/README.md.
+      BASEROUTER_MAX_REQUEST_MB: ${BASEROUTER_MAX_REQUEST_MB:-64}
+
+  caddy:
+    profiles: ["tls"]
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    restart: unless-stopped
+    depends_on:
+      - baserouter
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # The name this machine is reached by, for example baserouter.example.com. Left unset it is
+      # "localhost", which only this machine can use; Caddy then makes its own certificate.
+      BASEROUTER_DOMAIN: ${BASEROUTER_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  baserouter-data:
+  caddy-data:
+  caddy-config:

@@ -92,6 +92,11 @@ test("a request larger than the limit is refused before anything is sent, with o
     expect(small.fake.posts).toHaveLength(0);
     expect(small.lastRequest()).toBeNull();
 
+    // Far over the limit: still BaseRouter's own answer, not an empty one from the server underneath.
+    const huge = await small.chat(route.key, JSON.stringify({ model: "openai/gpt-5-mini", messages: [{ role: "user", content: base64Of(3 << 20) }] }));
+    expect(huge.status).toBe(413);
+    expect((await errorOf(huge)).code).toBe("request_too_large");
+
     // Just under the limit goes through.
     expect((await small.chat(route.key, { model: "openai/gpt-5-mini", messages: [{ role: "user", content: base64Of(700 << 10) }] })).status).toBe(200);
   } finally {
