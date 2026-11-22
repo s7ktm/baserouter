@@ -44,6 +44,7 @@ const deps: Deps = {
   store,
   master: loadMasterKey(dataDir),
   upstream: { baseUrl: env.BASEROUTER_OPENROUTER_URL ?? "https://openrouter.ai/api/v1", fetch },
+  nanogpt: { baseUrl: env.BASEROUTER_NANOGPT_URL ?? "https://api.nano-gpt.com/api", fetch },
   now: Date.now,
   costLookupDelays: [2_000, 5_000, 15_000],
   // Video jobs take from seconds to several minutes.

@@ -1,0 +1,90 @@
+{
+ "object": "api_key",
+ "id": 1,
+ "name": "fixture",
+ "status": "active",
+ "createdAt": "2026-11-22T00:00:00.000Z",
+ "expiresAt": null,
+ "limits": {
+  "dailyRpd": null,
+  "dailyUsd": null,
+  "weeklyUsd": null,
+  "monthlyUsd": null,
+  "dailyInputTokens": null,
+  "weeklyRequests": null,
+  "monthlyRequests": null,
+  "weeklyInputTokens": null,
+  "monthlyInputTokens": null,
+  "dailySubscriptionInputTokens": null,
+  "weeklySubscriptionInputTokens": null,
+  "monthlySubscriptionInputTokens": null
+ },
+ "usage": {
+  "today": {
+   "requests": 0,
+   "usdSpent": 0,
+   "inputTokens": 0,
+   "subscriptionInputTokens": 0
+  },
+  "thisWeek": {
+   "usdSpent": 0,
+   "requests": 0,
+   "inputTokens": 0,
+   "subscriptionInputTokens": 0
+  },
+  "thisMonth": {
+   "usdSpent": 0,
+   "requests": 0,
+   "inputTokens": 0,
+   "subscriptionInputTokens": 0
+  }
+ },
+ "allowedModels": null,
+ "allowedModelsMode": "all",
+ "allowedProviders": null,
+ "allowedProvidersMode": "all",
+ "zdrPolicy": "off",
+ "inferenceRegion": "inherit",
+ "effectiveInferenceRegion": "any",
+ "allowedOrigins": [],
+ "piiRedactionDefault": null,
+ "piiRedactionBackend": null,
+ "requestLogging": {
+  "enabled": false,
+  "retentionDays": null,
+  "supportAccessEnabled": false
+ },
+ "discounts": {
+  "active": true,
+  "bestPercentage": 5,
+  "items": [
+   {
+    "paymentMethod": "nano",
+    "appliesTo": "eligible_usage",
+    "stackable": true,
+    "type": "percentage",
+    "percent": 5
+   }
+  ]
+ },
+ "admission": {
+  "version": 1,
+  "routes": [
+   "chat.completions",
+   "responses",
+   "messages",
+   "completions"
+  ],
+  "scope": "account",
+  "shared_across_api_keys": true,
+  "shared_across_team_members": false,
+  "enabled": false,
+  "limit": null,
+  "limit_source": "payg_observation",
+  "subscription_limit": 16,
+  "payg_limit": null,
+  "payg_target_limit": 100,
+  "utilization": null,
+  "enforcement": "best_effort"
+ }
+}

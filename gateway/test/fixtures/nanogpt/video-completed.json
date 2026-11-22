@@ -1,0 +1,18 @@
+{
+ "data": {
+  "status": "COMPLETED",
+  "request_id": "vid_fixture0000000000001",
+  "output": {
+   "video": {
+    "url": "/api/generate-video/content?runId=vid_fixture0000000000001&model=pruna-ai%2Fp-video%2Ftext-to-video&variant=video-0&expires=1795400000&sig=fixture"
+   },
+   "videoUrls": [
+    "/api/generate-video/content?runId=vid_fixture0000000000001&model=pruna-ai%2Fp-video%2Ftext-to-video&variant=video-0&expires=1795400000&sig=fixture"
+   ],
+   "expiresAt": "2026-11-23T20:14:20.148Z"
+  },
+  "video_url": "/api/generate-video/content?runId=vid_fixture0000000000001&model=pruna-ai%2Fp-video%2Ftext-to-video&variant=video-0&expires=1795400000&sig=fixture",
+  "videoUrl": "/api/generate-video/content?runId=vid_fixture0000000000001&model=pruna-ai%2Fp-video%2Ftext-to-video&variant=video-0&expires=1795400000&sig=fixture"
+ },
+ "seed": 1586481066
+}

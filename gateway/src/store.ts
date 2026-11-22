@@ -185,6 +185,9 @@ export const MIGRATIONS: (string | ((db: Database) => void))[] = [
       }
     }
   },
+  // 8: a second provider. A video job remembers which provider is making it; jobs from before
+  // have none, and are the first provider's.
+  `ALTER TABLE video_jobs ADD COLUMN provider_id TEXT REFERENCES providers(id) ON DELETE SET NULL;`,
 ];
 
 export type CostSource = "provider" | "computed" | "unknown";
@@ -223,11 +226,14 @@ export interface RouteRow {
 
 export type MediaKind = "image" | "audio" | "video";
 
-// A video job OpenRouter is making. id is OpenRouter's ("gen-vid-…"). keep: the video is to be
-// kept once it is made. status is OpenRouter's last word on it; done_at is set once it is
-// finished one way or another and its cost is recorded.
+// A video job a provider is making. id is the provider's ("gen-vid-…" at OpenRouter, "vid_…" at
+// NanoGPT). provider_id: which provider; null for a job from before there were two, the first
+// provider's. keep: the video is to be kept once it is made. status is the provider's last word
+// on it, in OpenRouter's words; done_at is set once it is finished one way or another and its
+// cost is recorded.
 export interface VideoJobRow {
   id: string;
+  provider_id: string | null;
   request_id: number | null;
   route_id: string | null;
   model: string | null;
@@ -414,15 +420,21 @@ export class Store {
     return Number(result.lastInsertRowid);
   }
 
-  // Fills in a request whose response ended without saying what it cost.
-  fillRequest(id: number, fill: { cost: number; promptTokens: number | null; completionTokens: number | null; model: string | null }): void {
+  // Fills in what a request cost, once it is known. "replace": also when a cost is already
+  // recorded (NanoGPT's image answers can name less than was charged). "source": "computed"
+  // for a cost worked out from a price list, not reported by the provider.
+  fillRequest(
+    id: number,
+    fill: { cost: number; promptTokens: number | null; completionTokens: number | null; model: string | null },
+    how: { replace?: boolean; source?: CostSource } = {},
+  ): void {
     this.db
       .query(
-        `UPDATE requests SET cost_usd = ?, cost_source = 'provider', prompt_tokens = COALESCE(prompt_tokens, ?),
+        `UPDATE requests SET cost_usd = ?, cost_source = ?, prompt_tokens = COALESCE(prompt_tokens, ?),
            completion_tokens = COALESCE(completion_tokens, ?), model_served = COALESCE(model_served, ?)
-         WHERE id = ? AND cost_usd IS NULL`,
+         WHERE id = ? AND (cost_usd IS NULL OR ?)`,
       )
-      .run(fill.cost, fill.promptTokens, fill.completionTokens, fill.model, id);
+      .run(fill.cost, how.source ?? "provider", fill.promptTokens, fill.completionTokens, fill.model, id, how.replace ? 1 : 0);
   }
 
   request(id: number): RequestRow | null {
@@ -514,8 +526,8 @@ export class Store {
 
   addVideoJob(job: VideoJobRow): void {
     this.db
-      .query("INSERT INTO video_jobs (id, request_id, route_id, model, prompt, keep, status, created_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(job.id, job.request_id, job.route_id, job.model, job.prompt, job.keep, job.status, job.created_at, job.done_at);
+      .query("INSERT INTO video_jobs (id, provider_id, request_id, route_id, model, prompt, keep, status, created_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(job.id, job.provider_id, job.request_id, job.route_id, job.model, job.prompt, job.keep, job.status, job.created_at, job.done_at);
   }
 
   videoJob(id: string): VideoJobRow | null {

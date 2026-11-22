@@ -1,6 +1,7 @@
 // Models in BaseRouter: the name apps send, what it makes, and the places it comes from, in
 // order. A place is a provider BaseRouter holds a key for, that provider's id for the model, and
-// for OpenRouter which of its own providers ("via", such as "google-vertex", or null for any).
+// which of that provider's own providers ("via", such as "google-vertex", or null for any).
+// OpenRouter and NanoGPT both take it as "provider.only", each with ids of its own.
 // When a place fails, the next is tried. A route only names the models it may use.
 // See "Providers, models and routes" in PRODUCT.md.
 //
@@ -11,7 +12,7 @@ import type { ProviderRow, RouteRow, Store } from "./store.ts";
 export interface Place {
   provider: string; // a provider's id in BaseRouter
   model: string; // that provider's id for the model
-  via: string | null; // OpenRouter only: which of its own providers
+  via: string | null; // which of the provider's own providers
 }
 
 export interface ModelRow {
@@ -30,8 +31,12 @@ export interface Model {
 }
 
 export const MODEL_NAME = /^[\w~][\w.:/@+~-]{0,199}$/;
-// OpenRouter's provider slugs: "anthropic", "google-vertex", "deepinfra/turbo", "google-ai-studio/flex".
+// A provider's own provider ids: OpenRouter's "anthropic", "google-vertex", "deepinfra/turbo",
+// "google-ai-studio/flex"; NanoGPT's "fireworks", "deepinfra".
 export const VIA = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9._-]{1,63}){0,3}$/;
+
+// The kinds of provider that have providers of their own to choose from.
+const PINNING = new Set(["openrouter", "nanogpt"]);
 
 export const toModel = (row: ModelRow): Model => ({ id: row.id, name: row.name, makes: JSON.parse(row.makes) as string[], places: JSON.parse(row.places) as Place[] });
 
@@ -63,7 +68,7 @@ export function parsePlaces(value: unknown, providers: ProviderRow[]): Place[] |
     const provider = providers.find((p) => p.id === raw?.provider);
     const model = typeof raw?.model === "string" ? raw.model.trim() : "";
     const via = raw?.via == null || raw.via === "" ? null : typeof raw.via === "string" ? raw.via.trim() : undefined;
-    if (!provider || !MODEL_NAME.test(model) || via === undefined || (via !== null && (provider.kind !== "openrouter" || !VIA.test(via)))) return null;
+    if (!provider || !MODEL_NAME.test(model) || via === undefined || (via !== null && (!PINNING.has(provider.kind) || !VIA.test(via)))) return null;
     if (places.some((p) => p.provider === provider.id && p.model === model && p.via === via)) return null;
     places.push({ provider: provider.id, model, via });
   }
@@ -84,7 +89,7 @@ export function resolve(store: Store, route: Pick<RouteRow, "models">, name: str
   return { ok: true, places, model };
 }
 
-// The request body for one place: its model id, and for OpenRouter its own provider as "only",
+// The request body for one place: its model id, and the provider's own provider as "only",
 // kept beside whatever else the client asked of providers. Null when nothing needs to change,
 // so the body is sent exactly as the client wrote it.
 export function bodyFor(body: Record<string, unknown>, place: Place, name: string): string | null {

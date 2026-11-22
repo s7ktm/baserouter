@@ -1,0 +1,149 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "nano-banana-2",
+   "object": "model",
+   "created": 1772064000,
+   "owned_by": "gemini",
+   "name": "Nano Banana 2",
+   "architecture": {
+    "modality": "text+image->image",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "per_image": {
+     "1k": 0.08,
+     "2k": 0.12,
+     "4k": 0.16
+    },
+    "currency": "USD"
+   },
+   "capabilities": {
+    "image_generation": true,
+    "image_to_image": true,
+    "inpainting": false,
+    "nsfw": false
+   },
+   "supported_parameters": {
+    "max_prompt_characters": null,
+    "prompt_length": {
+     "status": "unknown",
+     "unit": null,
+     "trim_whitespace": null
+    },
+    "resolutions": [
+     "1k",
+     "2k",
+     "4k"
+    ],
+    "aspect_ratio": [
+     "auto",
+     "1:1",
+     "3:2",
+     "2:3",
+     "3:4",
+     "4:3",
+     "4:5",
+     "5:4",
+     "9:16",
+     "16:9",
+     "21:9"
+    ],
+    "max_images": 4,
+    "max_output_images": 4,
+    "max_input_images": 14,
+    "input_image_constraints": {
+     "max_items": 14,
+     "route": {
+      "min_width": 8,
+      "min_height": 8,
+      "max_width": 16384,
+      "max_height": 16384,
+      "max_bytes": 31457280,
+      "formats": [
+       "png",
+       "jpeg",
+       "webp"
+      ],
+      "source": "route-preflight",
+      "note": "NanoGPT route-level validation before provider submission."
+     }
+    }
+   },
+   "tags": [
+    "text-to-image",
+    "image-edit",
+    "4k"
+   ],
+   "category": "image"
+  },
+  {
+   "id": "rev-animated",
+   "object": "model",
+   "created": 1704067200,
+   "owned_by": "zovya",
+   "name": "Rev Animated",
+   "architecture": {
+    "modality": "text->image",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "image"
+    ]
+   },
+   "pricing": {
+    "per_image": {
+     "512x512": 0.0017,
+     "768x768": 0.0017,
+     "512x768": 0.0017,
+     "768x512": 0.0017,
+     "1024x1024": 0.0017,
+     "768x1024": 0.0017,
+     "1024x768": 0.0017,
+     "576x1024": 0.0017,
+     "1024x576": 0.0017
+    },
+    "currency": "USD"
+   },
+   "capabilities": {
+    "image_generation": true,
+    "image_to_image": false,
+    "inpainting": false,
+    "nsfw": false
+   },
+   "supported_parameters": {
+    "max_prompt_characters": 3000,
+    "prompt_length": {
+     "status": "known",
+     "unit": "utf16_code_units",
+     "trim_whitespace": true
+    },
+    "resolutions": [
+     "512x512",
+     "768x768",
+     "512x768",
+     "768x512",
+     "1024x1024",
+     "768x1024",
+     "1024x768",
+     "576x1024",
+     "1024x576"
+    ],
+    "max_images": 20,
+    "max_output_images": 20
+   },
+   "category": "More"
+  }
+ ],
+ "meta": {
+  "count": 2
+ }
+}

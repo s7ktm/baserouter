@@ -1,0 +1,129 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "pruna-ai/p-video/text-to-video",
+   "object": "model",
+   "created": 1778544000,
+   "owned_by": "prunaai",
+   "name": "P-Video",
+   "architecture": {
+    "modality": "text->video",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "video"
+    ]
+   },
+   "pricing": {
+    "currency": "USD",
+    "per_second_by_resolution": {
+     "720p": 0.02,
+     "1080p": 0.04
+    },
+    "default_duration": 5,
+    "default_resolution": "720p"
+   },
+   "capabilities": {
+    "video_generation": true,
+    "text_to_video": true,
+    "image_to_video": false,
+    "video_to_video": false,
+    "audio_input": false,
+    "audio_generation": false,
+    "nsfw": true
+   },
+   "supported_parameters": {},
+   "label": "NEW",
+   "tags": [
+    "text-to-video",
+    "prunaai"
+   ],
+   "category": "video"
+  },
+  {
+   "id": "kling-lipsync-t2v",
+   "object": "model",
+   "created": 1704067200,
+   "owned_by": "kling",
+   "name": "Kling Lipsync T2V",
+   "architecture": {
+    "modality": "text+video->video",
+    "input_modalities": [
+     "text",
+     "video"
+    ],
+    "output_modalities": [
+     "video"
+    ]
+   },
+   "pricing": {
+    "currency": "USD",
+    "per_video": 0.14
+   },
+   "capabilities": {
+    "video_generation": true,
+    "text_to_video": true,
+    "image_to_video": false,
+    "video_to_video": true,
+    "audio_input": false,
+    "audio_generation": true,
+    "nsfw": false
+   },
+   "supported_parameters": {},
+   "tags": [
+    "kling",
+    "lip-sync",
+    "avatar"
+   ],
+   "category": "Avatars"
+  },
+  {
+   "id": "lucy-edit-dev",
+   "object": "model",
+   "created": 1704067200,
+   "owned_by": "lucy",
+   "name": "Lucy Edit Dev",
+   "architecture": {
+    "modality": "text+video->video",
+    "input_modalities": [
+     "text",
+     "video"
+    ],
+    "output_modalities": [
+     "video"
+    ]
+   },
+   "pricing": {
+    "currency": "USD",
+    "per_second": 0.03,
+    "supported_durations": [
+     5,
+     10,
+     30,
+     60,
+     120
+    ]
+   },
+   "capabilities": {
+    "video_generation": true,
+    "text_to_video": true,
+    "image_to_video": false,
+    "video_to_video": true,
+    "audio_input": false,
+    "audio_generation": false,
+    "nsfw": true
+   },
+   "supported_parameters": {},
+   "tags": [
+    "video-edit",
+    "lucy"
+   ],
+   "category": "video"
+  }
+ ],
+ "meta": {
+  "count": 3
+ }
+}

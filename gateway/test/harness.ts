@@ -1,5 +1,5 @@
 // A whole gateway for a test: an in-memory database, a real HTTP server on a free
-// port, and the fake OpenRouter behind it.
+// port, and the fake OpenRouter and the fake NanoGPT behind it.
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { BUN_BODY_LIMIT, createApp } from "../src/app.ts";
@@ -7,6 +7,7 @@ import type { Deps } from "../src/deps.ts";
 import type { Upstream } from "../src/openrouter.ts";
 import { hashKey, keyHint, newRouteKey, seal } from "../src/secrets.ts";
 import { openDb, Store, type RouteRow } from "../src/store.ts";
+import { startFakeNano } from "./fake-nanogpt.ts";
 import { FAKE_KEY, startFake } from "./fake-openrouter.ts";
 
 export async function until(condition: () => boolean, ms = 2000): Promise<void> {
@@ -17,14 +18,18 @@ export async function until(condition: () => boolean, ms = 2000): Promise<void> 
   }
 }
 
-export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetch; providerKey?: string | null; maxRequestBytes?: number; mediaDir?: string | null; mediaMaxBytes?: number } = {}) {
+// providerKey: the key held for OpenRouter, or null for no OpenRouter. nanoKey: the key held
+// for NanoGPT (NANO_KEY for the fake's), which is added after OpenRouter; left out, no NanoGPT.
+export function startGateway(options: { upstream?: Upstream; nanogpt?: Upstream; nanoKey?: string; fetch?: typeof fetch; providerKey?: string | null; maxRequestBytes?: number; mediaDir?: string | null; mediaMaxBytes?: number } = {}) {
   const fake = startFake();
+  const nano = startFakeNano();
   const store = new Store(openDb(":memory:"));
   const clock = { now: null as number | null }; // set it to freeze time
   const deps: Deps = {
     store,
     master: randomBytes(32),
     upstream: options.upstream ?? { baseUrl: fake.url, fetch: options.fetch ?? fetch },
+    nanogpt: options.nanogpt ?? { baseUrl: `${nano.url}/api`, fetch: options.fetch ?? fetch },
     now: () => clock.now ?? Date.now(),
     costLookupDelays: [0],
     videoPollDelays: [10],
@@ -47,6 +52,13 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     store.addProvider({
       id: "openrouter", kind: "openrouter", name: "OpenRouter", key_sealed: seal(deps.master, providerKey), key_hint: keyHint(providerKey),
       status: "up", error: null, models: 3, checked_at: 0, created_at: 0,
+    });
+  }
+
+  if (options.nanoKey !== undefined) {
+    store.addProvider({
+      id: "nanogpt", kind: "nanogpt", name: "NanoGPT", key_sealed: seal(deps.master, options.nanoKey), key_hint: keyHint(options.nanoKey),
+      status: "up", error: null, models: 11, checked_at: 0, created_at: 1,
     });
   }
 
@@ -81,13 +93,14 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
   }
 
   return {
-    url, fake, store, deps, clock, addRoute, spend, chat,
+    url, fake, nano, store, deps, clock, addRoute, spend, chat,
     lastRequest: () => store.requests({ limit: 1 })[0] ?? null,
     settled: async () => void (await Promise.all([...deps.background])),
     async stop() {
       await Promise.all([...deps.background]);
       await server.stop(true);
       await fake.stop();
+      await nano.stop();
       store.db.close();
     },
   };

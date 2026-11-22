@@ -1,0 +1,12 @@
+{
+ "runId": "vid_fixture0000000000001",
+ "id": "vid_fixture0000000000001",
+ "status": "pending",
+ "model": "pruna-ai/p-video/text-to-video",
+ "requestId": "vid_fixture0000000000001",
+ "eventsUrl": "/api/generate-video/events?runId=vid_fixture0000000000001",
+ "statusTransport": "webhook_sse",
+ "cost": 0.015,
+ "paymentSource": "USD",
+ "seed": 1586481066
+}

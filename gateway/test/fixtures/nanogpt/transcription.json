@@ -1,0 +1,11 @@
+{
+ "text": " Hello from the Gateway Test.  This is one short sentence.",
+ "language": "en",
+ "duration": 4.35,
+ "usage": {
+  "seconds": 4.35,
+  "type": "duration",
+  "cost": 0.001,
+  "currency": "USD"
+ }
+}
