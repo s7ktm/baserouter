@@ -77,9 +77,13 @@ const frame = (src) => (src.startsWith("data:") || src.includes("#") ? src : `${
 
 function size(ctx, bytes) {
   const units = [["GB", 1024 ** 3], ["MB", 1024 ** 2], ["KB", 1024]];
-  const [unit, per] = units.find(([, per]) => bytes >= per) ?? ["KB", 1024];
+  let at = units.findIndex(([, per]) => bytes >= per);
+  if (at < 0) at = units.length - 1;
+  // 1,013 KB reads better as 1 MB: a number that would show four digits moves up a unit.
+  if (at > 0 && bytes / units[at][1] >= 999.5) at--;
+  const [unit, per] = units[at];
   const value = bytes / per;
-  return `${ctx.num(value, value >= 10 || Number.isInteger(value) ? 0 : 1)} ${unit}`;
+  return `${ctx.num(value, value >= 10 || Number.isInteger(Math.round(value * 10) / 10) ? 0 : 1)} ${unit}`;
 }
 
 // One image, large, one sound to listen to, or one video to watch, with what made it.
