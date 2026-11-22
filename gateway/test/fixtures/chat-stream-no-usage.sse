@@ -1,0 +1,6 @@
+data: {"id":"gen-1795300004-FixtureNoUsage000001","provider":"OpenAI","model":"openai/gpt-5-mini","object":"chat.completion.chunk","created":1795300003,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null,"native_finish_reason":null,"logprobs":null}]}
+
+data: {"id":"gen-1795300004-FixtureNoUsage000001","provider":"OpenAI","model":"openai/gpt-5-mini","object":"chat.completion.chunk","created":1795300003,"choices":[{"index":0,"delta":{"role":"assistant","content":"Cut"},"finish_reason":null,"native_finish_reason":null,"logprobs":null}]}
+
+data: {"id":"gen-1795300004-FixtureNoUsage000001","provider":"OpenAI","model":"openai/gpt-5-mini","object":"chat.completion.chunk","created":1795300003,"choices":[{"index":0,"delta":{"role":"assistant","content":" off"},"finish_reason":null,"native_finish_reason":null,"logprobs":null}]}
+

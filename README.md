@@ -12,10 +12,17 @@ It comes in three looks. They share everything underneath; pick the one you like
 
 ## Status
 
-The design is done; the gateway is not written yet. What exists today is a clickable prototype on made-up data. The design rules and the three skins are described in [DESIGN.md](DESIGN.md).
+The design is done and the gateway has its first slice: one provider (OpenRouter), the one address, budgets and a record of every request. The panel is still a clickable prototype on made-up data; it is not wired to the gateway yet. The design rules and the three skins are described in [DESIGN.md](DESIGN.md).
 
+- `gateway/` — the gateway. See [its README](gateway/README.md) for how to run it.
 - `design/prototype/` — the home screen in three skins (Socket, Display, Home) running on one shared state. See [its README](design/prototype/README.md) for how skins work and how to add one.
 - `design/directions/` — the first three stand-alone mock-ups the skins grew out of.
+
+To run the gateway:
+
+```bash
+cd gateway && bun install && bun start
+```
 
 To run the prototype:
 
