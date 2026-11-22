@@ -262,3 +262,15 @@ a.br-btn{color:inherit;text-decoration:none}
 .br-seg + .br-try-who{margin-top:10px}
 .br-try-shot{width:100%;margin:0}
 .br-try-kept{min-height:44px;margin:-8px 0;font-size:14px;font-weight:600;color:var(--br-ink-2);text-decoration-thickness:1px}
+
+/* ---- added with speech, transcription and video in the playground ---- */
+.br-try-file{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0}
+.br-try-pick{position:relative;cursor:pointer}
+.br-try-pick:has(input:focus-visible){outline:3px solid var(--br-ink);outline-offset:2px}
+.br-try-input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.br-try-chosen{min-width:0;font-weight:600;overflow-wrap:anywhere}
+.br-try-audio{margin:0}
+.br-try-elapsed{font-variant-numeric:tabular-nums}
+.br-try-kinds{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr))}
+.br-try-kinds button{padding:0 8px}
+.br-compose .br-actions:not(:has(*)){display:none}

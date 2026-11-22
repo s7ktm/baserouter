@@ -202,14 +202,17 @@ The panel's "Try a model" sends a request as one of the routes and shows what co
 |---|---|
 | `POST /api/routes/:id/try` | `/v1/chat/completions` |
 | `POST /api/routes/:id/try/images` | `/v1/images/generations` |
+| `POST /api/routes/:id/try/speech` | `/v1/audio/speech` |
+| `POST /api/routes/:id/try/transcriptions` | `/v1/audio/transcriptions` |
+| `POST /api/routes/:id/try/videos` | `/v1/videos` |
 
 From there on it is that route's request like any other:
 
 - It is refused when the route is switched off (HTTP 403) or over its budget (HTTP 402), and may only name a model the route may use. The refusals are the ones in the table above.
 - It goes to the model's sources in order, counts as running on the route while it does, and is cancelled at the provider when the panel stops it.
-- The body goes on as written. The panel sends a model and a message, or a model and a `prompt`; whatever else a body holds (a size, a provider's own parameters) is passed on untouched, as at the one address.
+- The body goes on as written. The panel sends a model and a message, a model and a `prompt` (an image, a video), a model and an `input` (speech), or a form with a model and a sound file (a transcription); whatever else a body holds (a size, a voice, a provider's own parameters) is passed on untouched, as at the one address.
 - It gets one row, the route's, with its cost, and that cost counts towards the route's budget. Nothing marks the row as the playground's.
-- An image is kept when the route keeps what it makes, and then appears in activity like any other.
+- An image, a sound or a video is kept when the route keeps what it makes, and then appears in activity like any other.
 - Nothing of a conversation is stored or logged, as for any chat request.
 
 So the panel can say what answered, what it cost and how long it took, the answer names its row:
@@ -221,11 +224,21 @@ So the panel can say what answered, what it cost and how long it took, the answe
   data: {"id": 12, "route": "…", "requestedModel": "smart", "model": "openai/gpt-5-mini", "provider": "OpenRouter", "promptTokens": 8, "completionTokens": 6, "cost": 0.0000143, "costSource": "provider", "firstTokenMs": 412, "totalMs": 1380, "ok": true, …}
   ```
 
-- **An answer that is not a stream** (an image, a chat sent without `stream`, a provider's refusal) comes back as it is, with the header `X-BaseRouter-Request: 12`. `GET /api/requests/12` gives the row, with `provider`, the name of the provider that answered, and `media`, the images it kept.
+- **An answer that is not a stream** (an image, a transcription, a started video job, a chat sent without `stream`, a provider's refusal) comes back as it is, with the header `X-BaseRouter-Request: 12`. `GET /api/requests/12` gives the row, with `provider`, the name of the provider that answered, and `media`, the images, sound and video it kept.
+- **Speech** is sent to the client as it arrives at the one address, but here it is read whole first and then sent with the header, since its row is written only once the sound has ended. A spoken answer is short.
 
 Some models answer with a link to the image rather than the image itself. The panel shows only its own files and data URLs, so it shows such an image from the copy the gateway keeps, once it has fetched it; when the route keeps nothing, it offers the link to open.
 
-A cost that is not known when the answer ends is `null`; the row has it once the gateway has asked the provider. Answers at the one address (`/v1`) carry neither the event nor the header. The body may be up to 1 MB, like every body the management API takes. Speech, transcriptions and video are not offered here yet.
+A cost that is not known when the answer ends is `null`; the row has it once the gateway has asked the provider. Answers at the one address (`/v1`) carry neither the event nor the header. The body may be up to 1 MB, like every body the management API takes, except a transcription's: its sound file may be as large as the one address takes (`BASEROUTER_MAX_REQUEST_MB`, 64 MB unless set), counted as it arrives and only once the session is checked.
+
+A video is made as a job. The panel cannot ask `/v1/videos/:id` about it, which needs the route's key, so it asks the session's equivalents, which hold for jobs of that route only:
+
+| Request | Gives what this gives |
+|---|---|
+| `GET /api/routes/:id/videos/:job` | `GET /v1/videos/:job` |
+| `GET /api/routes/:id/videos/:job/content?index=0` | `GET /v1/videos/:job/content?index=0` |
+
+A job started from the playground answers with links (`polling_url`, `unsigned_urls`) that lead to these. The video is sent so that the browser can run nothing in it, like a kept file. Once the job has ended the panel plays the copy the gateway kept, or, when the route keeps nothing, the video from the second address.
 
 ## What is kept, and how
 

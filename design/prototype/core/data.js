@@ -3,7 +3,7 @@
 
 const routes = [
   { id: "coding", name: { en: "Coding agent", tr: "Kod ajanı" }, icon: "code", color: "#2B62D9", enabled: true, busy: true, today: 0.51, used: 11.3, budget: 25, keyHint: "4f2a", models: ["anthropic/claude-sonnet-5.5", "gpt-5-mini", "smart"] },
-  { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["gpt-5-mini", "hexgrad/kokoro-82m", "google/gemini-3.1-flash-lite-image"] },
+  { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["gpt-5-mini", "hexgrad/kokoro-82m", "google/gemini-3.1-flash-lite-image", "qwen/qwen3-asr-0.6b", "x-ai/grok-imagine-video-1.5-lite"] },
   { id: "arm", name: { en: "Robot arm", tr: "Robot kol" }, icon: "robot", color: "#1C2030", enabled: true, busy: false, today: 0.31, used: 1.1, budget: 5, keyHint: "b07d", models: ["google/gemini-2.5-flash"] },
   { id: "news", name: { en: "Newsletter bot", tr: "Bülten botu" }, icon: "mail", color: "#8A4B08", enabled: true, busy: false, today: 0, used: 3, budget: 3, keyHint: "e3a8", models: ["gpt-5-mini", "google/gemini-3.1-flash-lite-image", "google/veo-3.1-lite"] },
   { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: [], keepMedia: false },
@@ -158,6 +158,8 @@ export const models = [
   { name: "google/gemini-3.1-flash-lite-image", makes: ["image", "text"], from: [place("openrouter", "google/gemini-3.1-flash-lite-image")] },
   { name: "hexgrad/kokoro-82m", makes: ["speech"], from: [place("openrouter", "hexgrad/kokoro-82m")] },
   { name: "google/veo-3.1-lite", makes: ["video"], from: [place("openrouter", "google/veo-3.1-lite")] },
+  { name: "qwen/qwen3-asr-0.6b", makes: ["transcription"], from: [place("openrouter", "qwen/qwen3-asr-0.6b")] },
+  { name: "x-ai/grok-imagine-video-1.5-lite", makes: ["video"], from: [place("openrouter", "x-ai/grok-imagine-video-1.5-lite")] },
   { name: "llama3.2", makes: ["text"], from: [place("ollama", "llama3.2")] },
 ];
 base.models = models;
@@ -213,6 +215,20 @@ export const playSample = {
   imageAsk: { en: "A floor plan sketch of a living room, top view.", tr: "Bir oturma odasının üstten görünüşlü kat planı eskizi." },
   image: picture(2, 768, 512),
   imageFacts: { cost: 0.034, totalMs: 4200 },
+  // words spoken, a sound file written down, and a video made, each with what is known about it
+  speechAsk: { en: "The front door has been open for ten minutes.", tr: "Ön kapı on dakikadır açık." },
+  sound: tone(392, 2),
+  speechFacts: { cost: 0.00002, totalMs: 900 },
+  file: { name: "kitchen-note.m4a", bytes: 421888 },
+  heard: {
+    en: "Remind me to buy milk on the way home, and to call the plumber about the kitchen tap.",
+    tr: "Eve dönerken süt almamı ve mutfak musluğu için tesisatçıyı aramamı hatırlat.",
+  },
+  heardFacts: { cost: 0.0003, totalMs: 1300 },
+  videoAsk: { en: "Morning light moving slowly across a green garden.", tr: "Yeşil bir bahçenin üzerinde yavaşça ilerleyen sabah ışığı." },
+  video: clip(2),
+  videoFacts: { cost: 0.02, totalMs: 94000 },
+  videoSoFar: 130000,
   error: "429 rate limited: too many requests, try again in 20 seconds",
 };
 

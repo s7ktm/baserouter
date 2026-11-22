@@ -35,7 +35,8 @@ export interface Deps {
 export type Env = {
   // Bun's server, when there is one. Used to lift the idle timeout for long responses.
   Bindings: { server?: { timeout(request: Request, seconds: number): void } };
-  Variables: { route: RouteRow };
+  // base: where the links in a video job's answer lead, when not the one address (see proxy.ts)
+  Variables: { route: RouteRow; base?: string };
 };
 
 // Errors look the way OpenAI-compatible clients expect.

@@ -131,6 +131,65 @@ export async function tryImage(routeId, body, { signal, keeps }) {
   const kept = (row?.media ?? []).map((m) => m.src);
   return { images: images.map((src, i) => (src.startsWith("data:") ? src : kept[i] ?? src)), row };
 }
+// The playground's other kinds. Each sends what an app would send to the one address, and
+// throws what the gateway or the provider said when it was refused.
+async function sendTry(routeId, what, body, signal) {
+  const form = body instanceof FormData;
+  const res = await fetch(`/api/routes/${encodeURIComponent(routeId)}/try/${what}`, {
+    method: "POST",
+    headers: form ? {} : { "Content-Type": "application/json" },
+    body: form ? body : JSON.stringify(body),
+    credentials: "same-origin",
+    signal,
+  });
+  const json = (res.headers.get("content-type") ?? "").includes("json");
+  if (!res.ok || json) {
+    const answer = json ? await res.clone().json().catch(() => null) : null;
+    if (res.status === 401 && answer?.error?.code === "signed_out") throw new SignedOut();
+    if (!res.ok || answer?.error) throw Object.assign(new Error(messageOf(answer?.error) ?? `HTTP ${res.status}`), { code: answer?.error?.code ?? null });
+  }
+  return res;
+}
+const rowOf = (res) => {
+  const id = res.headers.get("x-baserouter-request");
+  return id ? call("GET", `/requests/${encodeURIComponent(id)}`).then((found) => found.request).catch(() => null) : Promise.resolve(null);
+};
+
+// Speech: the sound comes whole, as the provider sent it, and is played from a data URL
+// (the panel plays only its own files and data URLs). No sound in it is an empty answer.
+export async function trySpeech(routeId, body, { signal }) {
+  const res = await sendTry(routeId, "speech", body, signal);
+  const type = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  const sound = bytes.length && type.startsWith("audio/") ? `data:${type};base64,${btoa(binary)}` : null;
+  return { sound, row: await rowOf(res) };
+}
+
+// A sound file written down: sent as a form, the way OpenAI's clients send it.
+export async function tryTranscription(routeId, { model, file }, { signal }) {
+  const form = new FormData();
+  form.set("model", model);
+  form.set("file", file, file.name);
+  const res = await sendTry(routeId, "transcriptions", form, signal);
+  const answer = await res.json().catch(() => null);
+  return { text: typeof answer?.text === "string" ? answer.text : "", row: await rowOf(res) };
+}
+
+// A video: the job is started, and its id and row come back at once.
+export async function tryVideo(routeId, body, { signal }) {
+  const res = await sendTry(routeId, "videos", body, signal);
+  const job = await res.json().catch(() => null);
+  if (typeof job?.id !== "string") throw new Error(`HTTP ${res.status}`);
+  return { job, rowId: res.headers.get("x-baserouter-request") };
+}
+
+// How far a video job the playground started has got, and once it is done, its row: what it
+// cost and what was kept of it.
+export const videoJob = (routeId, jobId) => call("GET", `/routes/${encodeURIComponent(routeId)}/videos/${encodeURIComponent(jobId)}`);
+export const requestRow = (id) => call("GET", `/requests/${encodeURIComponent(id)}`).then((found) => found.request);
+
 // What a base64 image is, from how it starts, when the answer does not say.
 const typeOf = (b64) => (b64.startsWith("/9j/") ? "image/jpeg" : b64.startsWith("UklGR") ? "image/webp" : b64.startsWith("R0lG") ? "image/gif" : b64.startsWith("PHN2Zy") || b64.startsWith("PD94bWw") ? "image/svg+xml" : "image/png");
 

@@ -1,15 +1,28 @@
 // The playground: try a model as one of the routes, and see what comes back, without
-// writing a client. A chat, or an image. The request is that route's in every way (its switch,
-// its budget, its models, one row in its requests); a conversation lives in this page only.
+// writing a client. A chat, an image, speech, a transcription or a video. The request is that
+// route's in every way (its switch, its budget, its models, one row in its requests); what was
+// asked and answered lives in this page only.
 //
-// It asks only for what every model of a kind needs: a message, a description of an image.
-// Everything else a provider takes (sizes, masks, its own parameters) is the provider's; the
-// gateway sends a body on as written, so those are sent with a client, and are not modelled here.
+// It asks only for what every model of a kind needs: a message, a description, the words to
+// speak, a sound file. Everything else a provider takes (sizes, voices, its own parameters) is
+// the provider's; the gateway sends a body on as written, so those are sent with a client, and
+// are not modelled here.
 import { sheet, chevron } from "./sheet.js";
+import { size } from "./activity.js";
 
 // What can be tried, and what a model must make for it.
-export const KINDS = ["chat", "image"];
-const MAKES = { chat: "text", image: "image" };
+export const KINDS = ["chat", "image", "speech", "transcription", "video"];
+const MAKES = { chat: "text", image: "image", speech: "speech", transcription: "transcription", video: "video" };
+
+// How each kind is asked for: the field's words, the button, the form, and the note shown
+// before anything was asked. A transcription is asked for with a file, not words.
+const ASK = {
+  chat: { field: "tryMessage", hint: "tryPlaceholder", button: "send", form: "try", note: "tryNote" },
+  image: { field: "imageAsk", hint: "imageAsk", button: "makeImage", form: "try-image", note: "tryNoteImage" },
+  speech: { field: "speechAsk", hint: "speechAsk", button: "makeSpeech", form: "try-speech", note: "tryNoteSpeech" },
+  transcription: { button: "transcribe", form: "try-transcription", note: "tryNoteTranscription" },
+  video: { field: "videoAsk", hint: "videoAsk", button: "makeVideo", form: "try-video", note: "tryNoteVideo" },
+};
 
 // The models a route may ask for that make a kind: from its own list, or every model in
 // BaseRouter. A model whose kind is not known counts as one that writes text.
@@ -46,13 +59,15 @@ export function playgroundSheet(ctx, ui) {
 
   const { route, kinds, kind, models, model } = playNow(data, play);
   const status = ctx.status(route);
-  const image = kind === "image";
+  const chat = kind === "chat";
+  const how = ASK[kind];
   const turns = play.turns[kind];
   const running = Boolean(play.running);
 
-  // The kinds this route has models for; one kind needs no tabs.
+  // The kinds this route has models for; one kind needs no tabs. More than three sit in two
+  // even rows: five in one row leave too little room for their names.
   const tabs = kinds.length > 1
-    ? `<div class="br-seg br-show" role="group" aria-label="${t("tryKinds")}">${kinds.map((k) =>
+    ? `<div class="br-seg br-show br-try-kinds" style="--cols:${kinds.length > 3 ? Math.ceil(kinds.length / 2) : kinds.length}" role="group" aria-label="${t("tryKinds")}">${kinds.map((k) =>
         `<button data-action="try-kind" data-kind="${k}" aria-pressed="${k === kind}"${running ? " disabled" : ""}>${t(`try_${k}`)}</button>`).join("")}</div>`
     : "";
 
@@ -82,28 +97,40 @@ export function playgroundSheet(ctx, ui) {
            <p class="br-actions"><button class="br-btn main" data-action="open" data-id="${esc(route.id)}" data-edit="model">${t("allowModel")}</button></p>`
         : "";
 
+  const draw = { chat: answer, image: made, speech: spoken, transcription: written, video: filmed }[kind];
   const list = turns.map((turn, i) => `
     <li class="br-turn">
       <p class="br-said br-keep">${esc(turn.ask)}</p>
-      ${image ? made(ctx, turn, i) : answer(ctx, turn, i)}
+      ${draw(ctx, turn, i)}
     </li>`).join("");
 
-  const system = !image && (ui.editing === "system" || play.system)
+  const system = chat && (ui.editing === "system" || play.system)
     ? `<label class="br-label" for="br-system">${t("systemLabel")}</label>
        <textarea class="br-input wide br-area br-keep" id="br-system" rows="2" data-play="system" placeholder="${t("systemHint")}"${ui.editing === "system" ? " data-autofocus" : ""}>${esc(play.system)}</textarea>`
     : "";
 
+  // A transcription asks for a file: the field itself is hidden behind a button that says
+  // what was chosen, since drawing the sheet again would empty a file field. Until a file is
+  // chosen, choosing one is the main thing to do; then sending it is.
+  const file = play.file;
+  const field = kind === "transcription"
+    ? `<p class="br-try-file">
+        <label class="br-btn${file ? "" : " main"} br-try-pick"><input type="file" class="br-try-input" accept="audio/*" data-play="file"${running ? " disabled" : ""}${ui.editing === "system" ? "" : " data-autofocus"}>${t(file ? "fileOther" : "fileChoose")}</label>
+        ${file ? `<span class="br-keep br-try-chosen">${esc(file.name)}, ${size(ctx, file.size)}</span>` : ""}
+      </p>`
+    : `<textarea class="br-input wide br-area br-keep" id="br-draft" rows="2" data-play="draft" aria-label="${t(how.field)}" placeholder="${t(how.hint)}" required${ui.editing === "system" ? "" : " data-autofocus"}>${esc(play.draft[kind])}</textarea>`;
+
   const compose = blocked
     ? blocked
-    : `<form class="br-form br-compose" data-form="${image ? "try-image" : "try"}">
+    : `<form class="br-form br-compose" data-form="${how.form}">
         ${system}
-        <textarea class="br-input wide br-area br-keep" id="br-draft" rows="2" data-play="draft" aria-label="${t(image ? "imageAsk" : "tryMessage")}" placeholder="${t(image ? "imageAsk" : "tryPlaceholder")}" required${ui.editing === "system" ? "" : " data-autofocus"}>${esc(play.draft[kind])}</textarea>
+        ${field}
         <p class="br-actions">
           ${running
             ? `<button class="br-btn main" type="button" data-action="try-stop">${t("stop")}</button>`
-            : `<button class="br-btn main" type="submit">${t(image ? "makeImage" : "send")}</button>`}
+            : kind === "transcription" && !file ? "" : `<button class="br-btn main" type="submit">${t(how.button)}</button>`}
           ${turns.length && !running ? `<button class="br-btn" type="button" data-action="try-clear">${t("startOver")}</button>` : ""}
-          ${image || system ? "" : `<button class="br-btn quiet" type="button" data-action="edit" data-edit="system">${t("systemAdd")}</button>`}
+          ${!chat || system ? "" : `<button class="br-btn quiet" type="button" data-action="edit" data-edit="system">${t("systemAdd")}</button>`}
         </p>
       </form>`;
 
@@ -111,7 +138,7 @@ export function playgroundSheet(ctx, ui) {
     title,
     sub: t("trySub"),
     body: `${tabs}${pickers}
-      ${list ? `<ol class="br-turns">${list}</ol>` : blocked ? "" : `<p class="br-note br-try-note">${t(image ? "tryNoteImage" : "tryNote")}</p>`}
+      ${list ? `<ol class="br-turns">${list}</ol>` : blocked ? "" : `<p class="br-note br-try-note">${t(how.note)}</p>`}
       ${compose}`,
   });
 }
@@ -169,14 +196,66 @@ function made(ctx, turn, i) {
   if (turn.state === "waiting") return `<p class="br-busy" role="status"><i></i>${t("imageWaiting")}</p>`;
   if (turn.state === "failed") return `<p class="br-banner br-try-failed" role="alert">${turn.error ? t("actionFailed", { error: esc(turn.error) }) : t("imageNone")}</p>`;
   if (turn.state === "stopped") return `<p class="br-note">${t("tryStopped")}</p>`;
-  const facts = turn.facts;
   // An image the panel cannot show itself (a provider's link, when the route keeps nothing) is offered to open.
   const own = (src) => src.startsWith("data:") || src.startsWith("/");
   return `${turn.images.map((src) => own(src)
       ? `<figure class="br-shot br-try-shot"><img src="${esc(src)}" alt="${esc(turn.ask)}"></figure>`
       : `<p class="br-note">${t("imageLink")}</p><p class="br-actions"><a class="br-btn" href="${esc(src)}" target="_blank" rel="noopener noreferrer">${t("imageOpen")}</a></p>`).join("")}
-    ${facts ? known(ctx, turn, i, [...who(ctx, facts), cost(ctx, facts), facts.totalMs == null ? null : [t("took"), ctx.secs(facts.totalMs / 1000)]]) : ""}
-    ${turn.kept
-      ? `<button class="br-btn quiet br-try-kept" data-action="go" data-screen="activity" data-show="images" data-filter="${esc(turn.route)}">${t("seeImages")}</button>`
-      : `<p class="br-note">${t("imageNotKept")}</p>`}`;
+    ${plain(ctx, turn, i)}
+    ${kept(ctx, turn, "images", "seeImages", "imageNotKept")}`;
+}
+
+// Under what a route made: where it was kept, or that it is shown here only (as the route was
+// when it asked).
+function kept(ctx, turn, show, see, not) {
+  const { t, esc } = ctx;
+  return turn.kept
+    ? `<button class="br-btn quiet br-try-kept" data-action="go" data-screen="activity" data-show="${show}" data-filter="${esc(turn.route)}">${t(see)}</button>`
+    : `<p class="br-note">${t(not)}</p>`;
+}
+
+// The time an answer took, and its cost: what is known about everything but a chat.
+const plain = (ctx, turn, i) => (turn.facts
+  ? known(ctx, turn, i, [...who(ctx, turn.facts), cost(ctx, turn.facts), turn.facts.totalMs == null ? null : [ctx.t("took"), ctx.secs(turn.facts.totalMs / 1000)]])
+  : "");
+
+// Speech asked for: being made, made (a player), stopped or failed.
+function spoken(ctx, turn, i) {
+  const { t, esc } = ctx;
+  if (turn.state === "waiting") return `<p class="br-busy" role="status"><i></i>${t("speechWaiting")}</p>`;
+  if (turn.state === "failed") return `<p class="br-banner br-try-failed" role="alert">${turn.error ? t("actionFailed", { error: esc(turn.error) }) : t("speechNone")}</p>`;
+  if (turn.state === "stopped") return `<p class="br-note">${t("tryStopped")}</p>`;
+  return `<audio class="br-audio br-try-audio" src="${esc(turn.sound)}" controls preload="metadata" aria-label="${esc(turn.ask)}"></audio>
+    ${plain(ctx, turn, i)}
+    ${kept(ctx, turn, "sounds", "seeSounds", "speechNotKept")}`;
+}
+
+// A sound file written down: being written, written (the text), stopped or failed.
+function written(ctx, turn, i) {
+  const { t, esc } = ctx;
+  if (turn.state === "waiting") return `<p class="br-busy" role="status"><i></i>${t("transcribeWaiting")}</p>`;
+  if (turn.state === "failed") return `<p class="br-banner br-try-failed" role="alert">${turn.error ? t("actionFailed", { error: esc(turn.error) }) : t("transcribeNone")}</p>`;
+  if (turn.state === "stopped") return `<p class="br-note">${t("tryStopped")}</p>`;
+  return `<p class="br-answer br-keep">${esc(turn.text)}</p>${plain(ctx, turn, i)}`;
+}
+
+// A video asked for. It is made as a job that takes minutes, so while it is made the screen
+// stays free: it says how long it has been, and that the job goes on without the page.
+function filmed(ctx, turn, i) {
+  const { t, esc } = ctx;
+  if (turn.state === "waiting") {
+    return `<p class="br-busy" role="status"><i></i>${t("videoWaiting")}</p>
+      <p class="br-note br-try-elapsed" data-elapsed="${i}">${elapsed(ctx, turn)}</p>
+      <p class="br-note">${t("videoWait")}</p>`;
+  }
+  if (turn.state === "failed") return `<p class="br-banner br-try-failed" role="alert">${turn.error ? t("actionFailed", { error: esc(turn.error) }) : t("videoNone")}</p>`;
+  return `<figure class="br-shot br-film br-try-shot"><video src="${esc(turn.video)}" controls playsinline preload="metadata" aria-label="${esc(turn.ask)}"></video></figure>
+    ${plain(ctx, turn, i)}
+    ${kept(ctx, turn, "videos", "seeVideos", "videoNotKept")}`;
+}
+
+// How long a video has been in the making: "2 min 10 s so far".
+export function elapsed(ctx, turn) {
+  const s = Math.max(0, Math.floor(((turn.now ?? Date.now()) - turn.started) / 1000));
+  return ctx.t(s < 60 ? "videoSoFarS" : "videoSoFarM", { m: Math.floor(s / 60), s: s % 60 });
 }

@@ -272,3 +272,145 @@ test("an answer from the one address carries no such header", async () => {
   expect(res.headers.get("x-baserouter-request")).toBeNull();
   expect((await gw.chat(route.key, hello())).headers.get("x-baserouter-request")).toBeNull();
 });
+
+// Speech, transcription and video, the other kinds the playground tries.
+function tryAs(routeId: string, what: string, body: string | FormData, headers: Record<string, string> = { ...auth, "Content-Type": "application/json" }) {
+  return fetch(`${gw.url}/api/routes/${routeId}/try/${what}`, { method: "POST", headers, body });
+}
+const speech = (extra: object = {}) => JSON.stringify({ model: "hexgrad/kokoro-82m", input: "Hello from BaseRouter.", ...extra });
+function soundForm(bytes: number) {
+  const form = new FormData();
+  form.set("model", "qwen/qwen3-asr-0.6b");
+  form.set("file", new File([new Uint8Array(bytes).fill(7)], "speech.mp3", { type: "audio/mpeg" }));
+  return form;
+}
+const video = { model: "x-ai/grok-imagine-video-1.5-lite", prompt: "A paper boat drifting on a calm pond." };
+type Job = { id: string; status: string; polling_url: string; unsigned_urls?: string[] };
+
+test("speech asked for as a route comes back whole, as the provider sent it, and names its row", async () => {
+  const route = gw.addRoute();
+  const res = await tryAs(route.id, "speech", speech());
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("audio/mpeg");
+  expect(new Uint8Array(await res.arrayBuffer())).toEqual(await fixtureBytes("speech.mp3"));
+
+  // Only the words and the model were sent: no voice, nothing else.
+  expect(new TextDecoder().decode(gw.fake.posts.at(-1)!.body)).toBe(speech());
+  const row = gw.lastRequest()!;
+  expect(row).toMatchObject({ route_id: route.id, kind: "speech", failure: null });
+  expect(res.headers.get("x-baserouter-request")).toBe(String(row.id));
+  const { body } = await requestOf(res.headers.get("x-baserouter-request"));
+  expect(body.request).toMatchObject({ id: row.id, kind: "speech", ok: true, provider: "OpenRouter" });
+});
+
+test("speech, transcription and video are refused as the route's requests are", async () => {
+  const off = gw.addRoute({ enabled: 0 });
+  const full = gw.addRoute({ budget_usd: 1 });
+  gw.spend(full.id, 1);
+  const narrow = gw.addRoute({ allow: ["openai/gpt-5-mini"] });
+  for (const [what, body] of [["speech", speech()], ["videos", JSON.stringify(video)]] as const) {
+    expect((await tryAs(off.id, what, body, { "Content-Type": "application/json" })).status).toBe(401);
+    expect((await tryAs("nope", what, body)).status).toBe(404);
+    expect(await codeOf(await tryAs(off.id, what, body))).toBe("route_off");
+    expect(await codeOf(await tryAs(full.id, what, body))).toBe("budget_used_up");
+    expect(await codeOf(await tryAs(narrow.id, what, body))).toBe("model_not_allowed");
+  }
+  expect(await codeOf(await tryAs(narrow.id, "transcriptions", soundForm(10), auth))).toBe("model_not_allowed");
+  expect((await tryAs(narrow.id, "transcriptions", soundForm(10), {})).status).toBe(401);
+  expect(gw.fake.posts).toHaveLength(0);
+});
+
+test("a sound file larger than the management API takes is transcribed, up to the one address's limit", async () => {
+  await gw.stop();
+  gw = startGateway({ maxRequestBytes: 3 * 1024 * 1024 });
+  const setup = await fetch(`${gw.url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "a test password" }) });
+  auth = { Authorization: `Bearer ${((await setup.json()) as { token: string }).token}` };
+  const route = gw.addRoute();
+
+  const res = await tryAs(route.id, "transcriptions", soundForm(2 * 1024 * 1024), auth);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual(JSON.parse(new TextDecoder().decode(await fixtureBytes("transcription.json"))));
+  const row = gw.lastRequest()!;
+  expect(row).toMatchObject({ route_id: route.id, kind: "transcription", failure: null });
+  expect(res.headers.get("x-baserouter-request")).toBe(String(row.id));
+  expect(gw.fake.posts.at(-1)!.contentType).toStartWith("multipart/form-data; boundary=");
+
+  // Beyond the one address's limit it is refused, and nothing is sent.
+  const big = await tryAs(route.id, "transcriptions", soundForm(4 * 1024 * 1024), auth);
+  expect(big.status).toBe(413);
+  expect(gw.fake.posts).toHaveLength(1);
+
+  // Every other path of the management API still stops at 1 MB.
+  const image = await tryAs(route.id, "images", JSON.stringify({ ...picture(), prompt: "x".repeat(1.5 * 1024 * 1024) }));
+  expect(image.status).toBe(413);
+  expect((await tryAs(route.id, "transcriptions", soundForm(2 * 1024 * 1024), {})).status).toBe(401);
+});
+
+test("a video job started as a route is asked about and fetched with the session, through the panel's own links", async () => {
+  await gw.stop();
+  const dir = mkdtempSync(join(tmpdir(), "baserouter-play-"));
+  gw = startGateway({ mediaDir: dir });
+  try {
+    const setup = await fetch(`${gw.url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "a test password" }) });
+    auth = { Authorization: `Bearer ${((await setup.json()) as { token: string }).token}` };
+    const route = gw.addRoute();
+    const res = await tryAs(route.id, "videos", JSON.stringify(video));
+    expect(res.status).toBe(202);
+    const job = (await res.json()) as Job;
+    const row = gw.lastRequest()!;
+    expect(row).toMatchObject({ route_id: route.id, kind: "video", failure: null });
+    expect(res.headers.get("x-baserouter-request")).toBe(String(row.id));
+    const at = `/api/routes/${route.id}/videos/${job.id}`;
+    expect(job.polling_url).toBe(at);
+    expect(gw.store.videoJob(job.id)).toMatchObject({ route_id: route.id, request_id: row.id, prompt: video.prompt });
+
+    // Asked about until it is done, as an app asks /v1/videos/:id.
+    let now: Job = job;
+    for (let i = 0; i < 50 && now.status !== "completed"; i++) now = (await (await fetch(`${gw.url}${at}`, { headers: auth })).json()) as Job;
+    expect(now.status).toBe("completed");
+    expect(now.unsigned_urls).toEqual([`${at}/content?index=0`]);
+
+    const content = await fetch(`${gw.url}${now.unsigned_urls![0]}`, { headers: auth });
+    expect(content.status).toBe(200);
+    expect(content.headers.get("content-type")).toBe("video/mp4");
+    expect(content.headers.get("content-security-policy")).toContain("sandbox");
+    expect(content.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await content.arrayBuffer())).toEqual(await fixtureBytes("video.mp4"));
+
+    // Only with the session, and only as the route that started it.
+    expect((await fetch(`${gw.url}${at}`)).status).toBe(401);
+    const other = gw.addRoute();
+    expect((await fetch(`${gw.url}/api/routes/${other.id}/videos/${job.id}`, { headers: auth })).status).toBe(404);
+    expect((await fetch(`${gw.url}/api/routes/${other.id}/videos/${job.id}/content`, { headers: auth })).status).toBe(404);
+    expect((await fetch(`${gw.url}/api/routes/nope/videos/${job.id}`, { headers: auth })).status).toBe(404);
+
+    // It ends as a job of the route does: its cost recorded, its video kept.
+    await until(() => gw.store.videoJob(job.id)?.done_at !== null);
+    await gw.settled();
+    const { body } = await requestOf(String(row.id));
+    expect(body.request).toMatchObject({ kind: "video", cost: 0.02 });
+    await until(() => gw.store.media({ kind: "video", limit: 10 }).length === 1);
+  } finally {
+    await gw.settled();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the sound is kept when the route keeps what it makes", async () => {
+  await gw.stop();
+  const dir = mkdtempSync(join(tmpdir(), "baserouter-play-"));
+  gw = startGateway({ mediaDir: dir });
+  try {
+    const setup = await fetch(`${gw.url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "a test password" }) });
+    auth = { Authorization: `Bearer ${((await setup.json()) as { token: string }).token}` };
+    const route = gw.addRoute();
+    const res = await tryAs(route.id, "speech", speech());
+    await res.arrayBuffer();
+    await gw.settled();
+    const { body } = await requestOf(res.headers.get("x-baserouter-request"));
+    expect(body.request!.media).toEqual([expect.objectContaining({ kind: "audio", prompt: "Hello from BaseRouter." })]);
+  } finally {
+    await gw.settled();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
