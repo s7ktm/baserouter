@@ -26,13 +26,13 @@ The same steps as four requests.
    curl http://localhost:4141/api/setup -H "Content-Type: application/json" -d '{"password": "choose a password"}'
    ```
 
-   Keep the `token` from the answer for the next steps:
+   Keep the `token` from the answer for the next steps. The password needs at least 8 characters.
 
    ```bash
    export BASEROUTER_ADMIN=<token>
    ```
 
-2. Add OpenRouter. The key is tested first and is not stored if the test fails. Reading it from a variable keeps it out of the command itself.
+2. Add OpenRouter. The key is tested first and is not stored if the test fails. Reading it from a variable keeps it out of the command itself, so set `OPENROUTER_API_KEY` first (with `bun run demo`, it is `fixture-openrouter-key`).
 
    ```bash
    curl http://localhost:4141/api/providers -H "Authorization: Bearer $BASEROUTER_ADMIN" -H "Content-Type: application/json" -d "{\"kind\": \"openrouter\", \"key\": \"$OPENROUTER_API_KEY\"}"
@@ -44,7 +44,7 @@ The same steps as four requests.
    curl http://localhost:4141/api/routes -H "Authorization: Bearer $BASEROUTER_ADMIN" -H "Content-Type: application/json" -d '{"name": "Home assistant", "budget": 10, "models": ["openai/gpt-5-mini"]}'
    ```
 
-4. Connect, with the route's key in `BASEROUTER_KEY`:
+4. Connect, with the route's key in `BASEROUTER_KEY` (`export BASEROUTER_KEY=<key>`):
 
    ```bash
    curl http://localhost:4141/v1/chat/completions \
@@ -151,7 +151,7 @@ That sends three short requests, one of them through a fallback, and asks for th
 bun run demo
 ```
 
-This starts the gateway and its panel in front of the stand-in, with a new, empty database each time. Open http://localhost:4141/, choose any password, and add OpenRouter with the key `fixture-openrouter-key`.
+This starts the gateway and its panel in front of the stand-in, with a new, empty database each time. Open http://localhost:4141/, choose any password of 8 characters or more, and add OpenRouter with the key `fixture-openrouter-key`.
 
 ## Not here yet
 
