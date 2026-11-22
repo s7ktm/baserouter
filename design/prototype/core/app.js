@@ -1,7 +1,7 @@
 // The shared mechanism: one state, one set of actions, any skin on top.
 // Served by a gateway, the state is the gateway's and actions go to its API. Anywhere
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
-import { states, catalog, modelChoices, modelCatalogue, providersFor } from "./data.js";
+import { states, catalog, modelChoices, offers, providersFor } from "./data.js";
 import { modelPicker } from "./screens/models.js";
 import { api, gatewayStatus, SignedOut, toData } from "./live.js";
 import { words as core } from "./words.js";
@@ -10,6 +10,7 @@ import { routeSheet } from "./screens/route.js";
 import { providersSheet, addProviderSheet } from "./screens/providers.js";
 import { newRouteSheet } from "./screens/route-new.js";
 import { activitySheet } from "./screens/activity.js";
+import { modelsSheet } from "./screens/model-list.js";
 import { settingsSheet } from "./screens/settings.js";
 import { signInSheet } from "./screens/sign-in.js";
 import { registry } from "../skins/registry.js";
@@ -21,6 +22,7 @@ const screens = {
   "add-provider": addProviderSheet,
   "new-route": newRouteSheet,
   activity: activitySheet,
+  models: modelsSheet,
   settings: settingsSheet,
   "sign-in": signInSheet,
 };
@@ -92,7 +94,7 @@ let opener = null;
 
 function fresh() {
   return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false,
-    find: "", makes: "", more: 0, picking: false, chosen: null, line: null, providers: null };
+    find: "", makes: "", more: 0, picking: false, chosen: null, where: null, model: null, place: null, providers: null };
 }
 if (signedOut) {
   view = { screen: "sign-in" };
@@ -100,13 +102,6 @@ if (signedOut) {
 } else if (data.routes.some((r) => r.id === query.get("route"))) {
   view = { screen: "route", id: query.get("route") };
   ui.editing = query.get("edit");
-  // edit=provider&line=<n>: where that line's model comes from
-  if (ui.editing === "provider") {
-    const route = data.routes.find((r) => r.id === view.id);
-    ui.line = Number(query.get("line") ?? 0);
-    if (!route.models[ui.line]) ui.editing = null;
-    else if (!live) ui.providers = { model: route.models[ui.line].model, list: providersFor(route.models[ui.line].model, query.get("state") === "stress") };
-  }
   // edit=key&step=made: the new key, shown once
   if (ui.editing === "key" && query.get("step") === "made") {
     ui.editing = null;
@@ -133,9 +128,19 @@ if (signedOut) {
 // Choosing a model, from the URL: the search, the category, and for a new route whether the field is open.
 ui.find = query.get("find") ?? "";
 ui.makes = ["text", "image", "speech", "transcription", "video"].includes(query.get("makes")) ? query.get("makes") : "";
+ui.where = query.get("where");
 if (view?.screen === "new-route") {
   ui.picking = ui.editing === "model";
   ui.chosen = defaultModel();
+}
+// Models: model=<name> opens one; edit=rename|place|delete, or edit=via&place=<n> for where
+// one of its OpenRouter places comes from; edit=add on the list.
+if (view?.screen === "models") {
+  ui.model = (data.models ?? []).some((m) => m.name === query.get("model")) ? query.get("model") : null;
+  ui.place = Number(query.get("place") ?? 0);
+  const place = (data.models ?? []).find((m) => m.name === ui.model)?.from[ui.place];
+  if (ui.editing === "via" && !place) ui.editing = null;
+  if (ui.editing === "via" && !live) ui.providers = { model: place.model, list: providersFor(place.model, query.get("state") === "stress") };
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -175,7 +180,8 @@ function context() {
     num,
     data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref,
     catalog: live ? liveCatalog.map((k) => ({ ...k, added: data.providers.some((p) => p.kind === k.kind) })) : catalog,
-    models: live ? liveModels ?? [] : data.models ?? modelCatalogue,
+    // what the providers offer, to find models in (gateway/src/catalogue.ts)
+    offers: live ? (liveModels ?? []).map((m) => ({ ...m, provider: data.providers[0]?.id })) : data.offers ?? offers,
     theme: theme(),
     copied: copiedId === "address",
     skins: registry.map((id) => ({ id, name: skins[id].name[lang], icon: skins[id].icon, active: id === skinId })),
@@ -299,16 +305,16 @@ const actions = {
     if (live && screen === "new-route" && !liveModels?.length) loadModels().then(() => drawPicker());
     // adding the very first provider starts the three-step first run
     const flow = control.dataset.flow === "1" || (screen === "add-provider" && !data.providers.length && !data.routes.length);
-    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null });
+    show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null, model: control.dataset.model ?? null });
   },
   close,
   async edit(control) {
     const editing = control.dataset.edit || null;
     if (live && editing === "model") loadModels().then(() => drawPicker(true));
-    ui.line = editing === "provider" ? Number(control.dataset.line) : null;
-    if (editing === "provider") loadProviders();
+    ui.place = editing === "via" ? Number(control.dataset.place) : null;
+    if (editing === "via") loadProviders();
     ui.editing = editing;
-    Object.assign(ui, { find: "", makes: "", more: 0 });
+    Object.assign(ui, { find: "", makes: "", more: 0, where: null });
     ui.error = null;
     ui.saved = false;
     ui.focus = Boolean(editing);
@@ -336,7 +342,7 @@ const actions = {
   "remove-model"(control) {
     const route = data.routes.find((r) => r.id === control.dataset.id);
     if (!route || route.models.length < 2) return;
-    route.models = route.models.filter((_, i) => i !== Number(control.dataset.line));
+    route.models = route.models.filter((name) => name !== control.dataset.model);
     ui.editing = null;
     render();
     if (live) send(api.setModels(route.id, route.models));
@@ -429,36 +435,64 @@ const actions = {
   "more-models"() { ui.more++; drawPicker(); },
   "pick-open"() { Object.assign(ui, { picking: true, find: "", makes: "", more: 0 }); drawPicker(true); },
   "pick-close"() { ui.picking = false; drawPicker(); },
+  where(control) { ui.where = control.dataset.where; ui.more = 0; ui.makes = ""; drawPicker(); },
+  // A row of the picker: a model in BaseRouter (its name), or one a provider offers
+  // ("<provider>|<id>"), which becomes a model in BaseRouter first, unless it already is one.
   "pick-model"(control) {
-    const model = control.dataset.model;
     const picker = control.closest("#br-picker");
-    if (picker?.dataset.mode !== "add") {
-      ui.chosen = model;
-      ui.picking = false;
+    const mode = picker?.dataset.mode;
+    const value = control.dataset.model;
+    const offer = value.includes("|") ? context().offers.find((o) => `${o.provider}|${o.id}` === value) : null;
+    if (mode === "place") {
+      const model = data.models.find((m) => m.name === picker.dataset.for);
+      if (!model || !offer || model.from.some((p) => p.provider === offer.provider && p.model === offer.id && !p.via)) return;
+      model.from.push({ provider: offer.provider, model: offer.id, via: null });
+      ui.editing = null;
+      return render();
+    }
+    const name = offer ? ensureModel(offer) : value;
+    if (mode === "choose") {
+      Object.assign(ui, { chosen: name, picking: false });
       drawPicker();
-      app.querySelector("#br-picker .br-btn")?.focus();
-      return;
+      return app.querySelector("#br-picker .br-btn")?.focus();
+    }
+    if (mode === "add") {
+      Object.assign(ui, { model: name, editing: null, focus: true });
+      return render();
     }
     const route = data.routes.find((r) => r.id === picker.dataset.id);
-    if (!route || route.models.some((l) => l.model === model && !l.provider)) return;
-    route.models = [...route.models, { model, provider: null }];
+    if (!route || route.models.includes(name)) return;
+    route.models = [...route.models, name];
     ui.editing = null;
     render();
-    if (live) send(api.setModels(route.id, route.models));
   },
-  // where a route's line gets its model: one of the provider's own providers, or any ("")
-  "set-provider"(control) {
-    const route = data.routes.find((r) => r.id === control.dataset.id);
-    const line = route?.models[ui.line];
-    if (!line) return;
-    const provider = control.dataset.tag || null;
-    if (route.models.some((l, i) => i !== ui.line && l.model === line.model && l.provider === provider)) return;
-    const at = ui.line;
-    route.models = route.models.map((l, i) => (i === at ? { ...l, provider } : l));
+  // Models: one opened, a place removed, where an OpenRouter place comes from, deleting one
+  "open-model"(control) { Object.assign(ui, { model: control.dataset.model || null, editing: null, error: null, focus: true }); render(); },
+  "remove-place"(control) {
+    const model = data.models.find((m) => m.name === ui.model);
+    if (!model || model.from.length < 2) return;
+    model.from = model.from.filter((_, i) => i !== Number(control.dataset.place));
     ui.editing = null;
     render();
-    app.querySelector(`.br-from[data-line="${at}"]`)?.focus();
-    if (live) send(api.setModels(route.id, route.models));
+  },
+  "set-via"(control) {
+    const model = data.models.find((m) => m.name === ui.model);
+    const at = ui.place;
+    const place = model?.from[at];
+    if (!place) return;
+    const via = control.dataset.tag || null;
+    if (model.from.some((p, i) => i !== at && p.provider === place.provider && p.model === place.model && p.via === via)) return;
+    model.from = model.from.map((p, i) => (i === at ? { ...p, via } : p));
+    ui.editing = null;
+    render();
+    app.querySelector(`.br-from[data-place="${at}"]`)?.focus();
+  },
+  "delete-model"(control) {
+    const name = control.dataset.model;
+    data.models = data.models.filter((m) => m.name !== name);
+    for (const route of data.routes) route.models = route.models.filter((n) => n !== name);
+    Object.assign(ui, { model: null, editing: null, focus: true });
+    render();
   },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
   theme(control) { themePref = control.dataset.value; keep.set("theme", themePref); render(); },
@@ -468,6 +502,19 @@ const actions = {
 const forms = {
   // the model search: Enter picks the first model found (see the keydown listener)
   find() {},
+  // A model's new name. Routes that use it follow.
+  rename(form, values) {
+    const from = form.dataset.model;
+    const name = String(values.get("name") ?? "").trim();
+    const model = data.models.find((m) => m.name === from);
+    if (!model) return;
+    if (!/^[\w~][\w.:/@+~-]{0,199}$/.test(name)) return void ((ui.error = core[lang].nameInvalid), render());
+    if (name !== from && data.models.some((m) => m.name === name)) return void ((ui.error = core[lang].nameTaken), render());
+    model.name = name;
+    for (const route of data.routes) route.models = route.models.map((n) => (n === from ? name : n));
+    Object.assign(ui, { model: name, editing: null, error: null, focus: true });
+    render();
+  },
   password(form, values) {
     const done = () => { ui.editing = null; ui.error = null; ui.saved = true; };
     if (!live) return done(), render();
@@ -582,7 +629,7 @@ const forms = {
     const route = {
       id: uniqueId(name), name: { en: name, tr: name }, icon: "code", color: colours[data.routes.length % colours.length],
       enabled: true, busy: false, today: 0, used: 0, budget: Number(values.get("budget")) || 5,
-      keyHint: demoKey.slice(-4), models: [{ model: String(values.get("model")), provider: null }],
+      keyHint: demoKey.slice(-4), models: [String(values.get("model"))],
     };
     data.routes.push(route);
     ui.step = "made";
@@ -593,7 +640,7 @@ const forms = {
     setTimeout(() => {
       if (ui.made?.id !== route.id) return;
       ui.made.first = demoFirst;
-      data.requests.unshift({ route: route.id, model: route.models[0].model, ...demoFirst, ago: 1, ok: true });
+      data.requests.unshift({ route: route.id, model: route.models[0], ...demoFirst, ago: 1, ok: true });
       route.today = route.used = demoFirst.cost;
       render();
     }, 3000);
@@ -638,26 +685,36 @@ function replaceData(next) {
   Object.assign(data, next);
 }
 
-// The providers of the model on the line being edited, from the gateway (or the made-up data).
+// Where an OpenRouter place of the open model can come from, from the gateway (or the made-up data).
 async function loadProviders() {
-  const route = data.routes.find((r) => r.id === view?.id);
-  const model = route?.models[ui.line]?.model;
+  const place = (data.models ?? []).find((m) => m.name === ui.model)?.from[ui.place];
+  const model = place?.model;
   if (!model || ui.providers?.model === model) return;
   ui.providers = null;
   if (!live) return void (ui.providers = { model, list: providersFor(model) });
   try {
-    const list = await api.providersOf(model);
-    if (route.models[ui.line]?.model === model) ui.providers = { model, list };
+    ui.providers = { model, list: await api.providersOf(model) };
   } catch {
     ui.providers = { model, list: [] };
   }
   render();
 }
 
+// A provider's model as a model in BaseRouter: the one it already is, or a new one named after
+// the provider's id (or "<provider>/<id>" when that name is taken), with that one place.
+function ensureModel(offer) {
+  data.models ??= [];
+  const known = data.models.find((m) => m.from.some((p) => p.provider === offer.provider && p.model === offer.id));
+  if (known) return known.name;
+  const name = data.models.some((m) => m.name === offer.id) ? `${offer.provider}/${offer.id}` : offer.id;
+  data.models.push({ name, makes: offer.makes, from: [{ provider: offer.provider, model: offer.id, via: null }] });
+  return name;
+}
+
 // The model a new route starts with: the first suggested one the provider has, or its first.
 function defaultModel() {
-  const models = live ? liveModels ?? [] : data.models ?? modelCatalogue;
-  return modelChoices.find((id) => models.some((m) => m.id === id)) ?? models[0]?.id ?? modelChoices[0];
+  const names = (data.models ?? []).map((m) => m.name);
+  return names.find((n) => modelChoices.some((c) => c.endsWith(n) || n.endsWith(c))) ?? names[0] ?? modelChoices[0];
 }
 
 async function loadModels() {
@@ -674,11 +731,12 @@ function drawPicker(focusFind = false) {
   const picker = app.querySelector("#br-picker");
   if (!picker) return;
   const ctx = context();
-  if (picker.dataset.mode === "choose" && (!ui.chosen || (live && liveModels?.length && !liveModels.some((m) => m.id === ui.chosen)))) ui.chosen = defaultModel();
+  if (picker.dataset.mode === "choose" && !ui.chosen) ui.chosen = defaultModel();
   const find = picker.querySelector("[data-find]");
   const typing = find && document.activeElement === find ? find.selectionStart : null;
   const route = data.routes.find((r) => r.id === picker.dataset.id);
-  picker.outerHTML = modelPicker({ ...ctx, t: ctx.shared }, ui, { mode: picker.dataset.mode, taken: route?.models ?? [], routeId: picker.dataset.id });
+  const taken = picker.dataset.mode === "allow" ? route?.models ?? [] : [];
+  picker.outerHTML = modelPicker({ ...ctx, t: ctx.shared }, ui, { mode: picker.dataset.mode, taken, routeId: picker.dataset.id, forModel: picker.dataset.for });
   const again = app.querySelector("#br-picker [data-find]");
   if (again && (typing !== null || focusFind)) {
     again.focus();

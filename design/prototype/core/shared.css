@@ -206,3 +206,13 @@ a.br-btn{color:inherit;text-decoration:none}
 .br-where h4{margin:10px 0 2px;font-weight:700;color:var(--br-ink);overflow-wrap:anywhere}
 .br-tier{font-weight:600;font-size:12.5px;padding:1px 6px;border-radius:var(--br-radius-s);box-shadow:inset 0 0 0 1px var(--br-line);color:var(--br-ink-2)}
 .br-model[disabled]{opacity:.5;cursor:default}
+
+/* ---- added with models in BaseRouter ---- */
+.br-where-chips{margin-top:2px;margin-bottom:0}
+.br-where-chips .br-chip[aria-pressed="true"]{background:var(--br-sunken);color:var(--br-on-sunken);box-shadow:inset 0 0 0 2px var(--br-ink)}
+.br-name{font-weight:700;color:var(--br-ink)!important;font-size:var(--br-code-size)!important}
+.br-go svg{width:16px;height:16px}
+.br-list.br-allowed li{grid-template-columns:1fr auto}
+.br-open-model{display:block;max-width:100%;padding:2px 0;text-align:left;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.br-open-model code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.br-used .br-btn{max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left}

@@ -19,7 +19,8 @@ export function providersSheet(ctx, ui) {
   return sheet(ctx, ui, {
     title: t("providers"),
     body: `${cards ? `<ul class="br-cards">${cards}</ul>` : `<p class="br-lead">${t("provNone")}</p>`}
-      <p class="br-actions" style="margin-top:16px"><button class="br-btn main" data-action="go" data-screen="add-provider">+ ${t("addProvider")}</button></p>`,
+      <p class="br-actions" style="margin-top:16px"><button class="br-btn main" data-action="go" data-screen="add-provider">+ ${t("addProvider")}</button>${
+        cards ? `<button class="br-btn" data-action="go" data-screen="models">${t("models")} <span class="br-count">${ctx.num((data.models ?? []).length, 0)}</span></button>` : ""}</p>`,
   });
 }
 

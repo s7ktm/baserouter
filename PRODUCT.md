@@ -12,30 +12,29 @@ BaseRouter is a self-hosted AI gateway with the simplicity of a smart-home panel
 
 It is not for enterprises that need organisations, teams, SSO, audit logs or policy engines.
 
-## The whole product in four words
+## The whole product in five words
 
 | Concept | What it is | Example |
 |---|---|---|
 | **One Address** | The single endpoint everything connects to. The most visible thing on the home screen. | `http://localhost:…/v1` |
 | **Provider** | An API key you add once. It is on or off, healthy or not. | OpenRouter |
-| **Route** | A named key for one agent or app, with its own budget, allowed models and on/off switch. | "Home assistant" |
+| **Model** | A model BaseRouter offers, under the name apps use, and the places it comes from, in order. Defined once, for every route. | `gpt-5-mini`: OpenAI, then OpenRouter |
+| **Route** | A named key for one agent or app: its own budget, the models it may use, and an on/off switch. | "Home assistant" |
 | **Spend** | What was spent per route, per provider, per day. Budgets are enforced before a request is sent. | Today $1.24 |
 
-Model aliases and fallback order live inside a route's settings. They are not a separate section.
+A model's name and the places it comes from live on the model; a route only says which models it may use.
 
-## Routes, models and providers
+## Providers, models and routes
 
-A route says which models its agent may use, in order: the first is used, the next takes over when it fails. That order is the whole routing logic; there are no strategies to configure.
+Three things, each answering one question. Decided on 2026-11-22; the screens for it are drafted in the prototype and wait for the maintainer's approval before the gateway follows.
 
-The direction, decided on 2026-11-22: **a route's model is a model from a provider.** The same model can come from more than one place (Gemini through OpenRouter, or from Google directly), so a line in a route names both, and two routes can use the same model from different providers. A route can then list the same model twice, from two providers, and fall back from one to the other when the first is down. This is what makes a route more than an allow-list.
+- **A provider** answers *how do I reach it*: a key, and whether it works. It is also where models are found: what it offers, what each makes and costs, all as the provider says.
+- **A model** answers *what do apps ask for, and where does it come from*. It is defined once in BaseRouter, for every route: the name apps send (by default the provider's own id, so existing apps work unchanged), what it makes (from the provider, never chosen by hand), and the places it comes from, in order. When the first place fails, the next is used, for every route at once. A place is a provider and that provider's id for the model; the same model has different ids at different providers (`gpt-5-mini` at OpenAI, `openai/gpt-5-mini` at OpenRouter). A place may also be a different model, as a deliberate fallback; it is then shown as one.
+- **A route** answers *who is asking, and what may it spend*: one agent or app, with its own key, monthly budget, on/off switch, the models it may use, and what it made. A route holds no routing logic: no order, no providers. A route that names no models may use every model in BaseRouter.
 
-It is built one step at a time, as providers are added:
+Adding a model is finding it: picking a model a provider offers makes it a model in BaseRouter, with that one place. Renaming it and adding fallback places is done on the model, when wanted, never required.
 
-1. **With OpenRouter alone.** OpenRouter itself serves each model through several providers (Gemini through Google AI Studio or Google Vertex, Claude through Anthropic, Amazon Bedrock or Google Vertex). A line in a route can name one of them, or leave it to OpenRouter. OpenRouter cannot take a different provider for each model in one request, so when a route names providers, the gateway tries the route's lines itself, one request each.
-2. **With a second provider.** A line names a provider BaseRouter holds a key for, and the gateway falls back across them. The same model has different ids at different providers; the route gives it the one name its agent uses.
-
-What a provider and model are, their prices and what they can do, always comes from the provider itself, never from a list kept by hand.
-
+Replaced by this: a route's ordered model list with a provider on each line (built in the branch before this decision, not released).
 ## Screens
 
 No sidebar. On mobile, one centred column; on desktop, the same layout with more room.
@@ -44,8 +43,9 @@ No sidebar. On mobile, one centred column; on desktop, the same layout with more
 2. **Home** — One Address, today's spend, route tiles, provider status.
 3. **Route** (bottom sheet) — name, key, budget, allowed models, recent requests, connection snippet.
 4. **Providers** — tiles and the add flow (pick, paste key, test).
-5. **Activity** — request list, filter by route; the images, sounds and videos routes made, to look at, listen to and watch again.
-6. **Settings** — password, theme, language, export.
+5. **Models** — the models BaseRouter offers, where each comes from, and which routes use it. Reached from Providers and from a route.
+6. **Activity** — request list, filter by route; the images, sounds and videos routes made, to look at, listen to and watch again.
+7. **Settings** — password, theme, language, export.
 
 ## Not in the first version
 

@@ -9,7 +9,7 @@ export function newRouteSheet(ctx, ui) {
 
   if (ui.step === "made" && ui.made) {
     const route = data.routes.find((r) => r.id === ui.made.id);
-    const snippet = curl(data.address, route.models[0]?.model);
+    const snippet = curl(data.address, route.models[0]);
     const first = ui.made.first;
     return sheet(ctx, ui, {
       title: t("routeReady", { name: `<span class="br-keep">${ctx.name(route)}</span>` }),

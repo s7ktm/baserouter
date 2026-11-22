@@ -1,11 +1,11 @@
 // Route detail. Built once; every skin restyles it through the shared tokens.
 // Order follows what a person opens a route for: is it on, what has it spent,
 // how do I connect to it, which models may it use, what did it just do.
-import { modelPicker, providerChoice } from "./models.js";
+import { fromSummary, modelPicker } from "./models.js";
 import { sheet, cross, curl } from "./sheet.js";
 
 function snippets(route, data) {
-  const model = route.models[0]?.model ?? "model-name";
+  const model = route.models[0] ?? "model-name";
   return {
     curl: curl(data.address, model),
     python: `import os
@@ -53,17 +53,14 @@ export function routeSheet(ctx, ui) {
             <p class="br-actions"><button class="br-btn main" data-action="new-key" data-id="${route.id}">${t("newKey")}</button><button class="br-btn" data-action="edit" data-edit="" data-autofocus>${t("cancel")}</button></p>`
          : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="key">${t("newKey")}</button></p>`}`;
 
-  // Adding a model: the provider's models, to search and pick from. Picking one adds it.
-  const addModel = ui.editing === "model"
+  // Allowing a model: BaseRouter's models first, then what the providers offer (picking one of
+  // those makes it a model in BaseRouter, with that one place).
+  const allow = ui.editing === "model"
     ? `<form class="br-form br-adding" data-form="find" data-id="${route.id}">
-        ${modelPicker(ctx, ui, { mode: "add", taken: route.models.filter((l) => !l.provider).map((l) => l.model), routeId: route.id })}
+        ${modelPicker(ctx, ui, { mode: "allow", taken: route.models, routeId: route.id })}
         <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
       </form>`
-    : ui.editing === "provider" ? "" : route.models.length ? `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("addModel")}</button></p>` : "";
-
-  // Where one line's model comes from: the provider's own providers for it.
-  const editingLine = ui.editing === "provider" ? route.models[ui.line] : null;
-  const where = editingLine ? providerChoice(ctx, ui, route, editingLine) : "";
+    : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="model">+ ${t("allowModel")}</button><button class="br-btn quiet" data-action="go" data-screen="models">${t("allModels")}</button></p>`;
 
   const code = snippets(route, data);
   const tab = ui.tab in code ? ui.tab : "curl";
@@ -96,19 +93,17 @@ export function routeSheet(ctx, ui) {
     </section>
 
     <section class="br-sec">
-      <h3>${t("models")}</h3>
-      <p class="br-note">${t("modelsNote")}</p>
+      <h3>${t("mayUse")}</h3>
+      <p class="br-note">${t("mayUseNote")}</p>
       ${route.models.length
-        ? `<ol class="br-list">
-        ${route.models.map((l, i) => `<li><b class="br-n">${i + 1}</b><span><code class="br-keep">${esc(l.model)}</code>
-            <button class="br-from" data-action="edit" data-edit="provider" data-line="${i}" aria-pressed="${ui.editing === "provider" && ui.line === i}" aria-label="${t("whereFrom", { model: esc(l.model) })}: ${l.provider ? esc(l.provider) : t("anyProvider")}">
-              ${l.provider ? `<span class="br-keep">${esc(l.provider)}</span>` : t("anyProvider")}</button></span>${route.models.length > 1
-          ? `<button class="br-x small" data-action="remove-model" data-id="${route.id}" data-line="${i}" aria-label="${t("remove", { name: esc(l.model) })}">${cross}</button>`
-          : "<span></span>"}</li>`).join("")}
-      </ol>`
+        ? `<ul class="br-list br-allowed">${route.models.map((name) => {
+            const m = (data.models ?? []).find((x) => x.name === name);
+            return `<li><span><button class="br-open-model" data-action="go" data-screen="models" data-model="${esc(name)}"><code class="br-keep">${esc(name)}</code></button>
+                <small>${m ? `${m.makes.map((k) => t(`makes_${k}`)).join(", ")} · <span class="br-keep">${esc(fromSummary(ctx, m))}</span>` : t("modelGone")}</small></span>
+              ${route.models.length > 1 ? `<button class="br-x small" data-action="remove-model" data-id="${route.id}" data-model="${esc(name)}" aria-label="${t("remove", { name: esc(name) })}">${cross}</button>` : "<span></span>"}</li>`;
+          }).join("")}</ul>`
         : `<p class="br-note" style="margin-top:8px">${t("anyModel")}</p>`}
-      ${where}
-      ${addModel}
+      ${allow}
     </section>
 
     <section class="br-sec">
