@@ -273,6 +273,19 @@ test("the model list is the provider's, limited to the route's models when it ha
   expect((await fetch(`${gw.url}/v1/models`)).status).toBe(401);
 });
 
+test("the model list asks for every model, not only those that write text, and passes on a client's filters", async () => {
+  const route = gw.addRoute();
+  const list = (query = "") => fetch(`${gw.url}/v1/models${query}`, { headers: { Authorization: `Bearer ${route.key}` } });
+  // OpenRouter leaves out models that only make images, sound or video unless asked for all.
+  expect((await list()).status).toBe(200);
+  expect(gw.fake.modelQueries.at(-1)).toBe("?output_modalities=all");
+  // An app can ask for some only; filters OpenRouter does not take, and odd values, are not sent on.
+  await list("?output_modalities=image,video&supported_parameters=tools&category=programming&order=newest&x=1");
+  expect(gw.fake.modelQueries.at(-1)).toBe("?output_modalities=image%2Cvideo&supported_parameters=tools&category=programming");
+  await list("?supported_parameters=" + encodeURIComponent("tools&output_modalities=text"));
+  expect(gw.fake.modelQueries.at(-1)).toBe("?output_modalities=all");
+});
+
 test("a route with several models sends them as fallbacks, starting with the model asked for", async () => {
   const route = gw.addRoute({ allow: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini", "google/gemini-2.5-flash"] });
   await gw.chat(route.key, hello("openai/gpt-5-mini"));

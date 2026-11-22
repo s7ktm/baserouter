@@ -435,7 +435,7 @@ export function proxy(deps: Deps) {
   app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech", false)));
   app.post("/audio/transcriptions", (c) => forward(c, "/audio/transcriptions", transcription));
 
-  app.get("/models", (c) => modelList(c, "/models"));
+  app.get("/models", (c) => modelList(c, openrouter.modelsPath(new URL(c.req.url).searchParams)));
 
   // Video: a job is started, asked about until it is done, and its video fetched. Only the
   // route that started a job can ask about it or fetch its video. Asking is free and is not

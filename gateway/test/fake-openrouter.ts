@@ -57,6 +57,7 @@ export interface Fake {
   chats: { key: string | null; body: string }[]; // every chat request received
   posts: { path: string; key: string | null; contentType: string | null; body: Uint8Array }[]; // every POST received, chat included
   lookups: string[]; // every generation id asked for
+  modelQueries: string[]; // the query of every model list asked for, "?..." or ""
   videoPolls: string[]; // every video job id asked about
   videoDownloads: string[]; // every video fetched, as "<job id>/<index>"
   cancelled: Promise<void>; // settles when a "fixture/hang" stream is cancelled by its reader
@@ -68,6 +69,7 @@ export function startFake(port = 0): Fake {
   const posts: Fake["posts"] = [];
   const lookups: string[] = [];
   const videoPolls: string[] = [];
+  const modelQueries: string[] = [];
   const videoDownloads: string[] = [];
   // A job is in progress the first time it is asked about, and finished the second time.
   const jobs = new Map<string, { model: string; polls: number }>();
@@ -85,7 +87,10 @@ export function startFake(port = 0): Fake {
       if (key !== FAKE_KEY) return json("error-401.json", 401);
 
       if (req.method === "GET" && url.pathname === "/key") return json("key.json");
-      if (req.method === "GET" && url.pathname === "/models") return json("models.json");
+      if (req.method === "GET" && url.pathname === "/models") {
+        modelQueries.push(url.search);
+        return json("models.json");
+      }
       if (req.method === "GET" && url.pathname === "/generation") {
         const id = url.searchParams.get("id") ?? "";
         lookups.push(id);
@@ -169,7 +174,7 @@ export function startFake(port = 0): Fake {
     },
   });
 
-  return { url: `http://127.0.0.1:${server.port}`, chats, posts, lookups, videoPolls, videoDownloads, cancelled: cancelled.promise, stop: () => server.stop(true) };
+  return { url: `http://127.0.0.1:${server.port}`, chats, posts, lookups, modelQueries, videoPolls, videoDownloads, cancelled: cancelled.promise, stop: () => server.stop(true) };
 }
 
 if (import.meta.main) {

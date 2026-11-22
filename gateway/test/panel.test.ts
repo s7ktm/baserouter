@@ -121,6 +121,8 @@ test("the model list is the provider's, sorted, and asked for once in ten minute
   const auth = await signIn();
   const asked = () => fetch(`${gw.url}/api/models`, { headers: auth }).then((r) => r.json());
   expect(await asked()).toEqual({ models: ["anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash", "openai/gpt-5-mini"] });
+  // Every model, so a route can be given one that only makes images, sound or video.
+  expect(gw.fake.modelQueries).toEqual(["?output_modalities=all"]);
   gw.store.removeProvider("openrouter");
   expect(await asked()).toEqual({ models: [] });
 });

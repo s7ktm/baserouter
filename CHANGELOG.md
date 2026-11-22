@@ -4,6 +4,10 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Fixed
+
+- The model list (`/v1/models`, and the panel's choice of a route's models) left out most models that only make images, sound or video, because OpenRouter lists only text models unless asked for all. Every model is listed now, and an app can pass OpenRouter's filters on: `/v1/models?output_modalities=image`, `?supported_parameters=tools`, `?category=`.
+
 ### Added
 
 - Video through OpenRouter. `POST /v1/videos` starts a job with the route's key, its budget and its models; `GET /v1/videos/:id` asks how far it has got; `GET /v1/videos/:id/content` fetches the video; `GET /v1/videos/models` lists the models that make video. Only the route that started a job can ask about it, fetch it or continue it.

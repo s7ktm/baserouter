@@ -109,6 +109,8 @@ A route with several models sends them as a fallback list only on chat requests;
 
 **A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model. When a route has more than one model, the request is sent with OpenRouter's `models` fallback list: the model asked for first, then the route's other models in order, so OpenRouter tries the next one when a model fails (rate limit, outage, a request it cannot take). A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
 
+**The model list.** `GET /v1/models`, opened with a route's key, is OpenRouter's model list in OpenAI's shape (`client.models.list()` works), with everything OpenRouter says about each model: name, prices, context length, what it takes and makes (`architecture.input_modalities`, `output_modalities`), its parameters. It lists every model, those that only make images, sound or video included; OpenRouter on its own lists only the models that write text. An app can ask for some only, with OpenRouter's filters: `?output_modalities=image` (or `image,video`; `text`, `audio`, `speech`, `transcription`, `embeddings`, `all`), `?supported_parameters=tools`, `?category=programming`. Other query parameters are not passed on; a filter value OpenRouter does not know is answered with its HTTP 400. A route with a model list sees only its own models, whatever the filter. Video models, with their resolutions, lengths and prices, are also at `GET /v1/videos/models`.
+
 ### Refusals
 
 Errors from the gateway itself have the shape OpenAI clients expect: `{"error": {"message", "type", "code"}}`. Errors from OpenRouter are passed on unchanged.
@@ -140,7 +142,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
 | `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, and the last 60 kept images, sounds and videos each |
-| `GET /api/models` | The provider's model ids, for choosing a route's model |
+| `GET /api/models` | The provider's model ids, all of them (images, sound and video included), for choosing a route's model |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
 | `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images, sound and video |
