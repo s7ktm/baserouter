@@ -125,7 +125,7 @@ All optional, as environment variables.
 bun test
 ```
 
-These run without a network. The proxy and the management API are tested over real HTTP against `test/fake-openrouter.ts`, a stand-in that answers from the files in `test/fixtures/`. Those files are written by hand from OpenRouter's API reference; they are not captures of real traffic.
+These run without a network. The proxy and the management API are tested over real HTTP against `test/fake-openrouter.ts`, a stand-in that answers from the files in `test/fixtures/`. Those files are written by hand from OpenRouter's API reference and compared with real answers; they are not captures of real traffic. [test/fixtures/README.md](test/fixtures/README.md) says which were compared.
 
 To test against the real OpenRouter, put a key in `.env` at the top of the repository (git ignores it) as `OPENROUTER_API_KEY=...`, then:
 
@@ -133,7 +133,7 @@ To test against the real OpenRouter, put a key in `.env` at the top of the repos
 bun --env-file=../.env test live
 ```
 
-That sends two short requests and costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model.
+That sends two short requests and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model.
 
 `bun run typecheck` checks the types.
 

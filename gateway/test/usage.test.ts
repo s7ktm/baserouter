@@ -30,16 +30,25 @@ test("the result is the same however the bytes are cut up", async () => {
   for (const size of [1, 2, 3, 7, 37, 256]) expect(facts(await scan("chat-stream.sse", size))).toEqual(whole);
 });
 
-test("the first token is the first chunk with text, not the keep-alive or the empty opening chunk", async () => {
+test("the first token is the first chunk that carries something, not a keep-alive or the empty opening chunk", async () => {
   const text = await fixture("chat-stream.sse").text();
   const events = text.split("\n\n").filter(Boolean);
   expect(events[0]).toBe(": OPENROUTER PROCESSING");
-  expect(events[1]).toContain('"content":""');
-  expect(events[2]).toContain('"content":"Merhaba"');
+  expect(events[1]).toBe(": OPENROUTER PROCESSING");
+  expect(events[2]).toContain('"delta":{"content":"","role":"assistant"}');
+  expect(events[3]).toContain('"reasoning":"**Greeting**"');
 
   const scanner = new StreamScanner();
   events.forEach((event, i) => scanner.feed(new TextEncoder().encode(event + "\n\n"), i));
-  expect(scanner.firstTokenAt).toBe(2);
+  expect(scanner.firstTokenAt).toBe(3);
+});
+
+test("the usage chunk, which has a choice with empty text, is not a first token", () => {
+  const scanner = new StreamScanner();
+  const usageChunk = { id: "gen-1", model: "m", choices: [{ delta: { content: "", role: "assistant" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 0, cost: 0.1 } };
+  scanner.feed(new TextEncoder().encode(`data: ${JSON.stringify(usageChunk)}\n\n`), 5);
+  expect(scanner.firstTokenAt).toBeNull();
+  expect(scanner.usage?.cost).toBe(0.1);
 });
 
 test("a first token can be reasoning or a tool call", () => {
@@ -63,7 +72,7 @@ test("a stream that breaks off has an id to look its cost up with, and no cost",
 
 test('text that contains the words "usage" and "error" is not taken for either', async () => {
   const text = await fixture("chat-stream.sse").text();
-  expect(text).toContain('\\"usage\\" and \\"error\\"');
+  expect(text).toContain('\\"usage\\" and \\"error\\" are just text');
   const upTo = text.indexOf('"finish_reason":"stop"');
   const scanner = new StreamScanner();
   scanner.feed(new TextEncoder().encode(text.slice(0, text.lastIndexOf("data:", upTo))), 1);
