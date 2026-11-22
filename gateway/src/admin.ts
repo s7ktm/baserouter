@@ -5,10 +5,10 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
 import { dayStart, monthStart, nextMonthStart, localDate } from "./budget.ts";
 import type { Deps, Env } from "./deps.ts";
-import { ImageKeeper } from "./images.ts";
+import { MediaKeeper } from "./media.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
-import type { ImageListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
+import type { MediaKind, MediaListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
 
 const COOKIE = "br_session";
 const SESSION_DAYS = 30;
@@ -32,10 +32,10 @@ function providerView(p: ProviderRow) {
 }
 
 // "src" is where the panel loads the image from; it needs the session like the rest of /api.
-function imageView(i: ImageListed) {
+function mediaView(i: MediaListed) {
   return {
-    id: i.id, route: i.route_id, at: i.created_at, model: i.model, prompt: i.prompt, mediaType: i.media_type, bytes: i.bytes, cost: i.cost_usd,
-    src: `/api/images/${i.id}`,
+    id: i.id, kind: i.kind, route: i.route_id, at: i.created_at, model: i.model, prompt: i.prompt, mediaType: i.media_type, bytes: i.bytes, cost: i.cost_usd,
+    src: `/api/media/${i.id}`,
   };
 }
 
@@ -62,7 +62,8 @@ function requestView(r: RequestRow) {
 
 export function admin(deps: Deps) {
   const { store } = deps;
-  const keeper = new ImageKeeper(deps);
+  const keeper = new MediaKeeper(deps);
+  const space = () => ({ ...store.mediaSpace(), keeping: keeper.on, max: deps.mediaMaxBytes });
   const app = new Hono<Env>();
   let wrong = 0;
   let lockedUntil = 0;
@@ -81,7 +82,7 @@ export function admin(deps: Deps) {
       models: JSON.parse(r.models) as string[],
       icon: r.icon,
       color: r.color,
-      keepImages: r.keep_images === 1,
+      keepMedia: r.keep_media === 1,
     };
   }
 
@@ -171,13 +172,13 @@ export function admin(deps: Deps) {
       exportedAt: new Date(now).toISOString(),
       routes: store.routes().map((r) => ({
         id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: JSON.parse(r.models) as string[],
-        icon: r.icon, color: r.color, keepImages: r.keep_images === 1, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
+        icon: r.icon, color: r.color, keepMedia: r.keep_media === 1, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
       })),
       providers: store.providers().map((p) => ({ ...providerView(p), createdAt: new Date(p.created_at).toISOString() })),
       requests: store.allRequests().map((r) => ({ ...requestView(r), at: new Date(r.started_at).toISOString() })),
-      // The images themselves are files in the images folder; here is what is known about each.
-      images: store.images({ limit: 1_000_000 }).map((i) => {
-        const { src: _, ...rest } = imageView(i);
+      // The images and sounds themselves are files in the media folder; here is what is known about each.
+      media: store.media({ limit: 1_000_000 }).map((i) => {
+        const { src: _, ...rest } = mediaView(i);
         return { ...rest, file: i.file, at: new Date(i.created_at).toISOString() };
       }),
     };
@@ -244,18 +245,18 @@ export function admin(deps: Deps) {
   // Makes a route. The answer is the only time its key is given in full.
   // icon and color are how the panel draws it; the gateway only keeps them.
   app.post("/routes", async (c) => {
-    const { name, budget, models = [], icon = "code", color = "#2B62D9", keepImages = true } = await jsonBody(c);
+    const { name, budget, models = [], icon = "code", color = "#2B62D9", keepMedia = true } = await jsonBody(c);
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) return fail(c, 400, "name_invalid", "Give the route a name of up to 120 characters.");
     if (!validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (!validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
     if (typeof icon !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(icon)) return fail(c, 400, "icon_invalid", "Give the icon as a short lowercase name.");
     if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return fail(c, 400, "color_invalid", "Give the colour as #RRGGBB.");
-    if (typeof keepImages !== "boolean") return fail(c, 400, "keep_images_invalid", 'Give "keepImages" as true or false.');
+    if (typeof keepMedia !== "boolean") return fail(c, 400, "keep_media_invalid", 'Give "keepMedia" as true or false.');
 
     const key = newRouteKey();
     const row: RouteRow = {
       id: newId(), name: name.trim(), key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: budget, enabled: 1,
-      models: JSON.stringify(models.map((m: string) => m.trim())), icon, color, keep_images: keepImages ? 1 : 0, created_at: deps.now(),
+      models: JSON.stringify(models.map((m: string) => m.trim())), icon, color, keep_media: keepMedia ? 1 : 0, created_at: deps.now(),
     };
     store.addRoute(row);
     return c.json({ route: routeView(row, new Map()), key }, 201);
@@ -264,12 +265,12 @@ export function admin(deps: Deps) {
   app.patch("/routes/:id", async (c) => {
     const id = c.req.param("id");
     if (!store.route(id)) return fail(c, 404, "not_found", "There is no such route.");
-    const { budget, enabled, models, keepImages } = await jsonBody(c);
+    const { budget, enabled, models, keepMedia } = await jsonBody(c);
     if (budget !== undefined && !validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (enabled !== undefined && typeof enabled !== "boolean") return fail(c, 400, "enabled_invalid", 'Give "enabled" as true or false.');
     if (models !== undefined && !validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
-    if (keepImages !== undefined && typeof keepImages !== "boolean") return fail(c, 400, "keep_images_invalid", 'Give "keepImages" as true or false.');
-    store.updateRoute(id, { budget_usd: budget, enabled, models: (models as string[] | undefined)?.map((m) => m.trim()), keep_images: keepImages });
+    if (keepMedia !== undefined && typeof keepMedia !== "boolean") return fail(c, 400, "keep_media_invalid", 'Give "keepMedia" as true or false.');
+    store.updateRoute(id, { budget_usd: budget, enabled, models: (models as string[] | undefined)?.map((m) => m.trim()), keep_media: keepMedia });
     return c.json({ route: routeView(store.route(id)!, spendNow()) });
   });
 
@@ -308,8 +309,9 @@ export function admin(deps: Deps) {
       routes: routes.map((r) => routeView(r, spend)),
       requests,
       last,
-      images: store.images({ limit: 60 }).map(imageView),
-      imageSpace: { ...store.imageSpace(), keeping: keeper.on, max: deps.imagesMaxBytes },
+      images: store.media({ kind: "image", limit: 60 }).map(mediaView),
+      sounds: store.media({ kind: "audio", limit: 60 }).map(mediaView),
+      mediaSpace: space(),
       budgetsStartAgainOn: localDate(nextMonthStart(date)),
     });
   });
@@ -343,33 +345,45 @@ export function admin(deps: Deps) {
     return c.json({ requests: rows.map(requestView) });
   });
 
-  // Kept images, newest first. ?route=<id> filters; ?before=<image id> gets the next page.
-  app.get("/images", (c) => {
+  // Kept images and sound, newest first. ?kind=image|audio and ?route=<id> filter;
+  // ?before=<id> gets the next page.
+  app.get("/media", (c) => {
     const limit = Math.min(Math.max(Number(c.req.query("limit")) || 60, 1), 200);
-    const rows = store.images({ route: c.req.query("route") || undefined, before: c.req.query("before") || undefined, limit });
-    return c.json({ images: rows.map(imageView), space: { ...store.imageSpace(), keeping: keeper.on, max: deps.imagesMaxBytes } });
+    const kind = (["image", "audio"] as const).find((k) => k === c.req.query("kind"));
+    const rows = store.media({ kind, route: c.req.query("route") || undefined, before: c.req.query("before") || undefined, limit });
+    return c.json({ media: rows.map(mediaView), space: space() });
   });
 
-  // One image's bytes. Its type was decided from its bytes when it was kept. It is sent so
-  // that the browser cannot run anything in it (an SVG can hold a script).
-  app.get("/images/:id", async (c) => {
-    const row = store.image(c.req.param("id"));
-    const file = row && deps.imagesDir ? Bun.file(keeper.path(row)) : null;
-    if (!row || !file || !(await file.exists())) return fail(c, 404, "not_found", "There is no such image.");
+  // One file's bytes, or a range of them (browsers ask for ranges to play and seek sound;
+  // Safari will not play it otherwise). Its type was decided from its bytes when it was kept.
+  // It is sent so that the browser cannot run anything in it (an SVG can hold a script).
+  app.get("/media/:id", async (c) => {
+    const row = store.mediaItem(c.req.param("id"));
+    const file = row && deps.mediaDir ? Bun.file(keeper.path(row)) : null;
+    if (!row || !file || !(await file.exists())) return fail(c, 404, "not_found", "There is no such file.");
     const name = `baserouter-${localDate(new Date(row.created_at))}-${row.id}.${row.file.split(".").pop()}`;
-    return new Response(file, {
-      headers: {
-        "Content-Type": row.media_type,
-        "Content-Disposition": `${c.req.query("download") ? "attachment" : "inline"}; filename="${name}"`,
-        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, max-age=31536000, immutable",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": row.media_type,
+      "Content-Disposition": `${c.req.query("download") ? "attachment" : "inline"}; filename="${name}"`,
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=31536000, immutable",
+      "Accept-Ranges": "bytes",
+    };
+    const range = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("range") ?? "");
+    if (range && (range[1] || range[2])) {
+      const size = file.size;
+      // "bytes=a-b", "bytes=a-" or the last n bytes, "bytes=-n"
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (start >= size || start > end) return new Response(null, { status: 416, headers: { ...headers, "Content-Range": `bytes */${size}` } });
+      return new Response(file.slice(start, end + 1), { status: 206, headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${size}` } });
+    }
+    return new Response(file, { headers });
   });
 
-  app.delete("/images/:id", (c) => {
-    if (!keeper.remove(c.req.param("id"))) return fail(c, 404, "not_found", "There is no such image.");
+  app.delete("/media/:id", (c) => {
+    if (!keeper.remove(c.req.param("id"))) return fail(c, 404, "not_found", "There is no such file.");
     return c.body(null, 204);
   });
 

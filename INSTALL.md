@@ -10,7 +10,7 @@ BaseRouter is one program and one folder of data. It needs no database server, n
 | A hosting service that runs one container with a disk (Fly.io, Railway, Render) | The [Docker image](#hosting-services), one instance, a volume at `/data` | |
 | Serverless (Vercel, Lambda, Cloudflare Workers) | [Not supported](#serverless) | |
 
-Whichever you choose, everything BaseRouter keeps is in its data folder: the database, the key that encrypts provider keys (`secret.key`), and kept images. [Back it up](#backups) as one.
+Whichever you choose, everything BaseRouter keeps is in its data folder: the database, the key that encrypts provider keys (`secret.key`), and kept images and sound. [Back it up](#backups) as one.
 
 ## Docker Compose
 
@@ -92,7 +92,7 @@ A service that runs one container with a persistent disk works: build the image 
 BaseRouter does not run on serverless platforms (Vercel functions, AWS Lambda, Cloudflare Workers), and this is not planned:
 
 - It keeps its state in a SQLite file on a disk. Serverless functions have no lasting disk, and many copies of one function would each see different spend, so a budget could not be enforced.
-- Some work happens after an answer has been sent (looking up a cost, writing a kept image). Serverless platforms freeze a function once it has answered.
+- Some work happens after an answer has been sent (looking up a cost, writing a kept image or sound). Serverless platforms freeze a function once it has answered.
 - Answers stream for as long as the model writes, which can pass a function's time limit.
 
 Making it fit would mean an external database and file storage, which is the kind of setup BaseRouter exists to avoid ([PRODUCT.md](PRODUCT.md): "One command to run").

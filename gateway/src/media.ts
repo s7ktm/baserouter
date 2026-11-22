@@ -1,0 +1,242 @@
+// Keeps the images and sound routes make, so they can be looked at and listened to again
+// in the panel.
+//
+// Each one is a file in the media folder, named after the SHA-256 of its bytes, so the same
+// image or sound made twice is kept once. The database has a row each: which request and
+// route made it, the model, the words that asked for it, its type and size.
+//
+// Files are written as they arrive, through a temporary file, so a large one is never held
+// in memory whole: the sound of /audio/speech is written while it streams to the client.
+// What a file is comes from its first bytes, not from what the answer says. Only these
+// are kept: PNG, JPEG, WebP, GIF and SVG images; MP3, WAV, Ogg (Opus, Vorbis), FLAC, AAC,
+// MP4 audio and WebM sound. Raw PCM sound has no header saying how to play it, so it is
+// not kept.
+import { randomBytes } from "node:crypto";
+import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import type { FileSink } from "bun";
+import type { Deps } from "./deps.ts";
+import type { MediaKind, MediaRow } from "./store.ts";
+
+// An image found in an answer: base64 bytes, or a link to fetch them from.
+export type Found = { base64: string } | { url: string };
+
+const object = (v: unknown): Record<string, unknown> | null => (typeof v === "object" && v !== null ? (v as Record<string, unknown>) : null);
+const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.map(object).filter((o) => o !== null) : []);
+
+function fromUrl(url: unknown): Found | null {
+  if (typeof url !== "string") return null;
+  const data = /^data:[^;,]*;base64,/.exec(url);
+  if (data) return { base64: url.slice(data[0].length) };
+  return /^https:\/\//.test(url) ? { url } : null;
+}
+
+// The finished images in one answer, or in one event of a stream:
+//   chat:    choices[].message.images[].image_url.url, or choices[].delta.images[] when streamed
+//   /images: data[].b64_json or data[].url, or the "image_generation.completed" event when streamed
+// Partial images of a stream are not kept.
+export function imagesIn(value: unknown): Found[] {
+  const doc = object(value);
+  if (!doc) return [];
+  const found: (Found | null)[] = [];
+  for (const choice of list(doc.choices)) {
+    for (const part of [...list(object(choice.message)?.images), ...list(object(choice.delta)?.images)]) found.push(fromUrl(object(part.image_url)?.url));
+  }
+  for (const item of list(doc.data)) found.push(typeof item.b64_json === "string" ? { base64: item.b64_json } : fromUrl(item.url));
+  if (doc.type === "image_generation.completed" && typeof doc.b64_json === "string") found.push({ base64: doc.b64_json });
+  return found.filter((f): f is Found => f !== null && ("url" in f || f.base64.length > 0));
+}
+
+// Whether a line of a stream may carry a finished image, so the scanner knows to read it.
+export const mayCarryImages = (line: string) => line.includes('"images"') || line.includes("image_generation.completed");
+
+const text = (b: Uint8Array, from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+
+type Type = { mediaType: string; ext: string; kind: MediaKind };
+const TYPES: [Type, (b: Uint8Array) => boolean][] = [
+  [{ mediaType: "image/png", ext: "png", kind: "image" }, (b) => b[0] === 0x89 && text(b, 1, 4) === "PNG"],
+  [{ mediaType: "image/jpeg", ext: "jpg", kind: "image" }, (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
+  [{ mediaType: "image/gif", ext: "gif", kind: "image" }, (b) => text(b, 0, 4) === "GIF8"],
+  [{ mediaType: "image/webp", ext: "webp", kind: "image" }, (b) => text(b, 0, 4) === "RIFF" && text(b, 8, 12) === "WEBP"],
+  [{ mediaType: "image/svg+xml", ext: "svg", kind: "image" }, (b) => /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(new TextDecoder().decode(b.subarray(0, 512)))],
+  [{ mediaType: "audio/wav", ext: "wav", kind: "audio" }, (b) => text(b, 0, 4) === "RIFF" && text(b, 8, 12) === "WAVE"],
+  [{ mediaType: "audio/ogg", ext: "ogg", kind: "audio" }, (b) => text(b, 0, 4) === "OggS"],
+  [{ mediaType: "audio/flac", ext: "flac", kind: "audio" }, (b) => text(b, 0, 4) === "fLaC"],
+  [{ mediaType: "audio/mpeg", ext: "mp3", kind: "audio" }, (b) => text(b, 0, 3) === "ID3"],
+  // AAC (ADTS) and MP3 both start with a frame sync; the layer bits tell them apart.
+  [{ mediaType: "audio/aac", ext: "aac", kind: "audio" }, (b) => b[0] === 0xff && (b[1]! & 0xf6) === 0xf0],
+  [{ mediaType: "audio/mpeg", ext: "mp3", kind: "audio" }, (b) => b[0] === 0xff && (b[1]! & 0xe0) === 0xe0 && (b[1]! & 0x06) !== 0],
+  [{ mediaType: "audio/mp4", ext: "m4a", kind: "audio" }, (b) => text(b, 4, 8) === "ftyp"],
+  [{ mediaType: "audio/webm", ext: "webm", kind: "audio" }, (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3],
+];
+
+export function sniff(bytes: Uint8Array): Type | null {
+  return TYPES.find(([, test]) => test(bytes))?.[0] ?? null;
+}
+
+// The words that asked for a file, shortened: the prompt of /images, the text /audio/speech
+// was asked to say, or the last thing the user said in a chat.
+export function promptOf(kind: "chat" | "images" | "speech", body: Record<string, unknown>): string | null {
+  let said: string | null = null;
+  if (kind === "images") said = typeof body.prompt === "string" ? body.prompt : null;
+  else if (kind === "speech") {
+    said = typeof body.input === "string" ? body.input : list(body.input).map((turn) => (typeof turn.text === "string" ? turn.text : "")).filter(Boolean).join("\n") || null;
+  } else {
+    const content = list(body.messages).filter((m) => m.role === "user").at(-1)?.content;
+    if (typeof content === "string") said = content;
+    else said = list(content).filter((p) => p.type === "text" && typeof p.text === "string").map((p) => p.text as string).join("\n") || null;
+  }
+  return said ? said.slice(0, 2000) : null;
+}
+
+// Links are fetched once, with a time and size limit.
+const FETCH_MS = 30_000;
+const FETCH_MAX = 50 * 1024 * 1024;
+const TEMP = ".part-";
+
+export interface Made {
+  requestId: number;
+  routeId: string;
+  model: string | null;
+  prompt: string | null;
+}
+
+// One file being written: pieces go in as they come, then it is either finished (named by
+// its hash, and given a row) or dropped. Over the size limit, it drops itself.
+export class MediaFile {
+  #sink: FileSink;
+  #hash = new Bun.CryptoHasher("sha256");
+  #head = new Uint8Array(512);
+  #headSize = 0;
+  #size = 0;
+  #done = false;
+  readonly #temp: string;
+
+  constructor(private readonly keeper: MediaKeeper, private readonly kind: MediaKind, private readonly max: number) {
+    this.#temp = join(keeper.dir, TEMP + randomBytes(8).toString("hex"));
+    this.#sink = Bun.file(this.#temp).writer({ highWaterMark: 1 << 20 });
+  }
+
+  get dropped(): boolean {
+    return this.#done;
+  }
+
+  // Returns false once the file is dropped, so the caller can stop.
+  write(piece: Uint8Array): boolean {
+    if (this.#done) return false;
+    if ((this.#size += piece.byteLength) > this.max) {
+      this.drop();
+      return false;
+    }
+    if (this.#headSize < this.#head.length) {
+      const part = piece.subarray(0, this.#head.length - this.#headSize);
+      this.#head.set(part, this.#headSize);
+      this.#headSize += part.length;
+    }
+    this.#hash.update(piece);
+    this.#sink.write(piece);
+    return true;
+  }
+
+  drop(): void {
+    if (this.#done) return;
+    this.#done = true;
+    void Promise.resolve(this.#sink.end()).catch(() => {}).finally(() => rmSync(this.#temp, { force: true }));
+  }
+
+  // Names the file and gives it a row. Nothing is kept when it is empty, too large, or not a
+  // kind of file that is kept here.
+  async finish(made: Made): Promise<MediaRow | null> {
+    if (this.#done) return null;
+    this.#done = true;
+    await this.#sink.end();
+    const type = sniff(this.#head.subarray(0, this.#headSize));
+    if (this.#size === 0 || !type || type.kind !== this.kind) {
+      rmSync(this.#temp, { force: true });
+      return null;
+    }
+    const file = `${this.#hash.digest("hex")}.${type.ext}`;
+    renameSync(this.#temp, join(this.keeper.dir, file)); // the same bytes kept twice end up in one file
+    return this.keeper.added(made, { kind: type.kind, media_type: type.mediaType, bytes: this.#size, file });
+  }
+}
+
+export class MediaKeeper {
+  readonly dir: string;
+
+  constructor(private readonly deps: Pick<Deps, "store" | "now" | "mediaDir" | "mediaMaxBytes" | "upstream">) {
+    this.dir = deps.mediaDir ?? "";
+    if (!deps.mediaDir) return;
+    mkdirSync(deps.mediaDir, { recursive: true, mode: 0o700 });
+    // Files a previous run was writing when it stopped.
+    for (const name of readdirSync(deps.mediaDir)) if (name.startsWith(TEMP)) rmSync(join(deps.mediaDir, name), { force: true });
+  }
+
+  get on(): boolean {
+    return this.deps.mediaDir !== null && this.deps.mediaMaxBytes > 0;
+  }
+
+  path(row: MediaRow): string {
+    return join(this.dir, row.file);
+  }
+
+  // A file to write into as it arrives, or null when nothing is kept.
+  start(kind: MediaKind): MediaFile | null {
+    return this.on ? new MediaFile(this, kind, this.deps.mediaMaxBytes) : null;
+  }
+
+  // Keeps the images found in an answer.
+  async keepImages(made: Made, found: Found[]): Promise<void> {
+    for (const item of found) {
+      const file = this.start("image");
+      if (!file) return;
+      try {
+        if ("base64" in item) file.write(new Uint8Array(Buffer.from(item.base64, "base64")));
+        else await this.#fetchInto(item.url, file);
+        await file.finish(made);
+      } catch {
+        file.drop();
+      }
+    }
+  }
+
+  async #fetchInto(url: string, file: MediaFile): Promise<void> {
+    const res = await this.deps.upstream.fetch(url, { signal: AbortSignal.timeout(FETCH_MS) });
+    if (!res.ok || !res.body || Number(res.headers.get("content-length") ?? 0) > FETCH_MAX) {
+      await res.body?.cancel();
+      return file.drop();
+    }
+    let size = 0;
+    for await (const piece of res.body) {
+      if ((size += piece.byteLength) > FETCH_MAX || !file.write(piece)) return file.drop();
+    }
+  }
+
+  // Called by a finished file: its row, then old files go while all of them take too much room.
+  added(made: Made, file: Pick<MediaRow, "kind" | "media_type" | "bytes" | "file">): MediaRow {
+    const row: MediaRow = {
+      id: randomBytes(8).toString("hex"), request_id: made.requestId, route_id: made.routeId, created_at: this.deps.now(),
+      model: made.model, prompt: made.prompt, ...file,
+    };
+    this.deps.store.addMedia(row);
+    this.trim();
+    return row;
+  }
+
+  // Removes one. Its file goes too, unless another row has the same bytes.
+  remove(id: string): boolean {
+    const row = this.deps.store.mediaItem(id);
+    if (!row) return false;
+    this.deps.store.removeMedia(id);
+    if (!this.deps.store.fileInUse(row.file)) rmSync(this.path(row), { force: true });
+    return true;
+  }
+
+  trim(): void {
+    const { store, mediaMaxBytes } = this.deps;
+    while (store.mediaSpace().bytes > mediaMaxBytes) {
+      const oldest = store.oldestMedia();
+      if (!oldest || !this.remove(oldest.id)) return;
+    }
+  }
+}

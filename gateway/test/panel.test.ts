@@ -73,11 +73,12 @@ test("the state is everything the panel draws, in the prototype's shape", async 
   expect(state.budgetsStartAgainOn).toBe("2026-12-01");
   expect(state.providers).toEqual([{ id: "openrouter", kind: "openrouter", name: "OpenRouter", status: "up", keyHint: "-key", models: 3, error: null, checkedAt: 0 }]);
   expect(state.routes).toEqual([
-    { id: home.id, name: "Home assistant", enabled: true, busy: false, today: 0.5, used: 7.5, budget: 10, keyHint: home.key.slice(-4), models: [], icon: "home", color: "#14874C", keepImages: true },
-    { id: arm.id, name: "Robot arm", enabled: true, busy: false, today: 0.25, used: 0.25, budget: 5, keyHint: arm.key.slice(-4), models: [], icon: "code", color: "#2B62D9", keepImages: true },
+    { id: home.id, name: "Home assistant", enabled: true, busy: false, today: 0.5, used: 7.5, budget: 10, keyHint: home.key.slice(-4), models: [], icon: "home", color: "#14874C", keepMedia: true },
+    { id: arm.id, name: "Robot arm", enabled: true, busy: false, today: 0.25, used: 0.25, budget: 5, keyHint: arm.key.slice(-4), models: [], icon: "code", color: "#2B62D9", keepMedia: true },
   ]);
   expect(state.images).toEqual([]);
-  expect(state.imageSpace).toEqual({ count: 0, bytes: 0, keeping: false, max: 1024 * 1024 * 1024 });
+  expect(state.sounds).toEqual([]);
+  expect(state.mediaSpace).toEqual({ images: 0, sounds: 0, bytes: 0, keeping: false, max: 1024 * 1024 * 1024 });
   expect(state.requests).toHaveLength(7);
   expect(state.requests[0]).toMatchObject({ route: arm.id, cost: null, costSource: "unknown", ok: true, at: day(22, 11) });
   expect(state.last).toEqual(state.requests[0]);
@@ -139,11 +140,11 @@ test("a database from the first version gains the route's icon, colour and image
     const db = openDb(path);
     expect(db.query("SELECT icon, color FROM routes").get()).toEqual({ icon: "code", color: "#2B62D9" });
     expect(db.query("SELECT kind FROM requests").get()).toEqual({ kind: "chat" });
-    expect(db.query("SELECT keep_images FROM routes").get()).toEqual({ keep_images: 1 });
-    expect(db.query("SELECT COUNT(*) AS n FROM images").get()).toEqual({ n: 0 });
-    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 4 });
+    expect(db.query("SELECT keep_media FROM routes").get()).toEqual({ keep_media: 1 });
+    expect(db.query("SELECT COUNT(*) AS n FROM media").get()).toEqual({ n: 0 });
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
     db.close();
-    expect(openDb(path).query("PRAGMA user_version").get()).toEqual({ user_version: 4 }); // opening again changes nothing
+    expect(openDb(path).query("PRAGMA user_version").get()).toEqual({ user_version: 5 }); // opening again changes nothing
 
     const newer = new Database(path);
     newer.exec("PRAGMA user_version = 99");

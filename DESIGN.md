@@ -127,7 +127,7 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 2. **Budget.** Spent and limit, a meter, the date it starts again, and one button: "Change budget", or "Raise budget" as the main action when the route is stopped.
 3. **Connect.** The address, the route's key, and a snippet for curl and Python. The key is shown in full only once, when it is made; afterwards only its last four characters are shown and a lost key is replaced with a new one. "Make a new key" first says that the old key stops working at once, then shows the new key in full, this once.
 4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails. Each model but the last can be removed; "Add model" picks one of the provider's models.
-5. **Keep images.** A switch, on unless turned off: the images this route makes are kept, to look at again in activity. Below it, when there are any, a way to this route's images.
+5. **Keep images and sound.** A switch, on unless turned off: the images and speech this route makes are kept, to look at and listen to again in activity. Below it, when there are any, a way to this route's images and to its sounds.
 6. **Recent requests.** Five rows. A request that worked has a filled dot and its cost; one that failed has a hollow ring and the word "failed".
 7. **Delete route.** Last, and quiet. It asks before it deletes, with the answer that keeps the route under the cursor.
 
@@ -157,7 +157,7 @@ Not a screen of its own. When nothing is set up, adding the first provider turns
 
 Every request, newest first: which route, which model, how long ago, how long it took, what it cost. One filter, by route. Opening it from a route arrives already filtered to that route.
 
-Two tabs above the filter: requests and images. Images is a grid of the images routes made and the gateway kept, newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images" goes back to the grid. An image whose route was removed stays, and says so.
+Three tabs above the filter: requests, images and sounds. Images is a grid of the images routes made and the gateway kept; sounds is a list, each row with a play mark, the words that were spoken, route, when and cost. Both are newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, or a player for the sound, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images" or "All sounds" goes back. One whose route was removed stays, and says so. While a sound plays, the panel does not redraw itself.
 
 ### Settings
 
@@ -286,7 +286,7 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the five screens after it needed no more.
 - **A route's name cannot be changed** after it is made.
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
-- **No screen for a single request.** A row in activity does not open. An image does, since it can only be seen by opening it.
+- **No screen for a single request.** A row in activity does not open. An image or a sound does, since it can only be seen or heard by opening it.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.
 - **The list of providers to add** shows six kinds on made-up data. A panel served by a gateway offers only what that gateway can add, which today is OpenRouter, and says so once it is added.
 - **The switch in route detail is a plain token-coloured switch** in every skin, not Socket's rocker or Display's slide switch. Whether skins should be able to supply their own is undecided.

@@ -80,7 +80,7 @@ let liveModels = null; // the provider's model ids, once asked for
 //   screen=providers|add-provider|new-route|activity|settings
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
-//   show=images (activity: the kept images)   image=<image id> (one of them)   edit=delete-image
+//   show=images|sounds (activity: what was kept)   media=<id> (one of them)   edit=delete-media
 const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
 let view = null;
@@ -89,7 +89,7 @@ let copiedId = null;
 let opener = null;
 
 function fresh() {
-  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", image: null, testing: null, error: null, made: null, newKey: null, saved: false };
+  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", show: "requests", media: null, testing: null, error: null, made: null, newKey: null, saved: false };
 }
 if (signedOut) {
   view = { screen: "sign-in" };
@@ -106,8 +106,9 @@ if (signedOut) {
   view = { screen: query.get("screen") };
   ui.flow = query.get("flow") === "1";
   ui.filter = query.get("filter") ?? "";
-  ui.show = query.get("show") === "images" || query.get("image") ? "images" : "requests";
-  ui.image = query.get("image");
+  ui.media = query.get("media");
+  ui.show = ["images", "sounds"].includes(query.get("show")) ? query.get("show")
+    : data.sounds?.some((s) => s.id === ui.media) ? "sounds" : ui.media ? "images" : "requests";
   ui.editing = query.get("edit");
   ui.kind = query.get("kind");
   ui.step = query.get("step") ?? (view.screen === "add-provider" ? (ui.kind ? "key" : "pick") : null);
@@ -322,7 +323,9 @@ const actions = {
     const id = control.dataset.id;
     data.routes = data.routes.filter((r) => r.id !== id);
     data.requests = data.requests.filter((q) => q.route !== id); // as the gateway's state leaves them out
-    data.images = data.images.map((i) => (i.route === id ? { ...i, route: null } : i)); // its images stay
+    // its images and sounds stay
+    data.images = data.images.map((i) => (i.route === id ? { ...i, route: null } : i));
+    data.sounds = data.sounds.map((i) => (i.route === id ? { ...i, route: null } : i));
     close();
     if (live) send(api.deleteRoute(id));
   },
@@ -346,26 +349,30 @@ const actions = {
   pick(control) { ui.kind = control.dataset.kind; ui.step = "key"; ui.focus = true; render(); },
   step(control) { ui.step = control.dataset.step; ui.error = null; ui.focus = true; render(); },
   filter(control) { ui.filter = control.dataset.route; render(); },
-  // activity: requests or kept images, and one image opened
-  show(control) { ui.show = control.dataset.show; ui.image = null; ui.editing = null; render(); },
-  image(control) { ui.image = control.dataset.id || null; ui.editing = null; ui.focus = true; render(); },
-  "delete-image"(control) {
+  // activity: requests, kept images or kept sounds, and one of them opened
+  show(control) { ui.show = control.dataset.show; ui.media = null; ui.editing = null; render(); },
+  media(control) { ui.media = control.dataset.id || null; ui.editing = null; ui.focus = true; render(); },
+  "delete-media"(control) {
     const id = control.dataset.id;
-    const gone = data.images.find((i) => i.id === id);
+    const gone = [...data.images, ...data.sounds].find((i) => i.id === id);
     data.images = data.images.filter((i) => i.id !== id);
-    if (gone && data.imageSpace) data.imageSpace = { ...data.imageSpace, count: data.imageSpace.count - 1, bytes: Math.max(0, data.imageSpace.bytes - gone.bytes) };
-    ui.image = null;
+    data.sounds = data.sounds.filter((i) => i.id !== id);
+    if (gone && data.mediaSpace) {
+      const which = gone.kind === "audio" ? "sounds" : "images";
+      data.mediaSpace = { ...data.mediaSpace, [which]: data.mediaSpace[which] - 1, bytes: Math.max(0, data.mediaSpace.bytes - gone.bytes) };
+    }
+    ui.media = null;
     ui.editing = null;
     ui.focus = true;
     render();
-    if (live) send(api.deleteImage(id));
+    if (live) send(api.deleteMedia(id));
   },
-  "keep-images"(control) {
+  "keep-media"(control) {
     const route = data.routes.find((r) => r.id === control.dataset.id);
     if (!route) return;
-    route.keepImages = route.keepImages === false;
+    route.keepMedia = route.keepMedia === false;
     render();
-    if (live) send(api.keepImages(route.id, route.keepImages));
+    if (live) send(api.keepMedia(route.id, route.keepMedia));
   },
   "test-provider"(control) {
     const id = control.dataset.id;
@@ -621,7 +628,8 @@ async function refresh(force = false) {
   replaceData(next);
   if (force) return void (waiting = true); // the caller draws; if it does not, the next look will
   if (changed || waiting) {
-    if (app.querySelector(".br-sheet form")) waiting = true;
+    // not while something is being typed, or a sound is playing: drawing again would lose it
+    if (app.querySelector(".br-sheet form") || [...app.querySelectorAll("audio")].some((a) => !a.paused)) waiting = true;
     else render();
   }
 }

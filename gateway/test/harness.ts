@@ -17,7 +17,7 @@ export async function until(condition: () => boolean, ms = 2000): Promise<void> 
   }
 }
 
-export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetch; providerKey?: string | null; maxRequestBytes?: number; imagesDir?: string | null; imagesMaxBytes?: number } = {}) {
+export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetch; providerKey?: string | null; maxRequestBytes?: number; mediaDir?: string | null; mediaMaxBytes?: number } = {}) {
   const fake = startFake();
   const store = new Store(openDb(":memory:"));
   const clock = { now: null as number | null }; // set it to freeze time
@@ -30,8 +30,8 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     running: new Map(),
     background: new Set(),
     maxRequestBytes: options.maxRequestBytes ?? 64 * 1024 * 1024,
-    imagesDir: options.imagesDir ?? null,
-    imagesMaxBytes: options.imagesMaxBytes ?? 1024 * 1024 * 1024,
+    mediaDir: options.mediaDir ?? null,
+    mediaMaxBytes: options.mediaMaxBytes ?? 1024 * 1024 * 1024,
     panelDir: join(import.meta.dir, "..", "..", "design", "prototype"),
   };
   const app = createApp(deps);
@@ -53,7 +53,7 @@ export function startGateway(options: { upstream?: Upstream; fetch?: typeof fetc
     const { allow = [], ...rest } = over;
     const row: RouteRow = {
       id: `route${++made}`, name: "Home assistant", key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: 10, enabled: 1,
-      models: JSON.stringify(allow), icon: "code", color: "#2B62D9", keep_images: 1, created_at: made, ...rest,
+      models: JSON.stringify(allow), icon: "code", color: "#2B62D9", keep_media: 1, created_at: made, ...rest,
     };
     store.addRoute(row);
     return { id: row.id, key };

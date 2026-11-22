@@ -1,6 +1,6 @@
 // Reads what a response cost, without holding on to the response. When asked, it also
 // picks out the finished images, so they can be kept.
-import { imagesIn, mayCarryImages, type Found } from "./images.ts";
+import { imagesIn, mayCarryImages, type Found } from "./media.ts";
 
 export interface Usage {
   promptTokens: number | null;

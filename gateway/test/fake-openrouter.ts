@@ -89,6 +89,10 @@ export function startFake(port = 0): Fake {
       }
       // The sound comes as bytes, with no cost in it.
       if (url.pathname === "/audio/speech") {
+        // Raw PCM has no header: just samples.
+        if ((JSON.parse(new TextDecoder().decode(bytes)) as { response_format?: string }).response_format === "pcm") {
+          return new Response(inPieces(new Uint8Array(4000).map((_, i) => (i * 7) % 256)), { headers: { "Content-Type": "audio/pcm", "X-Generation-Id": IDS.speech } });
+        }
         return new Response(inPieces(await fixtureBytes("speech.mp3")), { headers: { "Content-Type": "audio/mpeg", "X-Generation-Id": IDS.speech } });
       }
       if (url.pathname !== "/chat/completions") return new Response("Not found", { status: 404 });
