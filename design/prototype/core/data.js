@@ -6,7 +6,7 @@ const routes = [
   { id: "home", name: { en: "Home assistant", tr: "Ev asistanı" }, icon: "home", color: "#14874C", enabled: true, busy: false, today: 0.42, used: 6.2, budget: 10, keyHint: "9c1e", models: ["openai/gpt-5-mini"] },
   { id: "arm", name: { en: "Robot arm", tr: "Robot kol" }, icon: "robot", color: "#1C2030", enabled: true, busy: false, today: 0.31, used: 1.1, budget: 5, keyHint: "b07d", models: ["google/gemini-2.5-flash"] },
   { id: "news", name: { en: "Newsletter bot", tr: "Bülten botu" }, icon: "mail", color: "#8A4B08", enabled: true, busy: false, today: 0, used: 3, budget: 3, keyHint: "e3a8", models: ["openai/gpt-5-mini"] },
-  { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"] },
+  { id: "garden", name: { en: "Garden watcher", tr: "Bahçe gözcüsü" }, icon: "leaf", color: "#0E6F78", enabled: false, busy: false, today: 0, used: 0.8, budget: 5, keyHint: "71c5", models: ["ollama/llama3.2"], keepImages: false },
 ];
 
 // newest first; "ago" is seconds; "kind" is chat unless said: image, speech or transcription
@@ -22,6 +22,30 @@ const requests = [
   { route: "news", model: "openai/gpt-5-mini", seconds: 2.6, cost: 0.003, ago: 93000, ok: true },
 ];
 
+// Made-up pictures for the kept images: small drawings, so nothing is loaded from elsewhere.
+// w and h give a picture that is not square, to see how a wide or tall one sits.
+function picture(n, w = 512, h = 512) {
+  const sky = ["#F4C27A", "#9FC4F0", "#1E2A4A", "#BFE3C6", "#F2B5B5", "#D9D2F5"][n % 6];
+  const ink = ["#2B62D9", "#14874C", "#F4C27A", "#8A4B08", "#7A3FB8", "#0E6F78"][n % 6];
+  const shape = [
+    `<circle cx="${w / 2}" cy="${h / 2}" r="${Math.min(w, h) / 4}" fill="${ink}"/>`,
+    `<path d="M0 ${h * 0.7} L${w * 0.35} ${h * 0.35} L${w * 0.6} ${h * 0.6} L${w * 0.8} ${h * 0.45} L${w} ${h * 0.7} V${h} H0Z" fill="${ink}"/>`,
+    `<rect x="${w * 0.25}" y="${h * 0.3}" width="${w / 2}" height="${h * 0.4}" rx="${w / 20}" fill="${ink}"/><circle cx="${w * 0.75}" cy="${h * 0.22}" r="${Math.min(w, h) / 12}" fill="#fff"/>`,
+  ][n % 3];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="${sky}"/>${shape}</svg>`;
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
+// newest first; "ago" is seconds
+const images = [
+  { id: "i1", route: "news", model: "google/gemini-3.1-flash-lite-image", prompt: "A calm sunrise over hills, for the morning newsletter header.", cost: 0.034, bytes: 812000, ago: 2400, src: picture(1, 768, 432) },
+  { id: "i2", route: "coding", model: "recraft/recraft-v4.1-flash", prompt: "A small blue circle on white.", cost: 0.007, bytes: 104000, ago: 5100, src: picture(0) },
+  { id: "i3", route: "news", model: "recraft/recraft-v4.1-flash", prompt: "An icon of a letter with a green leaf.", cost: 0.007, bytes: 98000, ago: 9600, src: picture(5) },
+  { id: "i4", route: "home", model: "google/gemini-3.1-flash-lite-image", prompt: "A floor plan sketch of a living room, top view.", cost: 0.034, bytes: 1240000, ago: 86000, src: picture(2, 432, 768) },
+  { id: "i5", route: "news", model: "recraft/recraft-v4.1-flash", prompt: "Mountains at night under a deep blue sky.", cost: 0.007, bytes: 120000, ago: 170000, src: picture(4) },
+];
+const imageSpace = { count: images.length, bytes: images.reduce((sum, i) => sum + i.bytes, 0), keeping: true, max: 1024 ** 3 };
+
 const base = {
   address: "http://localhost:4141/v1",
   spend: { today: 1.24, month: 18.6, week: [0.62, 1.02, 0.49, 1.38, 0.9, 1.15, 1.24], requests: 38 },
@@ -33,6 +57,8 @@ const base = {
   routes,
   requests,
   last: { route: "coding", model: "claude-sonnet-5.5", seconds: 2.1, cost: 0.004 },
+  images,
+  imageSpace,
 };
 
 // What "Add a provider" offers. A kind with an address asks for it; key: false means no key is needed.
@@ -72,6 +98,8 @@ export const states = {
     routes: [],
     requests: [],
     last: null,
+    images: [],
+    imageSpace: { count: 0, bytes: 0, keeping: true, max: 1024 ** 3 },
   },
 };
 
@@ -116,5 +144,12 @@ function stress() {
       route: `r${i % 6}`, kind: ["chat", "transcription", "image", "speech"][i % 4], model: many[i % 6].models[0], seconds: [0.1, 312.4, 2.1][i % 3], cost: [1234.5, 0.0004, 0, 0.02][i % 4], ago: [3, 400, 9000, 400000][i % 4], ok: i % 5 !== 2,
     })),
     last: { route: "r0", model: "extremely-long-model-identifier-with-many-parts-v2.5-preview-0612-thinking", seconds: 312.4, cost: 1234.5 },
+    images: Array.from({ length: 30 }, (_, i) => ({
+      id: `s${i}`, route: i === 7 ? null : `r${i % 6}`, model: many[i % 6].models[0],
+      prompt: i % 4 === 0 ? null : i % 4 === 1 ? "A" : "A very detailed picture of a ".repeat(12) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız",
+      cost: [1234.5, 0.0004, null, 0][i % 4], bytes: [999, 52428800, 1536, 1073741824][i % 4], ago: [3, 400, 9000, 400000][i % 4],
+      src: picture(i, [512, 2048, 300][i % 3], [512, 300, 2048][i % 3]),
+    })),
+    imageSpace: { count: 120394, bytes: 1073000000, keeping: true, max: 1024 ** 3 },
   };
 }

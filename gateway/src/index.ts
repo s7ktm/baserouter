@@ -13,6 +13,10 @@ const port = Number(env.BASEROUTER_PORT ?? 4141);
 const maxRequestMb = Number(env.BASEROUTER_MAX_REQUEST_MB ?? 64);
 if (!(maxRequestMb > 0)) throw new Error("BASEROUTER_MAX_REQUEST_MB must be a number of megabytes larger than 0.");
 const maxRequestBytes = Math.round(maxRequestMb * 1024 * 1024);
+// The images routes make are kept until they take this much room; then the oldest go first. 0 keeps none.
+const imagesMaxMb = Number(env.BASEROUTER_IMAGES_MAX_MB ?? 1024);
+if (!(imagesMaxMb >= 0)) throw new Error("BASEROUTER_IMAGES_MAX_MB must be a number of megabytes, 0 or more.");
+const imagesMaxBytes = Math.round(imagesMaxMb * 1024 * 1024);
 const dataDir = env.BASEROUTER_DATA_DIR ?? join(import.meta.dir, "..", "data");
 
 mkdirSync(dataDir, { recursive: true });
@@ -27,6 +31,8 @@ const deps: Deps = {
   running: new Map(),
   background: new Set(),
   maxRequestBytes,
+  imagesDir: join(dataDir, "images"),
+  imagesMaxBytes,
   panelDir: env.BASEROUTER_PANEL_DIR ?? join(import.meta.dir, "..", "..", "design", "prototype"),
 };
 

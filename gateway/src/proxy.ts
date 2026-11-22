@@ -3,6 +3,7 @@
 import { Hono, type Context } from "hono";
 import { gate, monthStart } from "./budget.ts";
 import { later, refuse, type Deps, type Env } from "./deps.ts";
+import { ImageKeeper, imagesIn, promptOf, type Found } from "./images.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, unseal } from "./secrets.ts";
 import type { Failure, Kind, ProviderRow, RouteRow } from "./store.ts";
@@ -59,9 +60,10 @@ async function readBody(request: Request, limit: number): Promise<Uint8Array | n
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 // What one endpoint needs to say about a request before it is sent on.
+// prompt: for a request that makes images, the words that asked for them.
 type Prepared =
   | { ok: false; response: Response }
-  | { ok: true; model: string; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean };
+  | { ok: true; model: string; body: Uint8Array | string; contentType: string; kind: Kind; streamed: boolean; prompt?: string | null };
 
 type Prepare = (c: Context<Env>, bytes: Uint8Array, route: RouteRow) => Promise<Prepared> | Prepared;
 
@@ -82,13 +84,15 @@ function json(kind: Kind | "chat-modalities", fallbacks: boolean): Prepare {
     const fields = body as Record<string, unknown>;
     const model = typeof fields.model === "string" ? fields.model : "";
     if (!model) return invalid(c, noModel);
+    const made = kind === "chat-modalities" ? chatKind(fields) : kind;
     return {
       ok: true,
       model,
       body: fallbacks ? withFallbacks(text, fields, model, allowedModels(route)) : bytes,
       contentType: "application/json",
-      kind: kind === "chat-modalities" ? chatKind(fields) : kind,
+      kind: made,
       streamed: fields.stream === true,
+      prompt: made === "image" ? promptOf(kind === "chat-modalities" ? "chat" : "images", fields) : null,
     };
   };
 }
@@ -108,8 +112,12 @@ const transcription: Prepare = async (c, bytes, route) => {
   return { ok: true, model, body: bytes, contentType, kind: "transcription", streamed: false };
 };
 
+// A client asks for one request's images not to be kept with "X-BaseRouter-Save: no".
+const saveRefused = (value: string | undefined) => /^(no|false|0|off)$/i.test(value?.trim() ?? "");
+
 export function proxy(deps: Deps) {
   const { store } = deps;
+  const keeper = new ImageKeeper(deps);
   const app = new Hono<Env>();
 
   app.use(async (c, next) => {
@@ -145,6 +153,8 @@ export function proxy(deps: Deps) {
     const prepared = await prepare(c, bytes, route);
     if (!prepared.ok) return prepared.response;
     const { model, kind } = prepared;
+    // Images are kept when the gateway keeps any, the route keeps them, and the request did not say no.
+    const keepImages = kind === "image" && keeper.on && route.keep_images === 1 && !saveRefused(c.req.header("x-baserouter-save"));
 
     const models = allowedModels(route);
     if (models.length > 0 && !models.includes(model)) {
@@ -169,7 +179,7 @@ export function proxy(deps: Deps) {
 
     // Writes the one row this request gets. Whatever path the request takes, it ends here once.
     let finished = false;
-    const finish = (status: number | null, failure: Failure | null, reading?: Reading, firstTokenAt?: number | null, generationId?: string | null) => {
+    const finish = (status: number | null, failure: Failure | null, reading?: Reading, firstTokenAt?: number | null, generationId?: string | null, images: Found[] = []) => {
       if (finished) return;
       finished = true;
       client.removeEventListener("abort", clientGone);
@@ -199,6 +209,9 @@ export function proxy(deps: Deps) {
       });
       // The provider started a response but it ended without a cost: ask for it afterwards.
       if (cost === null && upstreamId && status !== null && status < 300) later(deps, lookUpCost(rowId, upstreamId, key));
+      if (keepImages && failure === null && images.length > 0) {
+        later(deps, keeper.keep({ requestId: rowId, routeId: route.id, model: reading?.model ?? model, prompt: prepared.prompt ?? null }, images));
+      }
     };
 
     let upstream: Response;
@@ -237,22 +250,25 @@ export function proxy(deps: Deps) {
         return refuse(c, 502, "provider_unreachable", `The answer from ${provider.name} broke off. Try again.`);
       }
       let reading: Reading | undefined;
+      let images: Found[] = [];
       try {
-        reading = readPlain(JSON.parse(new TextDecoder().decode(bytes)));
+        const doc: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        reading = readPlain(doc);
+        if (keepImages && upstream.ok) images = imagesIn(doc);
       } catch {}
       const failure: Failure | null = !upstream.ok || !reading || reading.failed ? "upstream_error" : null;
-      finish(upstream.status, failure, reading, null, generationId);
+      finish(upstream.status, failure, reading, null, generationId, images);
       return new Response(bytes, { status: upstream.status, headers: passHeaders(upstream) });
     }
 
     // Every chunk goes to the client exactly as it arrived; events are scanned on the way past.
-    const scanner = mode === "events" ? new StreamScanner() : null;
+    const scanner = mode === "events" ? new StreamScanner(keepImages) : null;
     let firstChunkAt: number | null = null;
     const reader = upstream.body!.getReader();
     const settle = (failure: Failure | null) => {
       scanner?.end(deps.now());
       const outcome = failure ?? (scanner?.failed ? "stream_error" : null);
-      finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId);
+      finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId, scanner?.images);
     };
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {

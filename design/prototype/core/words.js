@@ -51,6 +51,13 @@ export const words = {
     // activity
     actSub: "{n|request|requests} today, {spent} spent", allRoutes: "All routes",
     actNone: "No requests yet. They appear here as soon as a route is used.", actNoneFor: "No requests on this route yet.",
+    requestsTab: "Requests", imagesTab: "Images", removedRoute: "Removed route",
+    imgNone: "No images yet. The images routes make are kept here.", imgNoneFor: "No images from this route yet.",
+    imgOff: "Images are not being kept.", imgSub: "{n|image|images}, {size} of {max}", imgBack: "All images",
+    imgDownload: "Download", imgDelete: "Delete image", imgDeleteAsk: "Delete this image? It cannot be brought back.",
+    route: "Route", model: "Model", when: "When", cost: "Cost", costUnknown: "Not known yet", size: "Size",
+    keepImages: "Keep images", seeImages: "See its images",
+    keepImagesNote: "The images this route makes are kept, to look at again in activity. One request can say no with the header X-BaseRouter-Save: no.",
 
     // settings
     look: "Look", theme: "Theme", light: "Light", dark: "Dark", auto: "Match device", language: "Language",
@@ -112,6 +119,13 @@ export const words = {
 
     actSub: "Bugün {n} istek, {spent} harcandı", allRoutes: "Bütün rotalar",
     actNone: "Henüz istek yok. Bir rota kullanıldığında burada görünür.", actNoneFor: "Bu rotada henüz istek yok.",
+    requestsTab: "İstekler", imagesTab: "Görseller", removedRoute: "Silinmiş rota",
+    imgNone: "Henüz görsel yok. Rotaların ürettiği görseller burada saklanır.", imgNoneFor: "Bu rotadan henüz görsel yok.",
+    imgOff: "Görseller saklanmıyor.", imgSub: "{n} görsel, {size} / {max}", imgBack: "Bütün görseller",
+    imgDownload: "İndir", imgDelete: "Görseli sil", imgDeleteAsk: "Bu görsel silinsin mi? Geri getirilemez.",
+    route: "Rota", model: "Model", when: "Ne zaman", cost: "Maliyet", costUnknown: "Henüz bilinmiyor", size: "Boyut",
+    keepImages: "Görselleri sakla", seeImages: "Görsellerini gör",
+    keepImagesNote: "Bu rotanın ürettiği görseller saklanır, hareketlerde yeniden bakılabilir. Tek bir istek X-BaseRouter-Save: no başlığıyla bunu istemediğini söyleyebilir.",
 
     look: "Görünüm", theme: "Tema", light: "Açık", dark: "Koyu", auto: "Cihaza uy", language: "Dil",
     password: "Parola", changePassword: "Parolayı değiştir", signOut: "Çıkış yap",

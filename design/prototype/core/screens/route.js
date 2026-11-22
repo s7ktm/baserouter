@@ -104,6 +104,16 @@ export function routeSheet(ctx, ui) {
     </section>
 
     <section class="br-sec">
+      <div class="br-row">
+        <span><h3>${t("keepImages")}</h3><span class="br-note">${t("keepImagesNote")}</span></span>
+        <button class="br-switch" data-action="keep-images" data-id="${route.id}" aria-pressed="${route.keepImages !== false}" aria-label="${t("keepImages")}"></button>
+      </div>
+      ${data.images?.some((i) => i.route === route.id)
+        ? `<p class="br-actions"><button class="br-btn quiet" data-action="go" data-screen="activity" data-show="images" data-filter="${route.id}">${t("seeImages")}</button></p>`
+        : ""}
+    </section>
+
+    <section class="br-sec">
       <h3>${t("recent")}</h3>
       ${recent.length
         ? `<ul class="br-list">${recent.map((q) => `<li><i class="br-dot${q.ok ? "" : " stop"}"></i><span><code class="br-keep">${esc(q.model)}</code><small>${ctx.when(q)}</small></span><b>${q.ok ? money(q.cost) : t("failed")}</b></li>`).join("")}</ul>

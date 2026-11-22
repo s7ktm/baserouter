@@ -148,7 +148,7 @@ test("a route's key is given in full once, and only its hash is kept", async () 
   expect(res.status).toBe(201);
   const { route, key } = (await res.json()) as { route: Record<string, unknown>; key: string };
   expect(key).toMatch(/^br_[0-9a-f]{48}$/);
-  expect(route).toEqual({ id: route.id, name: "Home assistant", enabled: true, busy: false, today: 0, used: 0, budget: 10, keyHint: key.slice(-4), models: ["openai/gpt-5-mini"], icon: "code", color: "#2B62D9" });
+  expect(route).toEqual({ id: route.id, name: "Home assistant", enabled: true, busy: false, today: 0, used: 0, budget: 10, keyHint: key.slice(-4), models: ["openai/gpt-5-mini"], icon: "code", color: "#2B62D9", keepImages: true });
 
   const stored = gw.store.route(route.id as string)!;
   expect(JSON.stringify(stored)).not.toContain(key);
