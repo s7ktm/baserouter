@@ -21,8 +21,8 @@ export const PARTS = ["mascot", "provider", "route", "address", "spend", "home"]
 //   data-action="open" data-id="<route id>"     open the route's detail; add data-edit="budget" to land on its budget form
 // Every route offers both "toggle" and "open". The usual way is a button with class
 // "br-stretch" that covers the route, with the switch lifted above it.
-//   data-action="go" data-screen="<screen>"     open another screen: providers, add-provider, models, new-route, activity, settings
-// Every skin offers a way to each of those six screens from its home screen.
+//   data-action="go" data-screen="<screen>"     open another screen: providers, add-provider, models, new-route, activity, settings, playground
+// Every skin offers a way to each of those seven screens from its home screen.
 export const SCREENS = ["providers", "add-provider", "new-route", "activity", "settings"];
 export const ACTIONS = ["toggle", "copy", "open", "go"];
 

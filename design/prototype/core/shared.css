@@ -55,7 +55,8 @@
 
 .br-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;white-space:nowrap;
   border-radius:var(--br-radius-s);font-weight:700;box-shadow:inset 0 0 0 max(var(--br-stroke),1.5px) var(--br-line)}
-.br-sheet .br-btn.main{background:var(--br-action);color:var(--br-on-action);box-shadow:inset 0 0 0 var(--br-stroke) var(--br-line)}
+.br-sheet .br-btn.main{background:var(--br-action);color:var(--br-on-action);box-shadow:inset 0 0 0 var(--br-stroke) var(--br-line);
+  display:inline-flex;align-items:center;margin:0} /* said again: a skin's own ".main" must not leak in */
 .br-btn.quiet{box-shadow:none;padding:0 2px;text-decoration:underline;text-underline-offset:3px}
 .br-sheet .br-btn.danger{color:var(--br-stop)}
 .br-sheet .br-btn.main.danger{background:var(--br-stop);color:var(--br-on-stop)}
@@ -220,3 +221,38 @@ a.br-btn{color:inherit;text-decoration:none}
 /* ---- a source's actions: OpenRouter's provider, and changing it ---- */
 .br-source-acts{display:flex;flex-wrap:wrap;gap:0 14px}
 .br-change::after{content:""}
+
+/* ---- added with the playground ---- */
+.br-try-who{display:grid;gap:0 12px;margin-top:6px}
+.br-try-who label{min-width:0}
+.br-try-who select{text-overflow:ellipsis}
+.br-try-who select:disabled{opacity:.6}
+.br-sheet select:focus-visible,.br-sheet textarea:focus-visible{outline:3px solid var(--br-ink);outline-offset:2px}
+.br-try-note{margin-top:16px}
+.br-turns{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:22px}
+.br-turn{display:grid;gap:10px;justify-items:start;min-width:0}
+/* what the person said sits to the right, in a field; the answer is plain text on the sheet */
+.br-said{justify-self:end;max-width:86%;margin:0;padding:10px 14px;border-radius:var(--br-radius-m);white-space:pre-wrap;overflow-wrap:anywhere;
+  background:var(--br-sunken);color:var(--br-on-sunken);border:var(--br-stroke) solid var(--br-line)}
+.br-answer{margin:0;max-width:100%;font:500 16px/1.55 var(--br-font-body);white-space:pre-wrap;overflow-wrap:anywhere}
+.br-turn .br-busy,.br-turn .br-banner,.br-turn .br-note{margin:0}
+.br-try-live{font-size:14px;color:var(--br-ink-2)}
+.br-try-more{display:inline-flex;align-items:center;gap:4px;min-height:44px;margin:-8px 0;padding:0 2px;font-size:14px;font-weight:600;color:var(--br-ink-2);
+  font-variant-numeric:tabular-nums;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.br-try-more svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+.br-try-more[aria-expanded="true"]{color:var(--br-ink)}
+.br-try-more[aria-expanded="true"] svg{transform:rotate(90deg)}
+.br-try-facts{width:100%;margin:0;padding:12px 14px;border-radius:var(--br-radius-m);box-shadow:inset 0 0 0 max(var(--br-stroke),1.5px) var(--br-line)}
+.br-area{height:auto;min-height:74px;max-height:40dvh;padding:12px;font:500 16px/1.45 var(--br-font-body);resize:vertical}
+.br-area::placeholder{color:var(--br-ink-2);opacity:1}
+#br-system{min-height:60px;margin-bottom:10px}
+.br-compose .br-label:first-child{margin-top:0}
+/* the message field stays within reach under a long conversation */
+.br-compose{position:sticky;bottom:calc(-26px - env(safe-area-inset-bottom));z-index:1;margin:18px -18px calc(-26px - env(safe-area-inset-bottom));
+  padding:14px 18px calc(18px + env(safe-area-inset-bottom));background:var(--br-surface);border-top:max(var(--br-stroke),1px) solid var(--br-line)}
+.br-compose .br-actions{margin-top:10px}
+@media (min-width:980px){
+  .br-try-who{grid-template-columns:1fr 1fr}
+  .br-compose{margin:18px -26px -26px;padding:14px 26px 22px}
+}
+@media (prefers-reduced-motion:reduce){.br-try-more svg{transition:none}}

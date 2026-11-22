@@ -185,7 +185,12 @@ async function bodyAt(prepared: Extract<Prepared, { ok: true }>, place: Place, p
 // A client asks for one request's images or sound not to be kept with "X-BaseRouter-Save: no".
 const saveRefused = (value: string | undefined) => /^(no|false|0|off)$/i.test(value?.trim() ?? "");
 
-export function proxy(deps: Deps) {
+// What the playground adds to the end of a stream: bytes made from the request's row.
+export type Tail = (rowId: number) => Uint8Array | null;
+// A chat request sent for a route by the panel, which holds a session and not the route's key.
+export type ChatAs = (c: Context<Env>, route: RouteRow, tail?: Tail) => Promise<Response>;
+
+export function proxy(deps: Deps): { app: Hono<Env>; chatAs: ChatAs } {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
   const videos = new VideoWatcher(deps, keeper);
@@ -208,8 +213,10 @@ export function proxy(deps: Deps) {
   }
 
   // Every request that is sent on goes through here: the budget, the body, the model,
-  // the provider, and one row in the request log. "path" is OpenRouter's.
-  async function forward(c: Context<Env>, path: string, prepare: Prepare): Promise<Response> {
+  // the provider, and one row in the request log. "path" is OpenRouter's. "tail" is for the
+  // panel's playground only (see chatAs below): what to add to the end of a stream, once the
+  // request's row is written.
+  async function forward(c: Context<Env>, path: string, prepare: Prepare, tail?: Tail): Promise<Response> {
     const started = deps.now();
     const route = c.get("route");
 
@@ -397,17 +404,19 @@ export function proxy(deps: Deps) {
     const sound = mode === "bytes" && keepSound && (!isPcm(type) || pcm) ? keeper.start("audio", pcm) : null;
     let firstChunkAt: number | null = null;
     const reader = upstream.body!.getReader();
-    const settle = (failure: Failure | null) => {
+    const settle = (failure: Failure | null): number | null => {
       scanner?.end(deps.now());
       const outcome = failure ?? (scanner?.failed ? "stream_error" : null);
-      finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId, scanner?.images, sound);
+      return finish(upstream.status, outcome, scanner ?? undefined, scanner ? scanner.firstTokenAt : firstChunkAt, generationId, scanner?.images, sound);
     };
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const { done, value } = await reader.read();
           if (done) {
-            settle(null);
+            const rowId = settle(null);
+            const more = scanner && rowId !== null ? tail?.(rowId) : null;
+            if (more) controller.enqueue(more);
             controller.close();
             return;
           }
@@ -602,6 +611,13 @@ export function proxy(deps: Deps) {
   }
 
   app.post("/chat/completions", (c) => forward(c, "/chat/completions", json("chat-modalities")));
+  // The same request, for the panel's playground: the management API has checked the session
+  // and names the route. From here on it is that route's request like any other: its budget,
+  // its models, its one row.
+  const chatAs: ChatAs = (c, route, tail) => {
+    c.set("route", route);
+    return forward(c, "/chat/completions", json("chat-modalities"), tail);
+  };
   // OpenAI's name for it; OpenRouter's own is /images.
   app.post("/images/generations", (c) => forward(c, "/images", json("image")));
   app.post("/audio/speech", (c) => forward(c, "/audio/speech", json("speech")));
@@ -662,5 +678,5 @@ export function proxy(deps: Deps) {
     return new Response(upstream.body, { status: upstream.status, headers });
   });
 
-  return app;
+  return { app, chatAs };
 }

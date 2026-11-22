@@ -9,6 +9,7 @@ import type { CatalogueModel, ModelProvider } from "./catalogue.ts";
 import { MODEL_NAME, namesOf, parseNames, parsePlaces, type Model } from "./models.ts";
 import { MediaKeeper } from "./media.ts";
 import * as providers from "./providers.ts";
+import type { ChatAs } from "./proxy.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
 import type { MediaKind, MediaListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
 
@@ -62,7 +63,7 @@ function requestView(r: RequestRow) {
   };
 }
 
-export function admin(deps: Deps) {
+export function admin(deps: Deps, chatAs: ChatAs) {
   const { store } = deps;
   const keeper = new MediaKeeper(deps);
   const space = () => ({ ...store.mediaSpace(), keeping: keeper.on, max: deps.mediaMaxBytes });
@@ -329,6 +330,23 @@ export function admin(deps: Deps) {
     const key = newRouteKey();
     store.updateRoute(id, { key_hash: hashKey(key), key_hint: keyHint(key) });
     return c.json({ route: routeView(store.route(id)!, spendNow()), key });
+  });
+
+  // The playground: a chat request sent as this route, with the panel's session in place of
+  // the route's key, which nobody holds (only its hash is kept). The body is what an app would
+  // send to /v1/chat/completions, and everything that holds for the route holds here: its
+  // switch, its budget, its models, one row in its requests. Nothing of the conversation is
+  // kept. A stream ends with one event more than the provider sent, the request's row, so the
+  // panel can say what answered, what it cost and how long it took.
+  app.post("/routes/:id/try", async (c) => {
+    const route = store.route(c.req.param("id"));
+    if (!route) return fail(c, 404, "not_found", "There is no such route.");
+    return chatAs(c, route, (rowId) => {
+      const row = store.request(rowId);
+      if (!row) return null;
+      const provider = row.provider_id === null ? null : (store.provider(row.provider_id)?.name ?? null);
+      return new TextEncoder().encode(`\nevent: baserouter.request\ndata: ${JSON.stringify({ ...requestView(row), provider })}\n\n`);
+    });
   });
 
   // Its requests stay in the activity list, without a route.

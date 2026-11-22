@@ -1,9 +1,9 @@
 // The shared mechanism: one state, one set of actions, any skin on top.
 // Served by a gateway, the state is the gateway's and actions go to its API. Anywhere
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
-import { states, catalog, modelChoices, offers, providersFor } from "./data.js";
+import { states, catalog, modelChoices, offers, providersFor, playSample } from "./data.js";
 import { modelPicker } from "./screens/models.js";
-import { api, gatewayStatus, SignedOut, toData } from "./live.js";
+import { api, gatewayStatus, SignedOut, toData, tryChat } from "./live.js";
 import { words as core } from "./words.js";
 import { checkSkin, missingTokens } from "./contract.js";
 import { routeSheet } from "./screens/route.js";
@@ -13,6 +13,7 @@ import { activitySheet } from "./screens/activity.js";
 import { modelsSheet } from "./screens/model-list.js";
 import { settingsSheet } from "./screens/settings.js";
 import { signInSheet } from "./screens/sign-in.js";
+import { playgroundSheet, textModels } from "./screens/playground.js";
 import { registry } from "../skins/registry.js";
 
 // Everything that is not the home screen is a sheet over it.
@@ -24,6 +25,7 @@ const screens = {
   activity: activitySheet,
   models: modelsSheet,
   settings: settingsSheet,
+  playground: playgroundSheet,
   "sign-in": signInSheet,
 };
 // Sheets that cannot be closed.
@@ -81,13 +83,18 @@ let liveModels = null; // what the provider offers (see gateway/src/catalogue.ts
 
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
-//   screen=providers|add-provider|new-route|activity|settings
+//   screen=providers|add-provider|new-route|activity|settings|playground
+//   as=<route id> model=<name> (playground: who asks, and for what)   edit=system (its system message)
+//   step=waiting|streaming|done|stopped|fail (playground, on made-up data: an answer in that state)   detail=1 (its details open)
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
 //   find=<words> makes=text|image|speech|transcription|video (choosing a model: route edit=model, new-route edit=model)
 //   show=images|sounds|videos (activity: what was kept)   media=<id> (one of them)   edit=delete-media
 const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
+// The playground's conversation. It lives here and nowhere else: closing the sheet keeps it,
+// "Start over" and leaving the page end it. "running" stops the request under way.
+const play = { route: null, model: null, system: "", draft: "", turns: [], open: null, running: null };
 let view = null;
 let ui = fresh();
 let copiedId = null;
@@ -123,6 +130,27 @@ if (signedOut) {
   if (view.screen === "new-route" && (ui.step === "made" || ui.step === "arrived") && data.routes[0]) {
     ui.made = { id: data.routes[0].id, key: demoKey, first: ui.step === "arrived" ? demoFirst : null };
     ui.step = "made";
+  }
+}
+
+// The playground, from the URL: who asks and for what, and on made-up data an answer in each state.
+if (view?.screen === "playground") {
+  play.route = query.get("as");
+  play.model = query.get("model");
+  const step = query.get("step");
+  if (!live && ["waiting", "streaming", "done", "stopped", "fail"].includes(step) && data.routes.length) {
+    const stress = query.get("state") === "stress";
+    const route = data.routes.find((r) => r.id === play.route) ?? data.routes[0];
+    const whole = stress ? `${playSample.answer[lang]} `.repeat(6) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız" : playSample.answer[lang];
+    const half = whole.slice(0, whole.indexOf(" ", whole.length / 2));
+    play.turns = [{
+      ask: stress ? `${playSample.ask[lang]} `.repeat(4) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız" : playSample.ask[lang],
+      text: step === "done" ? whole : step === "streaming" || step === "stopped" ? half : "",
+      state: step === "fail" ? "failed" : step,
+      error: step === "fail" ? playSample.error : null,
+      facts: step === "done" ? madeUpFacts(route, play.model, stress ? { promptTokens: 2000000, completionTokens: 123456, cost: 1234.5, firstMs: 312400, totalMs: 987600 } : playSample.facts) : null,
+    }];
+    if (query.get("detail") === "1") play.open = 0;
   }
 }
 
@@ -179,7 +207,7 @@ function context() {
   const num = (n, digits = 2) => new Intl.NumberFormat(lang === "tr" ? "tr-TR" : "en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
   return {
     num,
-    data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref,
+    data, lang, counts, empty, mood, status, esc, t, shared, copiedId, view, themePref, play,
     catalog: live ? liveCatalog.map((k) => ({ ...k, added: data.providers.some((p) => p.kind === k.kind) })) : catalog,
     // what the providers offer, to find models in (gateway/src/catalogue.ts)
     offers: live ? liveModels ?? [] : data.offers ?? offers,
@@ -206,6 +234,9 @@ function context() {
 
 function render() {
   const scroll = app.querySelector(".br-sheet")?.scrollTop ?? 0;
+  // something being typed in the playground: it comes back with its caret
+  const field = document.activeElement?.matches?.("textarea[data-play]") ? document.activeElement : null;
+  const typing = field && { which: field.dataset.play, start: field.selectionStart, end: field.selectionEnd };
   const focused = document.activeElement?.closest?.("[data-action]");
   const refocus = focused && ["action", "id", "copyId", "value", "route", "tab"].filter((k) => focused.dataset[k] != null)
     .map((k) => `[data-${k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}="${focused.dataset[k]}"]`).join("");
@@ -225,7 +256,11 @@ function render() {
   const sheet = app.querySelector(".br-sheet");
   if (sheet && !ui.focus) sheet.scrollTop = scroll;
   if (ui.focus) (sheet?.querySelector("[data-autofocus]") ?? sheet?.querySelector(".br-x"))?.focus();
-  else if (refocus) ((sheet ?? app).querySelector(refocus) ?? app.querySelector(refocus))?.focus();
+  else if (typing) {
+    const again = sheet?.querySelector(`textarea[data-play="${typing.which}"]`);
+    again?.focus();
+    again?.setSelectionRange(typing.start, typing.end);
+  } else if (refocus) ((sheet ?? app).querySelector(refocus) ?? app.querySelector(refocus))?.focus();
   ui.entering = ui.focus = false;
 
   if (bar) {
@@ -269,6 +304,7 @@ function show(next, control, patch = {}) {
 
 function close() {
   if (fixed.has(view?.screen)) return;
+  if (view?.screen === "playground") play.running?.abort(); // nothing is spent behind a closed sheet
   const back = opener;
   view = null;
   opener = null;
@@ -305,6 +341,8 @@ const actions = {
     const screen = control.dataset.screen;
     if (!(screen in screens) || fixed.has(screen)) return;
     if (live && screen === "models" && control.dataset.edit === "add") loadModels().then(() => drawPicker(true));
+    // from a route, the playground opens as that route
+    if (screen === "playground" && control.dataset.as && control.dataset.as !== play.route) Object.assign(play, { route: control.dataset.as, model: null });
     // adding the very first provider starts the three-step first run
     const flow = control.dataset.flow === "1" || (screen === "add-provider" && !data.providers.length && !data.routes.length);
     show({ screen }, control, { flow, filter: control.dataset.filter ?? "", show: control.dataset.show ?? "requests", step: screen === "add-provider" ? "pick" : null, chosen: screen === "new-route" ? defaultModel() : null, model: control.dataset.model ?? null, editing: control.dataset.edit ?? null });
@@ -523,6 +561,19 @@ const actions = {
     render();
     if (live && gone?.id) send(api.deleteModel(gone.id));
   },
+  // the playground: stop the answer under way, forget the conversation, open an answer's details
+  "try-stop"() { play.running?.abort(); },
+  "try-clear"() {
+    play.running?.abort();
+    Object.assign(play, { turns: [], open: null });
+    ui.focus = true;
+    render();
+  },
+  "try-facts"(control) {
+    const turn = Number(control.dataset.turn);
+    play.open = play.open === turn ? null : turn;
+    render();
+  },
   skin(control) { keep.set("skin", control.dataset.value); useSkin(control.dataset.value); },
   theme(control) { themePref = control.dataset.value; keep.set("theme", themePref); render(); },
   lang(control) { lang = control.dataset.value; keep.set("lang", lang); render(); },
@@ -531,6 +582,56 @@ const actions = {
 const forms = {
   // the model search: Enter picks the first model found (see the keydown listener)
   find() {},
+  // The playground: the message is sent as the chosen route, with what was said before it.
+  try(form) {
+    const route = data.routes.find((r) => r.id === play.route) ?? data.routes[0];
+    const models = route ? textModels(data, route) : [];
+    const model = models.includes(play.model) ? play.model : models[0];
+    const ask = (form.querySelector('[data-play="draft"]')?.value ?? play.draft).trim();
+    if (!route || !model || !ask || play.running) return;
+    // What was said so far. A turn that failed is left out; one that was stopped keeps what arrived.
+    const messages = [
+      ...(play.system.trim() ? [{ role: "system", content: play.system.trim() }] : []),
+      ...play.turns.filter((turn) => turn.text && turn.state !== "failed").flatMap((turn) => [{ role: "user", content: turn.ask }, { role: "assistant", content: turn.text }]),
+      { role: "user", content: ask },
+    ];
+    const turn = { ask, text: "", state: "waiting", error: null, facts: null };
+    Object.assign(play, { route: route.id, model, draft: "", open: null });
+    play.turns.push(turn);
+    const wrote = (piece) => {
+      turn.text += piece;
+      if (turn.state !== "waiting") return drawAnswer(turn);
+      turn.state = "streaming";
+      draw();
+    };
+    const draw = () => {
+      if (view?.screen !== "playground") return;
+      render();
+      toEnd();
+    };
+    if (!live) return pretend(route, model, turn, wrote, draw);
+    const abort = new AbortController();
+    play.running = abort;
+    draw();
+    tryChat(route.id, { model, messages }, { signal: abort.signal, onText: wrote })
+      .then(({ row, error }) => {
+        turn.state = error || row?.ok === false || (!row && !turn.text) ? "failed" : "done";
+        turn.error = error;
+        if (row) turn.facts = { id: row.id, model: row.model, provider: row.provider, promptTokens: row.promptTokens, completionTokens: row.completionTokens, cost: row.cost, firstMs: row.firstTokenMs, totalMs: row.totalMs };
+      })
+      .catch((err) => {
+        if (err instanceof SignedOut) return signOut();
+        if (abort.signal.aborted) return void (turn.state = "stopped");
+        turn.state = "failed";
+        // a connection that broke: before anything came the gateway did not answer, after it the answer broke off
+        turn.error = err instanceof TypeError ? (turn.text ? null : core[lang].noAnswer) : err.message;
+      })
+      .then(() => {
+        play.running = null;
+        return signedOut ? null : refresh(true).catch(() => {});
+      })
+      .then(() => { if (!signedOut) draw(); });
+  },
   // A model's new name. Routes that use it follow.
   rename(form, values) {
     const from = form.dataset.model;
@@ -702,6 +803,71 @@ addEventListener("keydown", (event) => {
   if (event.key === "Escape" && view) close();
 });
 
+// The playground: what is typed is kept as it is typed, so drawing again never loses it; a
+// change of route or model draws again, since the models follow the route.
+app.addEventListener("input", (event) => {
+  const which = event.target.dataset?.play;
+  if (which === "draft" || which === "system") play[which] = event.target.value;
+});
+app.addEventListener("change", (event) => {
+  const which = event.target.dataset?.play;
+  if (which !== "route" && which !== "model") return;
+  play[which] = event.target.value;
+  if (which === "route") play.model = null;
+  render();
+});
+// Enter sends, Shift+Enter starts a new line. On a touch keyboard Enter is a new line and the button sends.
+app.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing || !event.target.matches?.('[data-play="draft"]')) return;
+  if (matchMedia("(pointer: coarse)").matches) return;
+  event.preventDefault();
+  event.target.form?.requestSubmit();
+});
+
+// The sheet, scrolled to its end: where a new message and its answer appear.
+function toEnd() {
+  const sheet = app.querySelector(".br-sheet");
+  if (sheet) sheet.scrollTop = sheet.scrollHeight;
+}
+
+// An answer as it arrives: only its text is drawn again, and the sheet follows it down
+// unless the person has scrolled up to read.
+function drawAnswer(turn) {
+  const at = app.querySelector(`[data-answer="${play.turns.indexOf(turn)}"]`);
+  if (!at) return;
+  const sheet = at.closest(".br-sheet");
+  const following = sheet.scrollHeight - sheet.scrollTop - sheet.clientHeight < 120;
+  at.textContent = turn.text;
+  if (following) sheet.scrollTop = sheet.scrollHeight;
+}
+
+// What is known about an answer on made-up data: the model's first source answered.
+function madeUpFacts(route, name, numbers) {
+  const model = textModels(data, route).find((n) => n === name) ?? textModels(data, route)[0];
+  const first = (data.models ?? []).find((m) => m.name === model)?.from?.[0];
+  return { id: null, model: first?.model ?? model ?? "", provider: data.providers.find((p) => p.id === first?.provider)?.name ?? null, ...numbers };
+}
+
+// On made-up data an answer writes itself: a moment of waiting, then word by word.
+function pretend(route, model, turn, wrote, draw) {
+  const words = playSample.reply[lang].split(/(?<= )/);
+  const started = Date.now();
+  let at = 0;
+  let timer = setTimeout(function next() {
+    wrote(words[at++]);
+    if (at < words.length) return void (timer = setTimeout(next, 50));
+    play.running = null;
+    turn.state = "done";
+    turn.facts = madeUpFacts(route, model, { ...playSample.facts, totalMs: Date.now() - started });
+    data.requests.unshift({ route: route.id, model: turn.facts.model, seconds: turn.facts.totalMs / 1000, cost: turn.facts.cost, ago: 1, ok: true });
+    route.today += turn.facts.cost;
+    route.used += turn.facts.cost;
+    draw();
+  }, playSample.facts.firstMs);
+  play.running = { abort() { clearTimeout(timer); play.running = null; turn.state = "stopped"; draw(); } };
+  draw();
+}
+
 // Typing a model search draws the picker again, and nothing else.
 app.addEventListener("input", (event) => {
   if (!event.target.matches("[data-find]")) return;
@@ -809,11 +975,22 @@ async function refresh(force = false) {
     const first = next.requests.findLast((q) => q.route === ui.made.id);
     if (first) ui.made.first = { seconds: first.seconds, cost: first.cost };
   }
+  // A playground answer whose cost was not known when it ended learns it from its row.
+  let learned = false;
+  for (const turn of play.turns) {
+    const cost = turn.facts?.id != null && turn.facts.cost == null ? state.requests.find((q) => q.id === turn.facts.id)?.cost : null;
+    if (cost != null) {
+      turn.facts.cost = cost;
+      learned = true;
+    }
+  }
   const changed = JSON.stringify(rest) !== seen || Math.floor(now / 30_000) !== Math.floor(refresh.at / 30_000);
   seen = JSON.stringify(rest);
   refresh.at = now;
   replaceData(next);
   if (force) return void (waiting = true); // the caller draws; if it does not, the next look will
+  // what is typed in the playground is kept, so it can be drawn while its form is open
+  if (learned && view?.screen === "playground") return render();
   if (changed || waiting) {
     // not while something is being typed, or a sound or video is playing: drawing again would lose it
     if (app.querySelector(".br-sheet form") || [...app.querySelectorAll("audio, video")].some((a) => !a.paused)) waiting = true;

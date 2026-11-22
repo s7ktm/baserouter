@@ -98,6 +98,17 @@ export const words = {
     wrongPassword: "That password is not right.", tooManyTries: "Too many wrong passwords. Wait a minute, then try again.",
     noAnswer: "BaseRouter did not answer. Check that it is still running, then try again.",
     actionFailed: "That did not work. BaseRouter answered: {error}",
+
+    // playground
+    try: "Try", tryTitle: "Try a model", trySub: "A request sent as one of your routes.",
+    tryNote: "It counts towards this route's budget and appears in its requests. The conversation is not kept.",
+    tryMessage: "Message", tryPlaceholder: "Write a message", send: "Send", stop: "Stop", startOver: "Start over",
+    systemAdd: "Add a system message", systemLabel: "System message", systemHint: "How the model should behave. For example: Answer in one sentence.",
+    tryWaiting: "Waiting for the first word", tryWriting: "Writing", tryStopped: "Stopped.", tryBroke: "The answer broke off before it ended. Send the message again.",
+    tryNoRoute: "A request is always some route's. Make a route first.", tryNoModel: "This route has no model that writes text. Authorize one first.",
+    tryOff: "This route is switched off, so its requests are refused.", switchOn: "Switch it on",
+    tryDetails: "Details of this answer", answeredBy: "Answered by", source: "Source", tokens: "Tokens", tokensInOut: "{in} read, {out} written",
+    firstWord: "First word", wholeAnswer: "Whole answer",
   },
   tr: {
     today: "bugün", thisMonth: "bu ay", copy: "Kopyala", copied: "Kopyalandı", newRoute: "Yeni rota", off: "Kapalı",
@@ -187,5 +198,15 @@ export const words = {
     wrongPassword: "Bu parola doğru değil.", tooManyTries: "Çok fazla yanlış parola denendi. Bir dakika bekle, sonra yeniden dene.",
     noAnswer: "BaseRouter yanıt vermedi. Hâlâ çalıştığından emin ol, sonra yeniden dene.",
     actionFailed: "Bu işlem yapılamadı. BaseRouter yanıtı: {error}",
+
+    try: "Dene", tryTitle: "Model dene", trySub: "Rotalarından biri adına gönderilen bir istek.",
+    tryNote: "Bu rotanın bütçesinden düşer ve isteklerinde görünür. Konuşma saklanmaz.",
+    tryMessage: "Mesaj", tryPlaceholder: "Bir mesaj yaz", send: "Gönder", stop: "Durdur", startOver: "Baştan başla",
+    systemAdd: "Sistem mesajı ekle", systemLabel: "Sistem mesajı", systemHint: "Modelin nasıl davranacağı. Örneğin: Tek cümleyle yanıtla.",
+    tryWaiting: "İlk kelime bekleniyor", tryWriting: "Yazıyor", tryStopped: "Durduruldu.", tryBroke: "Yanıt bitmeden kesildi. Mesajı yeniden gönder.",
+    tryNoRoute: "Her istek bir rotaya aittir. Önce bir rota oluştur.", tryNoModel: "Bu rotada metin yazan bir model yok. Önce bir tane yetkilendir.",
+    tryOff: "Bu rota kapalı; istekleri reddedilir.", switchOn: "Rotayı aç",
+    tryDetails: "Bu yanıtın ayrıntıları", answeredBy: "Yanıtlayan model", source: "Kaynak", tokens: "Token", tokensInOut: "{in} okundu, {out} yazıldı",
+    firstWord: "İlk kelime", wholeAnswer: "Yanıtın tamamı",
   },
 };

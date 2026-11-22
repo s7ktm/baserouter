@@ -50,6 +50,7 @@ button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* providers: plugs with cables running into the strip */
 .feed-h{display:flex;align-items:center;justify-content:space-between;gap:12px;font:600 13px/1 var(--body);color:var(--ink-2);margin:0 4px 2px}
+.feed-h .ways{display:flex;flex:none;gap:6px}
 .feed-h .models{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 4px 0 10px;font:700 14px/1 var(--body);color:var(--ink)}
 .feed-h .models b{font-variant-numeric:tabular-nums;color:var(--ink-2)}
 .feed-h .models svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}

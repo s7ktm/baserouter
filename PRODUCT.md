@@ -47,7 +47,8 @@ No sidebar. On mobile, one centred column; on desktop, the same layout with more
 4. **Providers** — tiles and the add flow (pick, paste key, test).
 5. **Models** — the models BaseRouter offers, where each comes from, and which routes use it. Reached from the home screen, like providers; the only place models are added.
 6. **Activity** — request list, filter by route; the images, sounds and videos routes made, to look at, listen to and watch again.
-7. **Settings** — password, theme, language, export.
+7. **Try a model** (the playground) — a message sent as one of the routes, and its answer, to see what an app on that route would get.
+8. **Settings** — password, theme, language, export.
 
 ## Not in the first version
 
