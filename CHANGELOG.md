@@ -4,6 +4,10 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenRouter's `:batch` entries (the same models at batch prices, served only by its separate Batch API) are no longer listed: not in the model picker, not in `/v1/models`, not in a provider's model count. A normal request with one was refused.
+
 ### Changed in behaviour
 
 - A route's other models are no longer a fallback list. What takes over when a model fails is set on the model in BaseRouter, as its sources. A route that relied on OpenRouter trying its other models should give its model a second source.

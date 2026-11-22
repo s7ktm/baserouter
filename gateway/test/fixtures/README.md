@@ -16,7 +16,7 @@ The media fixtures were made on 2026-11-22 from real answers, shortened: every i
 | `chat-stream-no-usage.sse` | A stream that breaks off before the usage chunk |
 | `chat-error-200.json` | A plain request that fails after HTTP 200: only an `error` and the generation id |
 | `generation.json` | `GET /generation?id=` for the stream that broke off |
-| `key.json`, `models.json` | `GET /key` and `GET /models` |
+| `key.json`, `models.json` | `GET /key` and `GET /models`; the list ends with a `:batch` entry, which BaseRouter leaves out |
 | `error-401.json`, `error-429.json` | Errors before a response starts |
 | `chat-image.json` | A plain chat answer with an image in `message.images` |
 | `chat-image-stream.sse` | A streamed chat answer: encrypted reasoning, then the image in `delta.images`, then the usage chunk |
