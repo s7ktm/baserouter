@@ -13,6 +13,7 @@ export const nanoFixture = (name: string) => Bun.file(join(dir, name));
 
 export const SCENARIOS = {
   "fixture/429": "a rate limit, before any response",
+  "fixture/estimate": "a plain chat answer that did not wait for billing: no cost, only an estimate",
   "fixture/video-fails": "a video job that fails",
   'provider { only: ["fixture-down"] }': "any chat request: no such provider for the model (HTTP 400)",
 } as const;
@@ -130,6 +131,13 @@ export function startFakeNano(port = 0): FakeNano {
         const headers = { "X-Request-ID": NANO_IDS.chat, "x-nanogpt-api-key-masking": "on" };
         // The last chunk carries the cost in "x_nanogpt_pricing" either way; "usage" only when asked for.
         if (body.stream) return new Response(nanoFixture(body.stream_options?.include_usage ? "chat-stream-usage.sse" : "chat-stream.sse"), { headers: { "Content-Type": "text/event-stream", ...headers } });
+        if (body.model === "fixture/estimate") {
+          const answer = (await nanoFixture("chat.json").json()) as { usage: Record<string, unknown>; x_nanogpt_pricing: Record<string, unknown> };
+          delete answer.usage.cost;
+          delete answer.usage.currency;
+          answer.x_nanogpt_pricing = { amount: 0.000004, currency: "USD", cost: 0.000004, isEstimate: true, inputTokens: 13, outputTokens: 6, requestId: NANO_IDS.chat };
+          return said(answer, 200, headers);
+        }
         return json("chat.json", 200, headers);
       }
       if (path === "/api/v1/images/generations") return json(body.response_format === "url" ? "images-url.json" : "images.json", 200, { "X-Request-ID": NANO_IDS.image });

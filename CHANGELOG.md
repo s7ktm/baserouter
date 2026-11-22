@@ -4,6 +4,15 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+### Added
+
+- NanoGPT as a second provider, beside OpenRouter. It is added in the panel with its key, and its models (text, image, video, speech, transcription) are found in the model picker like OpenRouter's. A model can have sources at both, so one takes over when the other fails.
+- Chat, images, speech, transcriptions and video go through the same one address. A video job at NanoGPT looks to a client exactly like one at OpenRouter: the same start, the same statuses, links that lead to the gateway.
+- What a NanoGPT request cost is read where NanoGPT says it: in the answer for chat and transcriptions, also when the client did not ask for usage; checked against NanoGPT's record of the charge for images; known when a video job starts, and taken back if it fails. Speech says nothing of its cost there, so it is worked out from the characters sent and the model's listed price, and recorded as worked out.
+- A source at NanoGPT can name one of NanoGPT's own providers for the model, as a source at OpenRouter can.
+- `GET /api/offers` lists what every provider offers, each entry with its provider. `GET /api/offers/endpoints` takes `?provider=`.
+- [docs/nanogpt.md](docs/nanogpt.md): what NanoGPT's API does, from its documentation and from real answers.
+
 ### Fixed
 
 - OpenRouter's `:batch` entries (the same models at batch prices, served only by its separate Batch API) are no longer listed: not in the model picker, not in `/v1/models`, not in a provider's model count. A normal request with one was refused.

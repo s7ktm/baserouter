@@ -1,6 +1,6 @@
 # Fixtures
 
-Responses in the shape OpenRouter sends, so the tests run without a network.
+Responses in the shape OpenRouter sends, so the tests run without a network. NanoGPT's are in `nanogpt/`; see the end of this page.
 
 They are written by hand from OpenRouter's API reference (streaming, usage accounting, errors, generation, key, models). They are not captures of real traffic: ids, costs and token counts are made up.
 
@@ -36,3 +36,23 @@ The media fixtures were made on 2026-11-22 from real answers, shortened: every i
 The video fixtures were made on 2026-11-22 from real answers of three video models, with fixture ids and the signed link's signature and account replaced: the white space before the first answer, the absolute links, `status_detail`, `generation_id` and `usage` are as seen. The finished video came as `video/mp4` with no `Content-Length` and no support for ranges. `video-failed.json` and `videos-models.json` follow the reference; a failed job was not seen live.
 
 Raw PCM from `/audio/speech` (`response_format: "pcm"`) comes with the content type `audio/pcm;rate=24000;channels=1`, chunked, as real answers showed; the stand-in answers the same way (`test/fake-openrouter.ts`, `PCM`). Google's Gemini voices, which offer only PCM, have not been compared with real answers yet.
+
+## NanoGPT
+
+The files in `nanogpt/` were made on 2026-11-22 from real answers, shortened, with ids, the account's id and the balance replaced by fixture values, and every image by the same 1×1 PNG. `test/fake-nanogpt.ts` answers from them.
+
+| File | What it stands for |
+|---|---|
+| `key.json` | `GET /api/v1/api-keys/current`, which tests a key |
+| `models.json`, `image-models.json`, `video-models.json`, `audio-models.json` | The four model lists, a few entries each: a paused text model (`available: false`), video models priced three different ways, and a sound model BaseRouter has no endpoint for |
+| `model-providers.json` | `GET /api/models/{id}/providers`: NanoGPT's own providers for one model, the last two not available |
+| `chat.json` | A plain completion, with `usage.cost`, `usage.currency` and `x_nanogpt_pricing` |
+| `chat-stream.sse` | A streamed completion from a request that did not ask for usage: the cost is in `x_nanogpt_pricing`, in the chunk that carries `finish_reason` |
+| `chat-stream-usage.sse` | The same from a request with `stream_options.include_usage`: `usage` is in that chunk too |
+| `billing.json`, `billing-image.json` | `GET /api/v1/usage/requests/{id}` for a chat and for an image request; the image's charge is above the `cost` its answer named |
+| `images.json`, `images-url.json` | `POST /api/v1/images/generations`: as base64, and as a signed link with `storageKey`. Both carry `cost`, `paymentSource`, `remainingBalance` and `requestId` |
+| `transcription.json` | `POST /api/v1/audio/transcriptions`, with `usage.cost` |
+| `video-start.json`, `video-in-progress.json`, `video-completed.json` | A video job: the answer that starts it (with its cost), and the two answers about it |
+| `video-failed.json` | A job that failed. Written from NanoGPT's documentation; not seen live |
+
+An answer that carries only an estimate of its cost (`isEstimate`) is built by the stand-in from `chat.json`, after real answers. Speech is the bytes of `speech.mp3`, labelled `audio/mp3` as NanoGPT labels it, with no request id.

@@ -277,6 +277,9 @@ export function proxy(deps: Deps) {
       else deps.running.delete(route.id);
 
       const cost = reading?.usage?.cost ?? null;
+      // NanoGPT's guess, when its answer came before the charge was known. It is recorded as
+      // worked out, so the budget counts it at once, and replaced by the charge once that is known.
+      const guess = cost === null ? (reading?.estimate ?? null) : null;
       const nano = providers.isNano(provider);
       // The id to ask the provider about this request with: OpenRouter's is the answer's own,
       // NanoGPT's is in the answer's headers, or named in its pricing after a fallback there.
@@ -291,8 +294,8 @@ export function proxy(deps: Deps) {
         streamed: prepared.streamed,
         prompt_tokens: reading?.usage?.promptTokens ?? null,
         completion_tokens: reading?.usage?.completionTokens ?? null,
-        cost_usd: cost,
-        cost_source: cost === null ? "unknown" : "provider",
+        cost_usd: cost ?? guess,
+        cost_source: cost !== null ? "provider" : guess !== null ? "computed" : "unknown",
         first_token_ms: firstTokenAt == null ? null : firstTokenAt - started,
         total_ms: deps.now() - started,
         status,
@@ -305,12 +308,12 @@ export function proxy(deps: Deps) {
       // (A video job's cost comes with the job, from the watch in video.ts.) NanoGPT's image
       // answers can name less than was charged, so those are asked about as well.
       if (upstreamId && status !== null && status < 300 && kind !== "video") {
-        if (cost === null) later(deps, lookUpCost(rowId, upstreamId, provider, key));
+        if (cost === null) later(deps, lookUpCost(rowId, upstreamId, provider, key, guess !== null));
         else if (nano && kind === "image" && worked) later(deps, lookUpCost(rowId, upstreamId, provider, key, true));
       }
       // NanoGPT's speech answers say nothing of their cost and carry no id to ask with: it is
       // worked out from the characters sent and the model's listed price, and recorded as that.
-      if (nano && path === "/audio/speech" && worked && cost === null) {
+      if (nano && path === "/audio/speech" && worked && cost === null && guess === null) {
         const sent = attempts.find((a) => a.provider.id === provider.id)?.model ?? model;
         later(deps, nanogpt.speechCost(deps.nanogpt, key, sent, prepared.fields?.input).then((worth) => {
           if (worth !== null) store.fillRequest(rowId, { cost: worth, promptTokens: null, completionTokens: null, model: null }, { source: "computed" });

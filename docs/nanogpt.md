@@ -1,6 +1,6 @@
 # NanoGPT: provider notes
 
-What NanoGPT's API does, read for one purpose: adding it to BaseRouter as the second provider. Nothing here is built yet.
+What NanoGPT's API does, read for one purpose: adding it to BaseRouter as the second provider. What the gateway does with it is in [gateway/README.md](../gateway/README.md#nanogpt); the code is `gateway/src/nanogpt.ts`.
 
 Every statement carries where it comes from:
 
@@ -67,7 +67,7 @@ Each endpoint says it differently, and one does not say it at all.
 
 | Request | Where the cost is | In the answer's headers | |
 |---|---|---|---|
-| Chat, plain | `usage.cost` with `usage.currency`, and again in `x_nanogpt_pricing` | `X-Request-ID: req_<uuid>` | live |
+| Chat, plain | `usage.cost` with `usage.currency`, and again in `x_nanogpt_pricing`. About every second answer comes without `usage.cost`, with an estimate in its place | `X-Request-ID: req_<uuid>` | live |
 | Chat, streamed | `x_nanogpt_pricing` in the last chunk, always. `usage` (with `cost`) is in that chunk only when the request asked for it | `X-Request-ID` | live |
 | Images | Top-level `cost`, with `paymentSource` and `requestId`. Not always what was charged; see below | `X-Request-ID: media-image:…` | live |
 | Transcriptions | `usage.cost` with `usage.currency` | None | live |
@@ -76,10 +76,10 @@ Each endpoint says it differently, and one does not say it at all.
 
 **Chat.**
 
-- `x_nanogpt_pricing` holds `cost`, `currency`, `costUsd`, `requestId`, `inputTokens`, `outputTokens`, `paymentSource`. It came in every chat answer, asked for or not, so the gateway can learn a stream's cost without changing the body. (live)
+- `x_nanogpt_pricing` holds `cost`, `currency`, `costUsd`, `requestId`, `inputTokens`, `outputTokens`, `paymentSource`. It came in every chat answer, asked for or not. In every stream it held the charge, so the gateway can learn a stream's cost without changing the body. (live)
 - The docs say otherwise: that a stream carries no cost unless `stream_options.include_usage` or `usage: {"include": true}` is sent. Sending either adds `usage` to the last chunk; the cost was there without it. (docs against live)
-- A plain answer carried `usage.cost` without being asked. The docs say this depends on billing finishing in time, and that `usage: {"include": true}` makes NanoGPT wait for it. (docs, live)
-- When billing is slow, `x_nanogpt_pricing` holds an estimate marked `isEstimate: true`, which is not the charge. Not seen. (docs)
+- A plain answer carries `usage.cost` only when billing finished before the answer was ready. In about half of a dozen answers it had not: no `usage.cost`, no `usage.currency`, and an `x_nanogpt_pricing` of `{"amount", "currency", "cost", "isEstimate": true, "inputTokens", "outputTokens", "requestId"}`. The estimate was the same amount as the charge the lookup gave a few seconds later, but it is an estimate. (live)
+- With `usage: {"include": true}` NanoGPT waits for billing: every such answer carried `usage.cost`. (live)
 - `usage.currency` is `USD`, or `XNO` when the account pays from a Nano balance. A cost in XNO is not dollars; `x_nanogpt_pricing.costUsd` may be the way around that. (docs; `costUsd` live)
 - `0` is a real value: a request covered by a subscription costs nothing. (docs)
 
@@ -247,23 +247,23 @@ What matters for trying a model's next source:
 | 400 | A model or provider NanoGPT cannot serve (OpenRouter: 404), but also any badly written request | Yes, as today |
 | 410 | The model is gone | Yes |
 
-## What the gateway would have to learn
+## What the gateway had to learn
 
-Not a design: the places where today's code assumes OpenRouter, and what NanoGPT asks of each.
+The places where the code assumed OpenRouter, and what NanoGPT asked of each. All of it is built.
 
-| Today | NanoGPT needs |
+| For OpenRouter | For NanoGPT |
 |---|---|
 | One base URL for everything (`deps.upstream`), and only one provider may be added | A base per provider kind, and a second provider beside the first |
 | The key is tested with `GET /key` | `GET /api/v1/api-keys/current` |
-| Chat cost is `usage.cost`, in dollars | `usage.cost` when there, otherwise `x_nanogpt_pricing`; only when the currency is `USD`, and not when `isEstimate` is set |
+| Chat cost is `usage.cost`, in dollars | `usage.cost` when there, otherwise `x_nanogpt_pricing`; only when the currency is `USD`. An estimate (`isEstimate`) is recorded as worked out, then replaced by the charge from the lookup |
 | The stream reader parses, after the first token, only lines that mention `"usage"` or `"error"` | Also the line that mentions `"x_nanogpt_pricing"`, which is where a stream's cost is when the client did not ask for usage |
 | A missing cost is asked for at `/generation?id=`, by the answer's `id` or `X-Generation-Id`, after a few seconds | `/api/v1/usage/requests/{X-Request-ID}`, by the header; a 404 says to wait 30 seconds |
 | Images: the cost is `usage.cost` | The top-level `cost`, then checked against the lookup, which can be higher |
-| An image answer goes to the client as it came | `remainingBalance` and `storageKey` say things about the account; signed links hold its id |
+| An image answer goes to the client as it came | `remainingBalance` and `storageKey` are taken out. A signed link still holds the account's id, and is passed on |
 | Speech: the cost comes from `/generation` | Characters times the model's price, recorded as worked out and not as reported |
 | Transcriptions | Nothing: the same request, and the cost where the gateway looks |
 | One model list, prices in dollars per token | Five lists to join; dollars per million tokens; other units for images, video and sound |
-| What `/v1/models` gives a client is OpenRouter's own entry | NanoGPT's entries look different. A route with models from both would get two shapes unless the gateway brings them to one |
+| What `/v1/models` gives a client is OpenRouter's own entry | NanoGPT's entries look different, so they are brought to the shape OpenRouter's have |
 | A source's `via` is allowed for OpenRouter only, checked against OpenRouter's slugs | Also for NanoGPT, for models that can be pinned, with ids from `/api/models/{id}/providers`. It costs 5% more |
 | Video: OpenRouter's request, statuses and links are passed on nearly as they are | Translate the request, the statuses and the answer both ways, so a client sees one kind of video job whichever provider made it |
 | A video's cost is recorded when the job ends | It is known when the job starts, and taken back if the job fails |
@@ -298,7 +298,7 @@ Notes from an earlier attempt, written for a different proxy, were checked again
 ## Open questions
 
 1. **A cost in XNO:** what an account that pays from a Nano balance reports, and whether `x_nanogpt_pricing.costUsd` is dollars then.
-2. **An estimated cost:** when `isEstimate` appears in practice, and how long the lookup then takes to know the charge.
+2. **An estimated cost:** whether an estimate ever differs from the charge, and how long the lookup can take to know it.
 3. **Why an image's charge can be above its `cost`:** seen with one model; whether size is the rule, and for which models.
 4. **Images from chat:** one model in the text list is priced for making images. Not tried; nothing says how its images come back.
 5. **A failed video job:** its real answer, and how the refund shows.

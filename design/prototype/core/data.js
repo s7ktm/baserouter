@@ -97,6 +97,7 @@ const base = {
 // What "Add a provider" offers. A kind with an address asks for it; key: false means no key is needed.
 export const catalog = [
   { kind: "openrouter", name: "OpenRouter", where: "openrouter.ai/keys", models: 312 },
+  { kind: "nanogpt", name: "NanoGPT", where: "nano-gpt.com/api", models: 1200 },
   { kind: "openai", name: "OpenAI", where: "platform.openai.com/api-keys", models: 41 },
   { kind: "anthropic", name: "Anthropic", where: "console.anthropic.com/settings/keys", models: 9 },
   { kind: "google", name: "Google Gemini", where: "aistudio.google.com/apikey", models: 14 },

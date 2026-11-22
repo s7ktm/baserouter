@@ -1,6 +1,8 @@
 # BaseRouter gateway
 
-The part of BaseRouter that requests go through: one provider (OpenRouter), the one address, budgets, a record of every request, and the panel.
+The part of BaseRouter that requests go through: two providers (OpenRouter and NanoGPT), the one address, budgets, a record of every request, and the panel.
+
+Most of this page describes requests as they go to OpenRouter, which came first. What differs when a model comes from NanoGPT is under [NanoGPT](#nanogpt).
 
 ## Run it
 
@@ -118,6 +120,28 @@ What takes over when a model fails is set on the model in BaseRouter (see "Model
 
 **The model list.** `GET /v1/models`, opened with a route's key, lists the models the route may use, by the names apps send, in OpenAI's shape (`client.models.list()` works). Each carries what OpenRouter says about the model at its first source: name, prices, context length, what it takes and makes (`architecture.input_modalities`, `output_modalities`), its parameters. A route that may use any model sees BaseRouter's models first, then the rest of OpenRouter's list, without its `:batch` entries, which a normal request cannot use. OpenRouter is asked for every model (on its own it lists only those that write text), and an app can ask for some only, with OpenRouter's filters: `?output_modalities=image` (or `image,video`; `text`, `audio`, `speech`, `transcription`, `embeddings`, `all`), `?supported_parameters=tools`, `?category=programming`. Other query parameters are not passed on; a filter value OpenRouter does not know is answered with its HTTP 400. Video models, with their resolutions, lengths and prices, are at `GET /v1/videos/models`, as OpenRouter names them, limited to those at the route's models' sources.
 
+### NanoGPT
+
+A model whose source is NanoGPT is asked for at the same one address, with the same requests. What its API does is written down in [docs/nanogpt.md](../docs/nanogpt.md); this is what the gateway does about it.
+
+| Request | Goes to NanoGPT's | Cost from |
+|---|---|---|
+| `POST /v1/chat/completions` | `/api/v1/chat/completions`, unchanged | `usage.cost`, or `x_nanogpt_pricing` in the answer and in the last chunk of a stream. NanoGPT sends that whether or not the client asked for usage, so the body goes on as written |
+| `POST /v1/images/generations` | `/api/v1/images/generations`, unchanged | The answer's `cost`, then NanoGPT's record of the charge, asked for a few seconds later: the answer can name less than was charged |
+| `POST /v1/audio/speech` | `/api/v1/audio/speech`, unchanged | Not given anywhere. Worked out from the characters sent and the model's listed price per thousand characters; `cost_source` is `computed` |
+| `POST /v1/audio/transcriptions` | `/api/v1/audio/transcriptions`, unchanged | `usage.cost` in the answer |
+| `POST /v1/videos` | `/api/generate-video`, with the model's id there and `duration` as a string | The `cost` in the answer that starts the job |
+
+- **A cost only counts in US dollars.** NanoGPT names the currency beside a cost. An account that pays from a Nano balance is charged in XNO; such a cost is recorded only when NanoGPT also gives it in dollars, and is unknown otherwise.
+- **An estimate counts until the charge is known.** A plain chat answer can come before NanoGPT has finished billing; it then carries an estimate. The request is recorded at that estimate (`cost_source: computed`), so the budget counts it at once, and NanoGPT is asked for the charge afterwards, which replaces it (`provider`).
+- **Asking afterwards** is `GET /api/v1/usage/requests/{id}` with the `X-Request-ID` of the answer, a few seconds after it ended and then further apart: NanoGPT asks for half a minute between questions. It knows chat and image requests only.
+- **Video.** A client sees the same job as at OpenRouter: HTTP 202 with `id` and `polling_url`, then `status` (`pending`, `in_progress`, `completed`, `failed`, `cancelled`), and once it is completed `unsigned_urls` that lead to the gateway and `usage.cost`. The gateway asks NanoGPT's `/api/video/status` and translates. The cost is recorded when the job starts, and set to nothing when it fails, as NanoGPT refunds it. The video is fetched from NanoGPT with the key, and from the storage NanoGPT redirects to without it. NanoGPT deletes a video after about a day; a route that keeps what it makes has its own copy by then.
+- **What an answer says about the account stays in the gateway:** `remainingBalance` and `storageKey` are taken out of an image answer. The rest is as NanoGPT wrote it.
+- **A source's `via`** is one of NanoGPT's own provider ids for the model (`GET /api/offers/endpoints?provider=<id>&model=<id>` lists them), sent as `provider.only`. NanoGPT charges a markup, normally 5%, for choosing one, and only some models can be pinned.
+- **The model list.** NanoGPT has four lists (text, image, video, sound) and prices in other units; the gateway joins them and gives prices per token. In `/v1/models` a NanoGPT model has the fields an OpenRouter entry has (`name`, `context_length`, `architecture`, `pricing.prompt`, `pricing.completion`), fewer of them. `?output_modalities=` is applied to them by the gateway; OpenRouter's other filters are not.
+- **A key NanoGPT has stopped checking** (HTTP 429 with `x-nanogpt-auth-rate-limit-reason`, after it refused the key many times) is treated like a refused key: HTTP 502 `provider_refused_key`, and no other source is tried.
+- Not kept: NanoGPT's raw PCM, whose content type does not name its rate.
+
 ### Refusals
 
 Errors from the gateway itself have the shape OpenAI clients expect: `{"error": {"message", "type", "code"}}`. Errors from OpenRouter are passed on unchanged.
@@ -146,7 +170,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/setup` `{password}` | Sets the password, once |
 | `POST /api/login` `{password}`, `POST /api/logout` | Starts and ends a session |
 | `GET /api/providers` | Lists providers: status, last four characters of the key, number of models |
-| `POST /api/providers` `{kind: "openrouter", key}` | Tests the key, then adds the provider |
+| `POST /api/providers` `{kind, key}` (`kind`: `openrouter` or `nanogpt`) | Tests the key, then adds the provider. One of each kind |
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
 | `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, and the last 60 kept images, sounds and videos each |
@@ -154,8 +178,8 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/models` `{name?, from}` | Makes a model. Without a name it is named after its first source's model id |
 | `PATCH /api/models/:id` `{name?, from?}` | Renames it (the routes that list it follow; apps that send the old name are refused) or changes its sources |
 | `DELETE /api/models/:id` | Deletes it; the routes that list it lose it |
-| `GET /api/offers` | What the provider offers, to find models in, in OpenRouter's order: for each, `id`, `name`, what it `makes` (`text`, `image`, `speech`, `transcription`, `video`), what it `takes`, its `context`, its price per token read (`in`) and written (`out`) for text models, its lowest price per second (`perSecond`) for video models, and whether it is `free`; and which `provider` offers them. Models the gateway cannot use are left out: embeddings, reranking, moderation, and OpenRouter's `:batch` entries (the same models at batch prices, served only by its separate Batch API). Asked of OpenRouter once in ten minutes |
-| `GET /api/offers/endpoints?model=<id>` | Where one of OpenRouter's models can come from: its providers for it, each with its `tag` (what a source's `via` names), `name`, `tier`, prices per token (`in`, `out`), `context` and whether it works right now (`up`). Asked once in ten minutes per model |
+| `GET /api/offers` | What the providers offer, to find models in, each provider's in its own order: for each, the `provider` that offers it, `id`, `name`, what it `makes` (`text`, `image`, `speech`, `transcription`, `video`), what it `takes`, its `context`, its price per token read (`in`) and written (`out`) for text models, its lowest price per second (`perSecond`) for video models, and whether it is `free`; and which `provider` offers them. Models the gateway cannot use are left out: embeddings, reranking, moderation, and OpenRouter's `:batch` entries (the same models at batch prices, served only by its separate Batch API). Asked of OpenRouter once in ten minutes |
+| `GET /api/offers/endpoints?model=<id>&provider=<id>` | Where one of a provider's models can come from (the first provider's without `provider`): OpenRouter's or NanoGPT's own providers for it, each with its `tag` (what a source's `via` names), `name`, `tier`, prices per token (`in`, `out`), `context` and whether it works right now (`up`). Asked once in ten minutes per model |
 | `GET /api/routes` | Lists routes with what each spent today and this month; `models` are the names of the models each may use |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` (`models`: names of models it may use) | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
 | `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images, sound and video |
@@ -196,6 +220,7 @@ All optional, as environment variables.
 | `BASEROUTER_MAX_REQUEST_MB` | `64` | The largest request body the one address takes, in megabytes. Files travel inside requests as base64, which is a third larger than the file. |
 | `BASEROUTER_MEDIA_MAX_MB` | `1024` | The most room kept images, sound and video may take together, in megabytes; past it the oldest go first. `0` keeps none. |
 | `BASEROUTER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | For trying the gateway without a real key, below |
+| `BASEROUTER_NANOGPT_URL` | `https://api.nano-gpt.com/api` | The same, for NanoGPT |
 
 ## Tests
 
@@ -203,7 +228,7 @@ All optional, as environment variables.
 bun test
 ```
 
-These run without a network. The proxy and the management API are tested over real HTTP against `test/fake-openrouter.ts`, a stand-in that answers from the files in `test/fixtures/`. Those files are written by hand from OpenRouter's API reference and compared with real answers; they are not captures of real traffic. [test/fixtures/README.md](test/fixtures/README.md) says which were compared.
+These run without a network. The proxy and the management API are tested over real HTTP against `test/fake-openrouter.ts` and `test/fake-nanogpt.ts`, stand-ins that answer from the files in `test/fixtures/`. Those files are written by hand from OpenRouter's API reference and compared with real answers; they are not captures of real traffic. [test/fixtures/README.md](test/fixtures/README.md) says which were compared.
 
 To test against the real OpenRouter, put a key in `.env` at the top of the repository (git ignores it) as `OPENROUTER_API_KEY=...`, then:
 
@@ -213,6 +238,14 @@ bun --env-file=../.env test live
 
 That sends three short requests, one of them through a fallback, and asks for the model list. It costs a fraction of a cent. `BASEROUTER_LIVE_MODEL` picks the model. With `BASEROUTER_LIVE_MEDIA=1` it also makes an image in a chat stream, an image through `/images/generations` and a sentence of speech, for about four cents. With `BASEROUTER_LIVE_VIDEO=1` it makes a one-second 480p video through `/videos` and follows it to the end (`BASEROUTER_LIVE_VIDEO_MODEL` picks the model).
 
+The same for NanoGPT, with `NANOGPT_API_KEY=...` in `.env`:
+
+```bash
+bun --env-file=../.env test live-nanogpt
+```
+
+That sends two short requests and asks for the model lists. `BASEROUTER_LIVE_MEDIA=1` adds an image, a sentence of speech and its transcription; `BASEROUTER_LIVE_VIDEO=1` a one-second draft video. `BASEROUTER_LIVE_NANOGPT_MODEL` and its `_IMAGE_`, `_SPEECH_`, `_TRANSCRIBE_` and `_VIDEO_` siblings pick the models.
+
 `bun run typecheck` checks the types.
 
 ### Try it without a real key
@@ -221,11 +254,12 @@ That sends three short requests, one of them through a fallback, and asks for th
 bun run demo
 ```
 
-This starts the gateway and its panel in front of the stand-in, with a new, empty database each time. Open http://localhost:4141/, choose any password of 8 characters or more, and add OpenRouter with the key `fixture-openrouter-key`.
+This starts the gateway and its panel in front of the two stand-ins (`test/fake-openrouter.ts`, `test/fake-nanogpt.ts`), with a new, empty database each time. Open http://localhost:4141/, choose any password of 8 characters or more, and add OpenRouter with the key `fixture-openrouter-key`, NanoGPT with `fixture-nanogpt-key`.
 
 ## Not here yet
 
-- Providers other than OpenRouter. There is no provider interface on purpose; it will grow out of the second provider.
+- Providers other than OpenRouter and NanoGPT. What the two differ in is in `src/providers.ts`; it holds what those two needed and nothing more general.
+- For NanoGPT: a signed link in an image answer (`response_format: "url"`) is passed on as NanoGPT wrote it, and holds the account's id. Images from a chat request, and embeddings, are not tried.
 - Changing a route's name after it is made.
 - Webhooks for video jobs. A request with `callback_url` is refused (HTTP 400), since OpenRouter would send the job's end, signed links included, straight to it; ask `GET /v1/videos/:id` instead.
 - Embeddings, image edits (`/images/edits`), and OpenRouter's own `/responses` API.

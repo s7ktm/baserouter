@@ -27,28 +27,33 @@ export function readUsage(value: unknown): Usage | null {
 
 // What NanoGPT says a request cost when "usage" does not: "x_nanogpt_pricing" in every chat
 // answer and in the last chunk of every stream, asked for or not, and a top-level "cost" (with
-// "paymentSource") in an image answer and in the answer that starts a video. An estimate
-// ("isEstimate") is not the charge, and neither is an amount in another currency. See docs/nanogpt.md.
-function readExtras(doc: Record<string, unknown>): { cost: number | null; promptTokens: number | null; completionTokens: number | null; requestId: string | null } {
+// "paymentSource") in an image answer and in the answer that starts a video. An amount in
+// another currency is not a cost in dollars. An estimate ("isEstimate": a plain answer that
+// did not wait for billing to finish) is not the charge either; it is given apart, as "estimate".
+// See docs/nanogpt.md.
+function readExtras(doc: Record<string, unknown>): { cost: number | null; estimate: number | null; promptTokens: number | null; completionTokens: number | null; requestId: string | null } {
   const pricing = object(doc.x_nanogpt_pricing);
   const id = [pricing?.requestId, doc.requestId].find((v): v is string => typeof v === "string" && v !== "") ?? null;
   if (pricing) {
     const dollars = (pricing.currency ?? pricing.paymentSource ?? "USD") === "USD";
-    const cost = pricing.isEstimate === true ? null : (number(pricing.costUsd) ?? (dollars ? number(pricing.cost) : null));
-    return { cost, promptTokens: number(pricing.inputTokens), completionTokens: number(pricing.outputTokens), requestId: id };
+    const named = number(pricing.costUsd) ?? (dollars ? number(pricing.cost) : null);
+    const guess = pricing.isEstimate === true;
+    return { cost: guess ? null : named, estimate: guess ? named : null, promptTokens: number(pricing.inputTokens), completionTokens: number(pricing.outputTokens), requestId: id };
   }
   const flat = (doc.paymentSource ?? "USD") === "USD" && !("choices" in doc) ? number(doc.cost) : null;
-  return { cost: flat, promptTokens: null, completionTokens: null, requestId: id };
+  return { cost: flat, estimate: null, promptTokens: null, completionTokens: null, requestId: id };
 }
 
 // The usage of an answer or of one event of a stream, with what NanoGPT says beside it.
-function usageOf(doc: Record<string, unknown>, before: Usage | null = null): { usage: Usage | null; requestId: string | null } {
+function usageOf(doc: Record<string, unknown>, before: Usage | null = null): { usage: Usage | null; requestId: string | null; estimate: number | null } {
   const usage = readUsage(doc.usage) ?? before;
   const extra = readExtras(doc);
-  if (extra.cost === null && extra.promptTokens === null) return { usage, requestId: extra.requestId };
+  if (extra.cost === null && extra.promptTokens === null) return { usage, requestId: extra.requestId, estimate: extra.estimate };
+  const cost = usage?.cost ?? extra.cost;
   return {
-    usage: { promptTokens: usage?.promptTokens ?? extra.promptTokens, completionTokens: usage?.completionTokens ?? extra.completionTokens, cost: usage?.cost ?? extra.cost },
+    usage: { promptTokens: usage?.promptTokens ?? extra.promptTokens, completionTokens: usage?.completionTokens ?? extra.completionTokens, cost },
     requestId: extra.requestId,
+    estimate: cost === null ? extra.estimate : null,
   };
 }
 
@@ -83,6 +88,8 @@ export interface Reading {
   id: string | null;
   // NanoGPT's id for asking what the request cost, when the answer itself names it.
   requestId: string | null;
+  // What NanoGPT guessed the request cost, when its answer came before the charge was known.
+  estimate: number | null;
   model: string | null;
   usage: Usage | null;
   failed: boolean;
@@ -91,7 +98,7 @@ export interface Reading {
 // A response that came as one JSON document.
 export function readPlain(body: unknown): Reading {
   const doc = object(body);
-  if (!doc) return { id: null, requestId: null, model: null, usage: null, failed: true };
+  if (!doc) return { id: null, requestId: null, estimate: null, model: null, usage: null, failed: true };
   return {
     id: typeof doc.id === "string" ? doc.id : null,
     model: typeof doc.model === "string" ? doc.model : null,
@@ -108,6 +115,7 @@ export class StreamScanner implements Reading {
   constructor(private readonly collectImages = false) {}
   id: string | null = null;
   requestId: string | null = null;
+  estimate: number | null = null;
   model: string | null = null;
   usage: Usage | null = null;
   failed = false;
@@ -187,6 +195,7 @@ export class StreamScanner implements Reading {
     const read = usageOf(event, this.usage);
     if (read.usage) this.usage = read.usage;
     if (read.requestId) this.requestId = read.requestId;
+    this.estimate = read.usage?.cost == null ? (read.estimate ?? this.estimate) : null;
     if (images) this.images.push(...imagesIn(event));
   }
 }

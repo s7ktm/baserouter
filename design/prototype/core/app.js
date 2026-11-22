@@ -76,7 +76,7 @@ if (live) {
 
 // In a live panel, only the providers the gateway can add are offered, and one that is
 // already added is marked so the list can leave it out.
-const liveCatalog = catalog.filter((k) => k.kind === "openrouter").map((k) => ({ ...k }));
+const liveCatalog = catalog.filter((k) => k.kind === "openrouter" || k.kind === "nanogpt").map((k) => ({ ...k }));
 let liveModels = null; // what the provider offers (see gateway/src/catalogue.ts), once asked for
 
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
@@ -722,17 +722,18 @@ function replaceData(next) {
   Object.assign(data, next);
 }
 
-// Where an OpenRouter place of the open model can come from, from the gateway (or the made-up data).
+// Where a place of the open model can come from, at a provider that has providers of its own
+// (OpenRouter, NanoGPT): from the gateway, or the made-up data.
 async function loadProviders() {
   const place = (data.models ?? []).find((m) => m.name === ui.model)?.from[ui.place];
   const model = place?.model;
-  if (!model || ui.providers?.model === model) return;
+  if (!model || (ui.providers?.model === model && (ui.providers.provider ?? place.provider) === place.provider)) return;
   ui.providers = null;
-  if (!live) return void (ui.providers = { model, list: providersFor(model) });
+  if (!live) return void (ui.providers = { model, provider: place.provider, list: providersFor(model) });
   try {
-    ui.providers = { model, list: await api.offerEndpoints(model) };
+    ui.providers = { model, provider: place.provider, list: await api.offerEndpoints(model, place.provider) };
   } catch {
-    ui.providers = { model, list: [] };
+    ui.providers = { model, provider: place.provider, list: [] };
   }
   render();
 }

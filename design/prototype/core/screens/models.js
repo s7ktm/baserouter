@@ -116,12 +116,14 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "", forModel 
   </div>`;
 }
 
-// Which of OpenRouter's own providers one place of a model uses: "Any provider", or one
-// named, from OpenRouter's endpoints list for that model. ui.providers: { model, list }.
+// Which of a provider's own providers one place of a model uses (OpenRouter and NanoGPT have
+// them): "Any provider", or one named, from that provider's list for the model.
+// ui.providers: { model, provider, list }.
 export function viaChoice(ctx, ui, model, at) {
   const { t, esc } = ctx;
   const place = model.from[at];
-  const list = ui.providers?.model === place.model ? ui.providers.list : null;
+  const list = ui.providers?.model === place.model && (ui.providers.provider ?? place.provider) === place.provider ? ui.providers.list : null;
+  const provider = esc(providerName(ctx, place.provider));
   const taken = (tag) => model.from.some((p, i) => i !== at && p.provider === place.provider && p.model === place.model && (p.via ?? "") === tag);
   const row = (tag, name, tier, small, up = true) => `<li><button type="button" class="br-model" data-action="set-via" data-tag="${esc(tag)}"
       aria-pressed="${(place.via ?? "") === tag}"${taken(tag) ? " disabled" : ""}${(place.via ?? "") === tag ? " data-autofocus" : ""}>
@@ -136,8 +138,8 @@ export function viaChoice(ctx, ui, model, at) {
     <p class="br-note">${t("whereFromNote")}</p>
     ${list === null
       ? `<p class="br-busy" role="status"><i></i>${t("providersLoading")}</p>`
-      : `<ul class="br-models">${row("", t("anyProvider"), null, t("anyProviderNote"))}${
-          place.via && !list.some((p) => p.tag === place.via) ? row(place.via, esc(place.via), null, t("notListed")) : ""
+      : `<ul class="br-models">${row("", t("anyProvider"), null, t("anyProviderNote", { provider }))}${
+          place.via && !list.some((p) => p.tag === place.via) ? row(place.via, esc(place.via), null, t("notListed", { provider })) : ""
         }${list.map((p) => row(p.tag, esc(p.name), p.tier, price(p), p.up)).join("")}</ul>`}
     <p class="br-actions" style="margin-top:12px"><button class="br-btn" data-action="edit" data-edit="">${t("cancel")}</button></p>
   </div>`;

@@ -249,12 +249,14 @@ export async function videoContent(up: Upstream, key: string, link: string, sign
   const origin = new URL(up.baseUrl).origin;
   let url = new URL(link, origin);
   for (let hop = 0; hop < 4; hop++) {
+    // A video may also be at the model's own provider, as a full address. Anywhere but
+    // NanoGPT itself, only a public https address is fetched.
+    if (url.origin !== origin && !publicUrl(url.href)) break;
     const res = await up.fetch(url, { headers: url.origin === origin ? auth(key) : {}, redirect: "manual", signal });
     const next = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
     if (!next) return res;
     await res.body?.cancel();
     url = new URL(next, url);
-    if (url.origin !== origin && !publicUrl(url.href)) break;
   }
   return new Response(null, { status: 502 });
 }

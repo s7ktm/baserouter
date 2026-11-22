@@ -132,11 +132,24 @@ test("a cost that is an estimate, or not in dollars, is not recorded as the cost
   const guess = structuredClone(chat);
   delete guess.usage.cost;
   guess.x_nanogpt_pricing.isEstimate = true;
-  expect(readPlain(guess).usage).toEqual({ promptTokens: 13, completionTokens: 6, cost: null });
+  expect(readPlain(guess)).toMatchObject({ usage: { promptTokens: 13, completionTokens: 6, cost: null }, estimate: 0.0000037 });
+  expect(readPlain(chat).estimate).toBeNull();
   const scanner = new StreamScanner();
   scanner.feed(new TextEncoder().encode(await nanoFixture("chat-stream-usage.sse").text()), 1);
   scanner.end(2);
   expect(scanner).toMatchObject({ done: true, requestId: NANO_IDS.chat, usage: { promptTokens: 13, completionTokens: 8, cost: 0.0000045 } });
+});
+
+test("a plain answer that came before the charge was known counts as its estimate until the charge is asked for", async () => {
+  open();
+  model("fixture/estimate");
+  const route = gw.addRoute();
+  const res = await gw.chat(route.key, { model: "fixture/estimate", messages: [{ role: "user", content: "hi" }] });
+  expect(res.status).toBe(200);
+  expect(gw.lastRequest()).toMatchObject({ cost_usd: 0.000004, cost_source: "computed", upstream_id: NANO_IDS.chat });
+  await gw.settled();
+  expect(gw.nano.lookups).toEqual([NANO_IDS.chat]);
+  expect(gw.lastRequest()).toMatchObject({ cost_usd: 0.0000037, cost_source: "provider" });
 });
 
 test("an image: the account's balance stays here, and the cost is checked against what was charged", async () => {
@@ -250,6 +263,10 @@ test("a video is fetched with the key from NanoGPT and without it from where Nan
   // A redirect into the local network is not followed.
   const inward = { baseUrl: "https://api.nano.example/api", fetch: (async () => new Response(null, { status: 302, headers: { Location: "http://192.168.1.1/x" } })) as unknown as typeof fetch };
   expect((await nanogpt.videoContent(inward, "the-key", "/api/generate-video/content?runId=vid_1")).status).toBe(502);
+  // Nor is a link that points there to begin with.
+  calls.length = 0;
+  expect((await nanogpt.videoContent(up, "the-key", "http://127.0.0.1:8080/video.mp4")).status).toBe(502);
+  expect(calls).toEqual([]);
 });
 
 test("NanoGPT's two ways of describing a job are read the same", () => {
