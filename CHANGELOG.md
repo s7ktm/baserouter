@@ -4,6 +4,12 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-22
+
+Security fixes. Update if you run 0.2.0, above all if the panel can be reached from other machines.
+
+If you reach the panel by a name other than `localhost` or the machine's own address (a name on your home network, or a domain without the Caddy profile), add that name to `BASEROUTER_ALLOWED_HOSTS`: the panel now answers only to names it knows. Behind Caddy, `BASEROUTER_DOMAIN` is enough.
+
 ### Security
 
 - The gateway serves only the panel and the files it loads. The design pages beside it, one of which could be made to run a script from a link, are no longer served, and they accept only known values.
@@ -64,6 +70,7 @@ The first release.
 
 - Providers other than OpenRouter; renaming a route; images, audio, video and embeddings.
 
-[Unreleased]: https://github.com/s7ktm/baserouter/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/s7ktm/baserouter/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/s7ktm/baserouter/releases/tag/v0.2.1
 [0.2.0]: https://github.com/s7ktm/baserouter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/s7ktm/baserouter/releases/tag/v0.1.0
