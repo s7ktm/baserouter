@@ -272,3 +272,24 @@ test("the model list is the provider's, limited to the route's models when it ha
 
   expect((await fetch(`${gw.url}/v1/models`)).status).toBe(401);
 });
+
+test("a route with several models sends them as fallbacks, starting with the model asked for", async () => {
+  const route = gw.addRoute({ allow: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini", "google/gemini-2.5-flash"] });
+  await gw.chat(route.key, hello("openai/gpt-5-mini"));
+  const sent = JSON.parse(gw.fake.chats[0]!.body);
+  expect(sent.model).toBe("openai/gpt-5-mini");
+  expect(sent.models).toEqual(["openai/gpt-5-mini", "anthropic/claude-sonnet-5.5", "google/gemini-2.5-flash"]);
+  expect(sent.messages).toEqual([{ role: "user", content: "Hello" }]);
+});
+
+test("a route with one model, or a client that sends its own list, is sent as written", async () => {
+  const one = gw.addRoute({ allow: ["openai/gpt-5-mini"] });
+  const written = JSON.stringify(hello("openai/gpt-5-mini"));
+  await gw.chat(one.key, written);
+  expect(gw.fake.chats[0]!.body).toBe(written);
+
+  const many = gw.addRoute({ allow: ["openai/gpt-5-mini", "google/gemini-2.5-flash"] });
+  const own = JSON.stringify(hello("openai/gpt-5-mini", { models: ["openai/gpt-5-mini"] }));
+  await gw.chat(many.key, own);
+  expect(gw.fake.chats[1]!.body).toBe(own);
+});

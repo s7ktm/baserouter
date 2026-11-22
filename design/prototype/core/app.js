@@ -88,7 +88,7 @@ let copiedId = null;
 let opener = null;
 
 function fresh() {
-  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", testing: null, error: null, made: null };
+  return { editing: null, tab: "curl", entering: false, focus: false, step: null, kind: null, flow: false, filter: "", testing: null, error: null, made: null, newKey: null, saved: false };
 }
 if (signedOut) {
   view = { screen: "sign-in" };
@@ -96,10 +96,16 @@ if (signedOut) {
 } else if (data.routes.some((r) => r.id === query.get("route"))) {
   view = { screen: "route", id: query.get("route") };
   ui.editing = query.get("edit");
+  // edit=key&step=made: the new key, shown once
+  if (ui.editing === "key" && query.get("step") === "made") {
+    ui.editing = null;
+    ui.newKey = { id: view.id, key: demoKey };
+  }
 } else if (query.get("screen") in screens && query.get("screen") !== "route" && !(live && fixed.has(query.get("screen")))) {
   view = { screen: query.get("screen") };
   ui.flow = query.get("flow") === "1";
   ui.filter = query.get("filter") ?? "";
+  ui.editing = query.get("edit");
   ui.kind = query.get("kind");
   ui.step = query.get("step") ?? (view.screen === "add-provider" ? (ui.kind ? "key" : "pick") : null);
   if (ui.step === "fail") ui.error = view.screen === "sign-in" ? core[lang].wrongPassword : "401 invalid key";
@@ -151,13 +157,16 @@ function context() {
     theme: theme(),
     copied: copiedId === "address",
     skins: registry.map((id) => ({ id, name: skins[id].name[lang], icon: skins[id].icon, active: id === skinId })),
-    money: (n, digits) => "$" + num(n, digits ?? (Number.isInteger(n) ? 0 : n < 0.001 ? 4 : n < 0.01 ? 3 : 2)),
+    money: (n, digits) => "$" + (digits === undefined && n > 0 && n < 0.001
+      ? new Intl.NumberFormat(lang === "tr" ? "tr-TR" : "en-US", { maximumSignificantDigits: 2 }).format(n)
+      : num(n, digits ?? (Number.isInteger(n) ? 0 : n < 0.01 ? 3 : 2))),
     secs: (n) => `${num(n, 1)} ${lang === "tr" ? "sn" : "s"}`,
     ago: (s) => (s < 60 ? t("agoS", { n: s }) : s < 3600 ? t("agoM", { n: Math.round(s / 60) }) : s < 86400 ? t("agoH", { n: Math.round(s / 3600) }) : t("agoD", { n: Math.round(s / 86400) })),
     resetDate: new Intl.DateTimeFormat(lang, { day: "numeric", month: "long" }).format(new Date(now.getFullYear(), now.getMonth() + 1, 1)),
     name: (r) => esc(r.name[lang] ?? r.name.en),
     percent: (r) => Math.min(100, Math.round((r.used / r.budget) * 100)),
-    last: data.last && { ...data.last, route: data.routes.find((r) => r.id === data.last.route) },
+    // the last request, while its route still exists
+    last: data.last && data.routes.some((r) => r.id === data.last.route) ? { ...data.last, route: data.routes.find((r) => r.id === data.last.route) } : null,
   };
 }
 
@@ -267,7 +276,64 @@ const actions = {
     show({ screen }, control, { flow, filter: control.dataset.filter ?? "", step: screen === "add-provider" ? "pick" : null });
   },
   close,
-  edit(control) { ui.editing = control.dataset.edit || null; ui.focus = Boolean(ui.editing); render(); },
+  async edit(control) {
+    const editing = control.dataset.edit || null;
+    if (live && editing === "model") await loadModels();
+    ui.editing = editing;
+    ui.error = null;
+    ui.saved = false;
+    ui.focus = Boolean(editing);
+    render();
+  },
+  "new-key"(control) {
+    const route = data.routes.find((r) => r.id === control.dataset.id);
+    if (!route) return;
+    if (!live) {
+      route.keyHint = demoKey.slice(-4);
+      ui.newKey = { id: route.id, key: demoKey };
+      ui.editing = null;
+      return render();
+    }
+    api.newKey(route.id)
+      .then(async ({ key }) => {
+        await refresh(true);
+        ui.newKey = { id: route.id, key };
+        ui.editing = null;
+        ui.error = null;
+      })
+      .catch(failed)
+      .finally(render);
+  },
+  "remove-model"(control) {
+    const route = data.routes.find((r) => r.id === control.dataset.id);
+    if (!route || route.models.length < 2) return;
+    route.models = route.models.filter((m) => m !== control.dataset.model);
+    render();
+    if (live) send(api.setModels(route.id, route.models));
+  },
+  "delete-route"(control) {
+    const id = control.dataset.id;
+    data.routes = data.routes.filter((r) => r.id !== id);
+    data.requests = data.requests.filter((q) => q.route !== id); // as the gateway's state leaves them out
+    close();
+    if (live) send(api.deleteRoute(id));
+  },
+  "sign-out"() {
+    if (live) return api.logout().catch(() => {}).finally(signOut);
+    view = { screen: "sign-in" };
+    ui = { ...fresh(), step: "login", focus: true };
+    render();
+  },
+  export() {
+    const link = document.createElement("a");
+    if (live) link.href = "/api/export";
+    else {
+      link.href = URL.createObjectURL(new Blob([JSON.stringify({ baserouter: 1, madeUp: true, ...data }, null, 2)], { type: "application/json" }));
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+    link.download = "baserouter.json";
+    link.click();
+  },
   tab(control) { ui.tab = control.dataset.tab; render(); },
   pick(control) { ui.kind = control.dataset.kind; ui.step = "key"; ui.focus = true; render(); },
   step(control) { ui.step = control.dataset.step; ui.error = null; ui.focus = true; render(); },
@@ -304,6 +370,30 @@ const actions = {
 };
 
 const forms = {
+  model(form, values) {
+    const route = data.routes.find((r) => r.id === form.dataset.id);
+    const model = String(values.get("model") ?? "");
+    if (!route || !model || route.models.includes(model)) return;
+    route.models = [...route.models, model];
+    ui.editing = null;
+    render();
+    if (live) send(api.setModels(route.id, route.models));
+  },
+  password(form, values) {
+    const done = () => { ui.editing = null; ui.error = null; ui.saved = true; };
+    if (!live) return done(), render();
+    form.querySelector("button[type=submit]")?.setAttribute("disabled", "");
+    api.password(String(values.get("current") ?? ""), String(values.get("password") ?? ""))
+      .then(done)
+      .catch((err) => {
+        if (err instanceof SignedOut) return signOut();
+        const words = core[lang];
+        const known = { wrong_password: words.wrongPassword, too_many_tries: words.tooManyTries, password_too_short: words.passwordHint };
+        ui.error = known[err.code] ?? (err instanceof TypeError ? words.noAnswer : err.message);
+        ui.focus = true;
+      })
+      .finally(render);
+  },
   "sign-in"(form, values) {
     const password = String(values.get("password") ?? "");
     if (!live) { // made-up data: any password opens the panel
@@ -467,6 +557,12 @@ function fillModels() {
   if (!select || !liveModels?.length) return;
   const chosen = select.value;
   select.replaceChildren(...orderModels(liveModels).map((m) => new Option(m, m, false, m === chosen)));
+}
+
+// An action that did not go through: say so in the open sheet, or ask to sign in again.
+function failed(err) {
+  if (err instanceof SignedOut) return signOut();
+  ui.error = err instanceof TypeError ? core[lang].noAnswer : err.message;
 }
 
 function signOut() {

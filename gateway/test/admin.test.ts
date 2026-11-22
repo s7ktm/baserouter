@@ -239,3 +239,70 @@ test("requests are listed newest first, and can be filtered by route and paged",
   expect(page.map((r) => r.cost)).toEqual([0.05, 0.04]);
   expect((await list(`?limit=2&before=${page[1]!.id}`)).map((r) => r.cost)).toEqual([0.03, 0.02]);
 });
+
+test("a route's models can be changed, in order, and the change is enforced at once", async () => {
+  const auth = await signIn();
+  await api("POST", "/providers", { kind: "openrouter", key: FAKE_KEY }, auth);
+  const { route, key } = (await (await api("POST", "/routes", { name: "Coding agent", budget: 5, models: ["openai/gpt-5-mini"] }, auth)).json()) as { route: { id: string }; key: string };
+  const ask = (model: string) => gw.chat(key, { model, messages: [{ role: "user", content: "Hello" }] });
+  expect((await ask("anthropic/claude-sonnet-5.5")).status).toBe(403);
+
+  const res = await api("PATCH", `/routes/${route.id}`, { models: ["anthropic/claude-sonnet-5.5", " openai/gpt-5-mini "] }, auth);
+  expect((await got(res)).route).toMatchObject({ models: ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"] });
+  expect((await ask("anthropic/claude-sonnet-5.5")).status).toBe(200);
+
+  for (const models of ["m", [""], ["a", "a"], [1]]) expect((await api("PATCH", `/routes/${route.id}`, { models }, auth)).status).toBe(400);
+});
+
+test("a new key replaces the old one at once, and is given in full only once", async () => {
+  const auth = await signIn();
+  await api("POST", "/providers", { kind: "openrouter", key: FAKE_KEY }, auth);
+  const { route, key: old } = (await (await api("POST", "/routes", { name: "Robot arm", budget: 5 }, auth)).json()) as { route: { id: string }; key: string };
+  const hello = { model: "openai/gpt-5-mini", messages: [{ role: "user", content: "Hello" }] };
+
+  const res = await api("POST", `/routes/${route.id}/key`, undefined, auth);
+  expect(res.status).toBe(200);
+  const { key, route: changed } = (await res.json()) as { key: string; route: { keyHint: string } };
+  expect(key).toMatch(/^br_[0-9a-f]{48}$/);
+  expect(key).not.toBe(old);
+  expect(changed.keyHint).toBe(key.slice(-4));
+
+  expect((await gw.chat(old, hello)).status).toBe(401);
+  expect((await gw.chat(key, hello)).status).toBe(200);
+  expect(await (await api("GET", "/routes", undefined, auth)).text()).not.toContain(key);
+  expect((await api("POST", "/routes/nope/key", undefined, auth)).status).toBe(404);
+});
+
+test("changing the password needs the current one, and ends every other session", async () => {
+  const auth = await signIn();
+  const other = { Authorization: `Bearer ${((await (await api("POST", "/login", { password: PASSWORD })).json()) as { token: string }).token}` };
+
+  expect(await codeOf(await api("POST", "/password", { current: "not it at all", password: "a new password" }, auth))).toBe("wrong_password");
+  expect(await codeOf(await api("POST", "/password", { current: PASSWORD, password: "short" }, auth))).toBe("password_too_short");
+  expect((await api("POST", "/password", { current: PASSWORD, password: "a new password" }, auth)).status).toBe(204);
+
+  expect((await api("GET", "/routes", undefined, auth)).status).toBe(200); // this session stays
+  expect((await api("GET", "/routes", undefined, other)).status).toBe(401); // the other one ended
+  expect((await api("POST", "/login", { password: PASSWORD })).status).toBe(401);
+  expect((await api("POST", "/login", { password: "a new password" })).status).toBe(200);
+  expect((await api("POST", "/password", { current: "x", password: "a new password" })).status).toBe(401); // needs a session
+});
+
+test("the export has routes, providers and every request, and no key or key hash", async () => {
+  const auth = await signIn();
+  await api("POST", "/providers", { kind: "openrouter", key: FAKE_KEY }, auth);
+  const { route, key } = (await (await api("POST", "/routes", { name: "Newsletter bot", budget: 3 }, auth)).json()) as { route: { id: string }; key: string };
+  await gw.chat(key, { model: "openai/gpt-5-mini", messages: [{ role: "user", content: "Hello" }] });
+
+  const res = await api("GET", "/export", undefined, auth);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="baserouter-\d{4}-\d{2}-\d{2}\.json"$/);
+  const text = await res.text();
+  for (const secret of [FAKE_KEY, key, gw.store.route(route.id)!.key_hash, gw.store.providers()[0]!.key_sealed]) expect(text).not.toContain(secret);
+  const data = JSON.parse(text);
+  expect(data.baserouter).toBe(1);
+  expect(data.routes).toEqual([expect.objectContaining({ id: route.id, name: "Newsletter bot", budget: 3, keyHint: key.slice(-4) })]);
+  expect(data.providers).toEqual([expect.objectContaining({ kind: "openrouter", keyHint: "-key" })]);
+  expect(data.requests).toEqual([expect.objectContaining({ route: route.id, cost: 0.0000205, ok: true })]);
+  expect((await api("GET", "/export")).status).toBe(401);
+});

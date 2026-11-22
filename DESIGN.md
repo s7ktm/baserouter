@@ -52,7 +52,7 @@ All mascots, moods and sizes are on `design/prototype/mascots.html`.
 
 ### Numbers
 
-- Spend always has two decimals: `$1.24`. A budget drops them when it is whole: `$25`. A cost under one cent has three: `$0.004`.
+- Spend always has two decimals: `$1.24`. A budget drops them when it is whole: `$25`. A cost under one cent has three: `$0.004`. A cost under a tenth of a cent keeps two significant digits, so it never reads as nothing: `$0.000021`.
 - Numbers follow the interface language: `$12,345.67` in English, `$12.345,67` in Turkish. Thousands are always grouped.
 - A big number shrinks to fit its place; it never pushes a control off the screen and is never cut.
 - Figures that change or line up use tabular numerals.
@@ -125,10 +125,10 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 
 1. **Name, status, switch.** The status is a short sentence. A route over its budget has no switch.
 2. **Budget.** Spent and limit, a meter, the date it starts again, and one button: "Change budget", or "Raise budget" as the main action when the route is stopped.
-3. **Connect.** The address, the route's key, and a snippet for curl and Python. The key is shown in full only once, when it is made; afterwards only its last four characters are shown and a lost key is replaced with a new one.
-4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails.
+3. **Connect.** The address, the route's key, and a snippet for curl and Python. The key is shown in full only once, when it is made; afterwards only its last four characters are shown and a lost key is replaced with a new one. "Make a new key" first says that the old key stops working at once, then shows the new key in full, this once.
+4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails. Each model but the last can be removed; "Add model" picks one of the provider's models.
 5. **Recent requests.** Five rows. A request that worked has a filled dot and its cost; one that failed has a hollow ring and the word "failed".
-6. **Delete route.** Last, and quiet.
+6. **Delete route.** Last, and quiet. It asks before it deletes, with the answer that keeps the route under the cursor.
 
 ### The sheet
 
@@ -158,7 +158,7 @@ Every request, newest first: which route, which model, how long ago, how long it
 
 ### Settings
 
-In order of how often they are touched: look (the skin picker, with each skin's icon), theme (light, dark, match device), language, then password, export, and about.
+In order of how often they are touched: look (the skin picker, with each skin's icon), theme (light, dark, match device), language, then password, export, and about. Changing the password asks for the current one and signs the panel out everywhere else; signing out sits beside it. Export saves one JSON file.
 
 ### Sign in
 
@@ -281,8 +281,7 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **The mascots have no names.**
 - **The flying pigeon's raised wing** is one plain shape and reads less clearly than the other poses.
 - **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the five screens after it needed no more.
-- **Controls that do nothing yet:** in route detail, making a new key, adding or removing a model and deleting the route; in settings, changing the password and exporting. There is also no way to sign out.
-- **Costs below a tenth of a cent read as nothing.** "Under one cent has three decimals" was drawn for costs like `$0.004`; a short request to a small model costs `$0.00002`, which shows as `$0.0000`.
+- **A route's name cannot be changed** after it is made.
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
 - **No screen for a single request.** A row in activity does not open.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.

@@ -19,6 +19,9 @@ export const words = {
     keyNote: "The full key is shown once, when it is made. If it is lost, make a new one.", newKey: "Make a new key",
     models: "Models", modelsNote: "Tried in this order: if the first fails, the next one is used.", addModel: "Add model", remove: "Remove {name}",
     recent: "Recent requests", noRecent: "No requests yet.", allActivity: "All activity", failed: "failed", deleteRoute: "Delete route",
+    newKeyNote: "The old key stops working at once. Every agent that uses it needs the new one.",
+    modelToAdd: "Model to add", add: "Add", anyModel: "Any model the provider has.",
+    deleteAsk: "Delete {name}? Its key stops working at once. Its requests stay in activity.",
     agoS: "{n} s ago", agoM: "{n} min ago", agoH: "{n} h ago", agoD: "{n} d ago",
 
     // providers
@@ -50,7 +53,9 @@ export const words = {
 
     // settings
     look: "Look", theme: "Theme", light: "Light", dark: "Dark", auto: "Match device", language: "Language",
-    password: "Password", changePassword: "Change password",
+    password: "Password", changePassword: "Change password", signOut: "Sign out",
+    currentPassword: "Current password", newPassword: "New password", savePassword: "Save password",
+    passwordSaved: "The password is changed. Everywhere else, this panel is signed out.",
     yourData: "Your data", exportAll: "Export everything",
     exportNote: "Routes, providers without their keys, and the request log, in one file.",
     about: "About", aboutLine: "BaseRouter 0.1. Open source under the MIT licence.",
@@ -77,6 +82,9 @@ export const words = {
     keyNote: "Anahtarın tamamı yalnızca oluşturulduğunda gösterilir. Kaybolduysa yenisini oluştur.", newKey: "Yeni anahtar oluştur",
     models: "Modeller", modelsNote: "Bu sırayla denenir: ilki başarısız olursa sıradaki kullanılır.", addModel: "Model ekle", remove: "Kaldır: {name}",
     recent: "Son istekler", noRecent: "Henüz istek yok.", allActivity: "Bütün hareketler", failed: "başarısız", deleteRoute: "Rotayı sil",
+    newKeyNote: "Eski anahtar hemen çalışmaz olur. Onu kullanan her ajanın yeni anahtara ihtiyacı olur.",
+    modelToAdd: "Eklenecek model", add: "Ekle", anyModel: "Sağlayıcının her modeli kullanılabilir.",
+    deleteAsk: "Silinsin mi: {name}? Anahtarı hemen çalışmaz olur. İstekleri hareketlerde kalır.",
     agoS: "{n} sn önce", agoM: "{n} dk önce", agoH: "{n} sa önce", agoD: "{n} gün önce",
 
     provNone: "Henüz sağlayıcı yok. Başlamak için bir tane ekle.",
@@ -104,7 +112,9 @@ export const words = {
     actNone: "Henüz istek yok. Bir rota kullanıldığında burada görünür.", actNoneFor: "Bu rotada henüz istek yok.",
 
     look: "Görünüm", theme: "Tema", light: "Açık", dark: "Koyu", auto: "Cihaza uy", language: "Dil",
-    password: "Parola", changePassword: "Parolayı değiştir",
+    password: "Parola", changePassword: "Parolayı değiştir", signOut: "Çıkış yap",
+    currentPassword: "Şu anki parola", newPassword: "Yeni parola", savePassword: "Parolayı kaydet",
+    passwordSaved: "Parola değiştirildi. Bu panel başka her yerde kapatıldı.",
     yourData: "Verilerin", exportAll: "Hepsini dışa aktar",
     exportNote: "Rotalar, anahtarları olmadan sağlayıcılar ve istek kaydı, tek dosyada.",
     about: "Hakkında", aboutLine: "BaseRouter 0.1. MIT lisanslı açık kaynak.",

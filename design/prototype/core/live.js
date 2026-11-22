@@ -38,6 +38,11 @@ export const api = {
   testProvider: (id) => call("POST", `/providers/${encodeURIComponent(id)}/test`),
   removeProvider: (id) => call("DELETE", `/providers/${encodeURIComponent(id)}`),
   makeRoute: (route) => call("POST", "/routes", route),
+  newKey: (id) => call("POST", `/routes/${encodeURIComponent(id)}/key`),
+  setModels: (id, models) => call("PATCH", `/routes/${encodeURIComponent(id)}`, { models }),
+  deleteRoute: (id) => call("DELETE", `/routes/${encodeURIComponent(id)}`),
+  password: (current, password) => call("POST", "/password", { current, password }),
+  logout: () => call("POST", "/logout"),
 };
 
 // The gateway's state, in the shape of core/data.js, so skins and screens draw it

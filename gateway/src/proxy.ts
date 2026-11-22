@@ -20,6 +20,15 @@ function passHeaders(upstream: Response): Headers {
   return headers;
 }
 
+// A route's models are an order: when the model asked for fails, the next ones are tried.
+// OpenRouter does that itself when the request carries "models", so the gateway adds it:
+// the model asked for first, then the route's other models in the route's order. The body
+// is left exactly as written when the route has one model, or the client sent its own list.
+export function withFallbacks(text: string, body: Record<string, unknown>, model: string, routeModels: string[]): string {
+  if (routeModels.length < 2 || "models" in body) return text;
+  return JSON.stringify({ ...body, models: [model, ...routeModels.filter((m) => m !== model)] });
+}
+
 export function proxy(deps: Deps) {
   const { store } = deps;
   const app = new Hono<Env>();
@@ -60,6 +69,7 @@ export function proxy(deps: Deps) {
     if (models.length > 0 && !models.includes(model)) {
       return refuse(c, 403, "model_not_allowed", `Route "${route.name}" may not use ${model}. It may use: ${models.join(", ")}.`);
     }
+    const sent = withFallbacks(text, body as Record<string, unknown>, model, models);
 
     const provider = store.providers()[0];
     if (!provider) return refuse(c, 503, "no_provider", "No provider is set up yet. Add one in BaseRouter.");
@@ -112,7 +122,7 @@ export function proxy(deps: Deps) {
 
     let upstream: Response;
     try {
-      upstream = await openrouter.chat(deps.upstream, key, text, abort.signal);
+      upstream = await openrouter.chat(deps.upstream, key, sent, abort.signal);
     } catch {
       if (client.aborted) {
         finish(null, "client_cancelled");
