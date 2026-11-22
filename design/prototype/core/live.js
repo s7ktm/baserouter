@@ -54,7 +54,7 @@ export function toData(state) {
   }));
   const known = new Set(routes.map((r) => r.id));
   const request = (q) => ({
-    route: q.route, model: q.model ?? q.requestedModel ?? "", seconds: q.totalMs / 1000, cost: q.cost ?? 0,
+    route: q.route, kind: q.kind ?? "chat", model: q.model ?? q.requestedModel ?? "", seconds: q.totalMs / 1000, cost: q.cost ?? 0,
     ago: Math.max(0, Math.round((state.now - q.at) / 1000)), ok: q.ok,
   });
   return {

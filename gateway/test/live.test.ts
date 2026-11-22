@@ -74,3 +74,47 @@ live("when the first model of a route fails, OpenRouter answers with the next on
   expect(row.model_served).toStartWith(model);
   expect(row.cost_usd).toBeGreaterThan(0);
 }, 60_000);
+
+// Images and sound cost more (about four cents for all three), so they only run when asked:
+//   BASEROUTER_LIVE_MEDIA=1 bun --env-file=../.env test live
+const media = test.skipIf(!key || !process.env.BASEROUTER_LIVE_MEDIA);
+
+media("a streamed chat answer with an image records its cost from the stream", async () => {
+  const route = gw.addRoute();
+  const res = await gw.chat(route.key, { model: "google/gemini-3.1-flash-lite-image", modalities: ["image", "text"], stream: true, messages: [{ role: "user", content: "Draw a small blue circle." }] });
+  expect(res.status).toBe(200);
+  expect(await res.text()).toContain('"images":[{"type":"image_url","image_url":{"url":"data:image/');
+  await until(() => gw.lastRequest()?.kind === "image");
+  expect(gw.lastRequest()).toMatchObject({ streamed: 1, failure: null, cost_source: "provider" });
+  expect(gw.lastRequest()!.cost_usd).toBeGreaterThan(0);
+}, 120_000);
+
+media("/images/generations answers with base64 and records its cost", async () => {
+  const route = gw.addRoute();
+  const res = await fetch(`${gw.url}/v1/images/generations`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${route.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "recraft/recraft-v4.1-flash", prompt: "A small blue circle on white." }),
+  });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { data: { b64_json: string }[]; usage: { cost: number } };
+  expect(body.data[0]!.b64_json.length).toBeGreaterThan(100);
+  expect(gw.lastRequest()).toMatchObject({ kind: "image", cost_usd: body.usage.cost, cost_source: "provider" });
+  expect(gw.lastRequest()!.upstream_id).toStartWith("gen-img-");
+}, 120_000);
+
+media("/audio/speech answers with sound, and its cost is asked for afterwards", async () => {
+  const route = gw.addRoute();
+  const res = await fetch(`${gw.url}/v1/audio/speech`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${route.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "hexgrad/kokoro-82m", input: "Hello from BaseRouter.", voice: "af_heart", response_format: "mp3" }),
+  });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("audio/mpeg");
+  expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+  await until(() => gw.lastRequest()?.kind === "speech");
+  await gw.settled();
+  expect(gw.lastRequest()).toMatchObject({ cost_source: "provider", failure: null });
+  expect(gw.lastRequest()!.cost_usd).toBeGreaterThan(0);
+}, 120_000);

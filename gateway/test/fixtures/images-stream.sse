@@ -1,0 +1,8 @@
+: OPENROUTER PROCESSING
+
+data: {"type":"image_generation.partial_image","b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==","partial_image_index":0,"created":1795300008}
+
+data: {"type":"image_generation.completed","b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==","media_type":"image/png","created":1795300008,"usage":{"prompt_tokens":9,"completion_tokens":272,"total_tokens":281,"cost":0.0022,"is_byok":false}}
+
+data: [DONE]
+

@@ -69,9 +69,14 @@ const MIGRATIONS: string[] = [
   // 2: how the panel draws a route
   `ALTER TABLE routes ADD COLUMN icon TEXT NOT NULL DEFAULT 'code';
    ALTER TABLE routes ADD COLUMN color TEXT NOT NULL DEFAULT '#2B62D9';`,
+  // 3: what a request made: text, an image, speech, or a transcription
+  `ALTER TABLE requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'image', 'speech', 'transcription'));`,
 ];
 
 export type CostSource = "provider" | "computed" | "unknown";
+// chat: text from /chat/completions. image: /images/generations, or a chat request asking for
+// images. speech: /audio/speech, or a chat request asking for audio. transcription: /audio/transcriptions.
+export type Kind = "chat" | "image" | "speech" | "transcription";
 export type Failure = "upstream_error" | "stream_error" | "network_error" | "client_cancelled";
 
 export interface ProviderRow {
@@ -105,6 +110,7 @@ export interface RequestRow {
   route_id: string | null;
   provider_id: string | null;
   started_at: number;
+  kind: Kind;
   model_requested: string | null;
   model_served: string | null;
   streamed: number;
@@ -225,12 +231,12 @@ export class Store {
   addRequest(r: NewRequest): number {
     const result = this.db
       .query(
-        `INSERT INTO requests (route_id, provider_id, started_at, model_requested, model_served, streamed, prompt_tokens,
+        `INSERT INTO requests (route_id, provider_id, started_at, kind, model_requested, model_served, streamed, prompt_tokens,
            completion_tokens, cost_usd, cost_source, first_token_ms, total_ms, status, failure, upstream_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        r.route_id, r.provider_id, r.started_at, r.model_requested, r.model_served, r.streamed ? 1 : 0, r.prompt_tokens,
+        r.route_id, r.provider_id, r.started_at, r.kind, r.model_requested, r.model_served, r.streamed ? 1 : 0, r.prompt_tokens,
         r.completion_tokens, r.cost_usd, r.cost_source, r.first_token_ms, r.total_ms, r.status, r.failure, r.upstream_id,
       );
     return Number(result.lastInsertRowid);

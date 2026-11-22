@@ -36,9 +36,17 @@ function inPieces(bytes: Uint8Array, size = 37): ReadableStream<Uint8Array> {
   });
 }
 
+// The generation ids the fake hands out in its X-Generation-Id header.
+export const IDS = {
+  images: "gen-img-1795300007-FixtureImages00001",
+  speech: "gen-tts-1795300009-FixtureSpeech00001",
+  transcription: "gen-stt-1795300010-FixtureTranscribe1",
+} as const;
+
 export interface Fake {
   url: string;
   chats: { key: string | null; body: string }[]; // every chat request received
+  posts: { path: string; key: string | null; contentType: string | null; body: Uint8Array }[]; // every POST received, chat included
   lookups: string[]; // every generation id asked for
   cancelled: Promise<void>; // settles when a "fixture/hang" stream is cancelled by its reader
   stop(): Promise<void>;
@@ -46,6 +54,7 @@ export interface Fake {
 
 export function startFake(port = 0): Fake {
   const chats: Fake["chats"] = [];
+  const posts: Fake["posts"] = [];
   const lookups: string[] = [];
   const cancelled = Promise.withResolvers<void>();
 
@@ -61,16 +70,36 @@ export function startFake(port = 0): Fake {
       if (req.method === "GET" && url.pathname === "/key") return json("key.json");
       if (req.method === "GET" && url.pathname === "/models") return json("models.json");
       if (req.method === "GET" && url.pathname === "/generation") {
-        lookups.push(url.searchParams.get("id") ?? "");
-        return json("generation.json");
+        const id = url.searchParams.get("id") ?? "";
+        lookups.push(id);
+        return json(id === IDS.speech ? "generation-speech.json" : "generation.json");
       }
-      if (req.method !== "POST" || url.pathname !== "/chat/completions") return new Response("Not found", { status: 404 });
+      if (req.method !== "POST") return new Response("Not found", { status: 404 });
 
-      const body = await req.text();
-      chats.push({ key, body });
-      const { model, stream } = JSON.parse(body) as { model: string; stream?: boolean };
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      posts.push({ path: url.pathname, key, contentType: req.headers.get("content-type"), body: bytes });
 
+      if (url.pathname === "/audio/transcriptions") return json("transcription.json", 200, { "X-Generation-Id": IDS.transcription });
+      const { model, stream, modalities } = JSON.parse(new TextDecoder().decode(bytes)) as { model: string; stream?: boolean; modalities?: string[] };
       if (model === "fixture/429") return json("error-429.json", 429, { "Retry-After": "3" });
+
+      if (url.pathname === "/images") {
+        if (stream) return new Response(inPieces(await fixtureBytes("images-stream.sse")), { headers: { ...SSE, "X-Generation-Id": IDS.images } });
+        return json("images.json", 200, { "X-Generation-Id": IDS.images });
+      }
+      // The sound comes as bytes, with no cost in it.
+      if (url.pathname === "/audio/speech") {
+        return new Response(inPieces(await fixtureBytes("speech.mp3")), { headers: { "Content-Type": "audio/mpeg", "X-Generation-Id": IDS.speech } });
+      }
+      if (url.pathname !== "/chat/completions") return new Response("Not found", { status: 404 });
+
+      const body = new TextDecoder().decode(bytes);
+      chats.push({ key, body });
+
+      if (modalities?.includes("image")) {
+        if (stream) return new Response(inPieces(await fixtureBytes("chat-image-stream.sse")), { headers: SSE });
+        return json("chat-image.json");
+      }
       if (model === "fixture/error-200") return json("chat-error-200.json");
       if (model === "fixture/stream-error") return new Response(inPieces(await fixtureBytes("chat-stream-error.sse")), { headers: SSE });
       if (model === "fixture/no-usage") return new Response(inPieces(await fixtureBytes("chat-stream-no-usage.sse")), { headers: SSE });
@@ -96,7 +125,7 @@ export function startFake(port = 0): Fake {
     },
   });
 
-  return { url: `http://127.0.0.1:${server.port}`, chats, lookups, cancelled: cancelled.promise, stop: () => server.stop(true) };
+  return { url: `http://127.0.0.1:${server.port}`, chats, posts, lookups, cancelled: cancelled.promise, stop: () => server.stop(true) };
 }
 
 if (import.meta.main) {
