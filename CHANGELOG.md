@@ -4,6 +4,10 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-22
+
+Images and sound, a history of what routes made, and a way to run it for good.
+
 ### Added
 
 - Images, sound and files through OpenRouter, each with the route's key, its budget and its models, and recorded with its cost:
@@ -18,6 +22,10 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 - Running it for good: a `Dockerfile` and `compose.yaml` (reachable from the machine itself, with its data in a volume), an optional Caddy in front for HTTPS (`--profile tls`), a hardened systemd unit in `deploy/`, and [INSTALL.md](INSTALL.md) with backups, updates, hosting services and why serverless is not supported.
 - The gateway stops cleanly on SIGTERM or Ctrl-C.
 - Tests, the type check and a Docker build run on every pull request.
+
+### Changed
+
+- What is kept. In 0.1.0 no prompt or answer was stored. Now the images and speech routes make are kept by default, with the words that asked for them, on the machine BaseRouter runs on; a route can switch it off and one request can say no. Other prompts and answers are still not stored. See "What is kept" in [PRODUCT.md](PRODUCT.md).
 
 ### Fixed
 
@@ -45,5 +53,6 @@ The first release.
 
 - Providers other than OpenRouter; renaming a route; images, audio, video and embeddings.
 
-[Unreleased]: https://github.com/s7ktm/baserouter/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/s7ktm/baserouter/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/s7ktm/baserouter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/s7ktm/baserouter/releases/tag/v0.1.0
