@@ -3,7 +3,7 @@
 // else, or with ?state=..., it is the made-up data in data.js and nothing is saved.
 import { states, catalog, modelChoices, offers, providersFor, playSample } from "./data.js";
 import { modelPicker } from "./screens/models.js";
-import { api, gatewayStatus, SignedOut, toData, tryChat } from "./live.js";
+import { api, gatewayStatus, SignedOut, toData, tryChat, tryImage } from "./live.js";
 import { words as core } from "./words.js";
 import { checkSkin, missingTokens } from "./contract.js";
 import { routeSheet } from "./screens/route.js";
@@ -13,7 +13,7 @@ import { activitySheet } from "./screens/activity.js";
 import { modelsSheet } from "./screens/model-list.js";
 import { settingsSheet } from "./screens/settings.js";
 import { signInSheet } from "./screens/sign-in.js";
-import { playgroundSheet, textModels } from "./screens/playground.js";
+import { playgroundSheet, modelsFor, playNow, KINDS } from "./screens/playground.js";
 import { registry } from "../skins/registry.js";
 
 // Everything that is not the home screen is a sheet over it.
@@ -84,17 +84,18 @@ let liveModels = null; // what the provider offers (see gateway/src/catalogue.ts
 // What is open, and the passing state of whatever is open. All of it can be set from the URL:
 //   route=<id> [edit=budget]            a route's detail
 //   screen=providers|add-provider|new-route|activity|settings|playground
-//   as=<route id> model=<name> (playground: who asks, and for what)   edit=system (its system message)
-//   step=waiting|streaming|done|stopped|fail (playground, on made-up data: an answer in that state)   detail=1 (its details open)
+//   as=<route id> kind=chat|image model=<name> (playground: who asks, and for what)   edit=system (its system message)
+//   step=waiting|streaming|done|stopped|fail (playground, on made-up data: an answer or an image in that state)   detail=1 (its details open)
 //   step=pick|key|testing|ok|fail (add-provider)   step=made|arrived (new-route)
 //   kind=<catalog kind>   flow=1 (first run, numbered steps)   filter=<route id> (activity)
 //   find=<words> makes=text|image|speech|transcription|video (choosing a model: route edit=model, new-route edit=model)
 //   show=images|sounds|videos (activity: what was kept)   media=<id> (one of them)   edit=delete-media
 const demoKey = "br_7Qm2xV9cLt4RkP0aZ8wYh3Ns";
 const demoFirst = { seconds: 0.8, cost: 0.001 };
-// The playground's conversation. It lives here and nowhere else: closing the sheet keeps it,
+// The playground: what is being tried (a chat or an image), and what was said and made so far,
+// each kind in its own list. It lives here and nowhere else: closing the sheet keeps it,
 // "Start over" and leaving the page end it. "running" stops the request under way.
-const play = { route: null, model: null, system: "", draft: "", turns: [], open: null, running: null };
+const play = { route: null, kind: "chat", model: null, system: "", draft: { chat: "", image: "" }, turns: { chat: [], image: [] }, open: null, running: null };
 let view = null;
 let ui = fresh();
 let copiedId = null;
@@ -137,18 +138,27 @@ if (signedOut) {
 if (view?.screen === "playground") {
   play.route = query.get("as");
   play.model = query.get("model");
+  if (KINDS.includes(query.get("kind"))) play.kind = query.get("kind");
   const step = query.get("step");
-  if (!live && ["waiting", "streaming", "done", "stopped", "fail"].includes(step) && data.routes.length) {
+  if (!live && playNow(data, play).kind === "image" && ["waiting", "done", "stopped", "fail"].includes(step)) {
+    const { route, model } = playNow(data, play);
+    play.turns.image = [{
+      ask: playSample.imageAsk[lang], route: route.id, kept: keepsMedia(route), state: step === "fail" ? "failed" : step, images: step === "done" ? [playSample.image] : [],
+      error: step === "fail" ? playSample.error : null,
+      facts: step === "done" ? madeUpFacts(route, "image", model, playSample.imageFacts) : null,
+    }];
+    if (query.get("detail") === "1") play.open = 0;
+  } else if (!live && ["waiting", "streaming", "done", "stopped", "fail"].includes(step) && data.routes.length) {
     const stress = query.get("state") === "stress";
     const route = data.routes.find((r) => r.id === play.route) ?? data.routes[0];
     const whole = stress ? `${playSample.answer[lang]} `.repeat(6) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız" : playSample.answer[lang];
     const half = whole.slice(0, whole.indexOf(" ", whole.length / 2));
-    play.turns = [{
+    play.turns.chat = [{
       ask: stress ? `${playSample.ask[lang]} `.repeat(4) + "Çekoslovakyalılaştıramadıklarımızdanmışsınız" : playSample.ask[lang],
       text: step === "done" ? whole : step === "streaming" || step === "stopped" ? half : "",
       state: step === "fail" ? "failed" : step,
       error: step === "fail" ? playSample.error : null,
-      facts: step === "done" ? madeUpFacts(route, play.model, stress ? { promptTokens: 2000000, completionTokens: 123456, cost: 1234.5, firstMs: 312400, totalMs: 987600 } : playSample.facts) : null,
+      facts: step === "done" ? madeUpFacts(route, "chat", play.model, stress ? { promptTokens: 2000000, completionTokens: 123456, cost: 1234.5, firstMs: 312400, totalMs: 987600 } : playSample.facts) : null,
     }];
     if (query.get("detail") === "1") play.open = 0;
   }
@@ -565,8 +575,16 @@ const actions = {
   "try-stop"() { play.running?.abort(); },
   "try-clear"() {
     play.running?.abort();
-    Object.assign(play, { turns: [], open: null });
+    play.turns[playNow(data, play).kind] = [];
+    play.open = null;
     ui.focus = true;
+    render();
+  },
+  // a chat or an image: the models follow the kind
+  "try-kind"(control) {
+    if (play.running || !KINDS.includes(control.dataset.kind)) return;
+    Object.assign(play, { kind: control.dataset.kind, model: null, open: null });
+    ui.editing = null;
     render();
   },
   "try-facts"(control) {
@@ -584,20 +602,19 @@ const forms = {
   find() {},
   // The playground: the message is sent as the chosen route, with what was said before it.
   try(form) {
-    const route = data.routes.find((r) => r.id === play.route) ?? data.routes[0];
-    const models = route ? textModels(data, route) : [];
-    const model = models.includes(play.model) ? play.model : models[0];
-    const ask = (form.querySelector('[data-play="draft"]')?.value ?? play.draft).trim();
-    if (!route || !model || !ask || play.running) return;
+    const { route, kind, model } = playNow(data, play);
+    const ask = (form.querySelector('[data-play="draft"]')?.value ?? play.draft.chat).trim();
+    if (!route || kind !== "chat" || !model || !ask || play.running) return;
     // What was said so far. A turn that failed is left out; one that was stopped keeps what arrived.
     const messages = [
       ...(play.system.trim() ? [{ role: "system", content: play.system.trim() }] : []),
-      ...play.turns.filter((turn) => turn.text && turn.state !== "failed").flatMap((turn) => [{ role: "user", content: turn.ask }, { role: "assistant", content: turn.text }]),
+      ...play.turns.chat.filter((turn) => turn.text && turn.state !== "failed").flatMap((turn) => [{ role: "user", content: turn.ask }, { role: "assistant", content: turn.text }]),
       { role: "user", content: ask },
     ];
     const turn = { ask, text: "", state: "waiting", error: null, facts: null };
-    Object.assign(play, { route: route.id, model, draft: "", open: null });
-    play.turns.push(turn);
+    Object.assign(play, { route: route.id, model, open: null });
+    play.draft.chat = "";
+    play.turns.chat.push(turn);
     const wrote = (piece) => {
       turn.text += piece;
       if (turn.state !== "waiting") return drawAnswer(turn);
@@ -625,6 +642,60 @@ const forms = {
         turn.state = "failed";
         // a connection that broke: before anything came the gateway did not answer, after it the answer broke off
         turn.error = err instanceof TypeError ? (turn.text ? null : core[lang].noAnswer) : err.message;
+      })
+      .then(() => {
+        play.running = null;
+        return signedOut ? null : refresh(true).catch(() => {});
+      })
+      .then(() => { if (!signedOut) draw(); });
+  },
+  // The playground: an image asked for as the chosen route. Only the description is sent
+  // with the model; what else a provider takes is not the playground's to know.
+  "try-image"(form) {
+    const { route, kind, model } = playNow(data, play);
+    const ask = (form.querySelector('[data-play="draft"]')?.value ?? play.draft.image).trim();
+    if (!route || kind !== "image" || !model || !ask || play.running) return;
+    const turn = { ask, route: route.id, kept: keepsMedia(route), state: "waiting", images: [], error: null, facts: null };
+    Object.assign(play, { route: route.id, model, open: null });
+    play.draft.image = "";
+    play.turns.image.push(turn);
+    const draw = () => {
+      if (view?.screen !== "playground") return;
+      render();
+      toEnd();
+    };
+    if (!live) {
+      // on made-up data an image "arrives" by itself after a moment
+      const started = Date.now();
+      const timer = setTimeout(() => {
+        play.running = null;
+        Object.assign(turn, { state: "done", images: [playSample.image], facts: madeUpFacts(route, "image", model, { ...playSample.imageFacts, totalMs: Date.now() - started }) });
+        data.requests.unshift({ route: route.id, kind: "image", model: turn.facts.model, seconds: turn.facts.totalMs / 1000, cost: turn.facts.cost, ago: 1, ok: true });
+        route.today += turn.facts.cost;
+        route.used += turn.facts.cost;
+        if (turn.kept) {
+          data.images.unshift({ id: `p${data.images.length + 1}`, kind: "image", route: route.id, model: turn.facts.model, prompt: ask, cost: turn.facts.cost, bytes: 240000, ago: 1, src: playSample.image });
+          data.mediaSpace = { ...data.mediaSpace, images: data.mediaSpace.images + 1, bytes: data.mediaSpace.bytes + 240000 };
+        }
+        draw();
+      }, 1400);
+      play.running = { abort() { clearTimeout(timer); play.running = null; turn.state = "stopped"; draw(); } };
+      return draw();
+    }
+    const abort = new AbortController();
+    play.running = abort;
+    draw();
+    tryImage(route.id, { model, prompt: ask }, { signal: abort.signal })
+      .then(({ images, row }) => {
+        turn.images = images;
+        turn.state = images.length ? "done" : "failed"; // an answer with no image in it
+        if (row) turn.facts = { id: row.id, model: row.model, provider: row.provider, cost: row.cost, totalMs: row.totalMs };
+      })
+      .catch((err) => {
+        if (err instanceof SignedOut) return signOut();
+        if (abort.signal.aborted) return void (turn.state = "stopped");
+        turn.state = "failed";
+        turn.error = err instanceof TypeError ? core[lang].noAnswer : err.message;
       })
       .then(() => {
         play.running = null;
@@ -807,7 +878,8 @@ addEventListener("keydown", (event) => {
 // change of route or model draws again, since the models follow the route.
 app.addEventListener("input", (event) => {
   const which = event.target.dataset?.play;
-  if (which === "draft" || which === "system") play[which] = event.target.value;
+  if (which === "draft") play.draft[playNow(data, play).kind] = event.target.value;
+  if (which === "system") play.system = event.target.value;
 });
 app.addEventListener("change", (event) => {
   const which = event.target.dataset?.play;
@@ -824,6 +896,11 @@ app.addEventListener("keydown", (event) => {
   event.target.form?.requestSubmit();
 });
 
+// Does this route keep the images it makes (and does the gateway keep any)?
+function keepsMedia(route) {
+  return route.keepMedia !== false && data.mediaSpace?.keeping !== false;
+}
+
 // The sheet, scrolled to its end: where a new message and its answer appear.
 function toEnd() {
   const sheet = app.querySelector(".br-sheet");
@@ -833,7 +910,7 @@ function toEnd() {
 // An answer as it arrives: only its text is drawn again, and the sheet follows it down
 // unless the person has scrolled up to read.
 function drawAnswer(turn) {
-  const at = app.querySelector(`[data-answer="${play.turns.indexOf(turn)}"]`);
+  const at = app.querySelector(`[data-answer="${play.turns.chat.indexOf(turn)}"]`);
   if (!at) return;
   const sheet = at.closest(".br-sheet");
   const following = sheet.scrollHeight - sheet.scrollTop - sheet.clientHeight < 120;
@@ -842,8 +919,8 @@ function drawAnswer(turn) {
 }
 
 // What is known about an answer on made-up data: the model's first source answered.
-function madeUpFacts(route, name, numbers) {
-  const model = textModels(data, route).find((n) => n === name) ?? textModels(data, route)[0];
+function madeUpFacts(route, kind, name, numbers) {
+  const model = modelsFor(data, route, kind).find((n) => n === name) ?? modelsFor(data, route, kind)[0];
   const first = (data.models ?? []).find((m) => m.name === model)?.from?.[0];
   return { id: null, model: first?.model ?? model ?? "", provider: data.providers.find((p) => p.id === first?.provider)?.name ?? null, ...numbers };
 }
@@ -858,7 +935,7 @@ function pretend(route, model, turn, wrote, draw) {
     if (at < words.length) return void (timer = setTimeout(next, 50));
     play.running = null;
     turn.state = "done";
-    turn.facts = madeUpFacts(route, model, { ...playSample.facts, totalMs: Date.now() - started });
+    turn.facts = madeUpFacts(route, "chat", model, { ...playSample.facts, totalMs: Date.now() - started });
     data.requests.unshift({ route: route.id, model: turn.facts.model, seconds: turn.facts.totalMs / 1000, cost: turn.facts.cost, ago: 1, ok: true });
     route.today += turn.facts.cost;
     route.used += turn.facts.cost;
@@ -977,7 +1054,7 @@ async function refresh(force = false) {
   }
   // A playground answer whose cost was not known when it ended learns it from its row.
   let learned = false;
-  for (const turn of play.turns) {
+  for (const turn of [...play.turns.chat, ...play.turns.image]) {
     const cost = turn.facts?.id != null && turn.facts.cost == null ? state.requests.find((q) => q.id === turn.facts.id)?.cost : null;
     if (cost != null) {
       turn.facts.cost = cost;

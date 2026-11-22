@@ -99,6 +99,29 @@ export async function tryChat(routeId, body, { signal, onText }) {
   }
   return { row, error };
 }
+// The playground: an image asked for as a route (POST /api/routes/:id/try/images). The answer
+// is what /v1/images/generations gives: each image as base64 or as a link. Resolves with the
+// images, as sources a page can show, and the request's row, which the gateway names in a header.
+export async function tryImage(routeId, body, { signal }) {
+  const res = await fetch(`/api/routes/${encodeURIComponent(routeId)}/try/images`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+    signal,
+  });
+  const answer = await res.json().catch(() => null);
+  if (res.status === 401 && answer?.error?.code === "signed_out") throw new SignedOut();
+  if (!res.ok || answer?.error) throw Object.assign(new Error(messageOf(answer?.error) ?? `HTTP ${res.status}`), { code: answer?.error?.code ?? null });
+  const images = (Array.isArray(answer?.data) ? answer.data : []).map((item) =>
+    typeof item?.b64_json === "string" ? `data:${item.media_type ?? typeOf(item.b64_json)};base64,${item.b64_json}` : typeof item?.url === "string" ? item.url : null).filter(Boolean);
+  const id = res.headers.get("x-baserouter-request");
+  const row = id ? await call("GET", `/requests/${encodeURIComponent(id)}`).then((found) => found.request).catch(() => null) : null;
+  return { images, row };
+}
+// What a base64 image is, from how it starts, when the answer does not say.
+const typeOf = (b64) => (b64.startsWith("/9j/") ? "image/jpeg" : b64.startsWith("UklGR") ? "image/webp" : b64.startsWith("R0lG") ? "image/gif" : b64.startsWith("PHN2Zy") || b64.startsWith("PD94bWw") ? "image/svg+xml" : "image/png");
+
 const messageOf = (error) => (error == null ? null : typeof error === "string" ? error : typeof error.message === "string" ? error.message : null);
 
 // The gateway's state, in the shape of core/data.js, so skins and screens draw it

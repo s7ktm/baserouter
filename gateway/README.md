@@ -185,8 +185,9 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images, sound and video |
 | `POST /api/routes/:id/key` | Replaces its key; the old one stops working at once. Gives the new key, once |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
-| `POST /api/routes/:id/try` | The panel's playground: sends a chat request as this route. See "The playground" below |
+| `POST /api/routes/:id/try`, `POST /api/routes/:id/try/images` | The panel's playground: sends a chat request, or an image request, as this route. See "The playground" below |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
+| `GET /api/requests/:id` | One request, with `provider`, the name of the provider that answered it |
 | `GET /api/media?kind=&route=&limit=&before=` | Lists kept images (`kind=image`), sounds (`kind=audio`) and videos (`kind=video`), newest first, with what each request cost, and the room they take (`space`) |
 | `GET /api/media/:id` | One file's bytes, or a `Range` of them; `?download=1` to save it |
 | `DELETE /api/media/:id` | Deletes it |
@@ -195,23 +196,34 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 
 ### The playground
 
-The panel's "Try a model" sends a message as one of the routes and shows the answer. A route's key cannot be used for that: it is shown once and only its hash is kept. So the management API sends the request itself, for whoever holds the panel's session.
+The panel's "Try a model" sends a request as one of the routes and shows what comes back. A route's key cannot be used for that: it is shown once and only its hash is kept. So the management API sends the request itself, for whoever holds the panel's session.
 
-`POST /api/routes/:id/try` takes the body an app would send to `/v1/chat/completions`, and from there on it is that route's request like any other:
+| Request | Takes the body an app would send to |
+|---|---|
+| `POST /api/routes/:id/try` | `/v1/chat/completions` |
+| `POST /api/routes/:id/try/images` | `/v1/images/generations` |
+
+From there on it is that route's request like any other:
 
 - It is refused when the route is switched off (HTTP 403) or over its budget (HTTP 402), and may only name a model the route may use. The refusals are the ones in the table above.
 - It goes to the model's sources in order, counts as running on the route while it does, and is cancelled at the provider when the panel stops it.
+- The body goes on as written. The panel sends a model and a message, or a model and a `prompt`; whatever else a body holds (a size, a provider's own parameters) is passed on untouched, as at the one address.
 - It gets one row, the route's, with its cost, and that cost counts towards the route's budget. Nothing marks the row as the playground's.
-- Nothing of the conversation is stored or logged, as for any chat request.
+- An image is kept when the route keeps what it makes, and then appears in activity like any other.
+- Nothing of a conversation is stored or logged, as for any chat request.
 
-With `stream: true`, which is what the panel sends, the stream is passed on as the provider sent it and then ends with one event more, the request's row as `GET /api/requests` gives it, with the name of the provider that answered:
+So the panel can say what answered, what it cost and how long it took, the answer names its row:
 
-```
-event: baserouter.request
-data: {"id": 12, "route": "…", "requestedModel": "smart", "model": "openai/gpt-5-mini", "provider": "OpenRouter", "promptTokens": 8, "completionTokens": 6, "cost": 0.0000143, "costSource": "provider", "firstTokenMs": 412, "totalMs": 1380, "ok": true, …}
-```
+- **A stream** (the panel's chats are sent with `stream: true`) is passed on as the provider sent it and then ends with one event more, the row as `GET /api/requests/:id` gives it:
 
-A cost that is not known when the stream ends is `null` there; the panel finds it under the same `id` in `GET /api/state` once the gateway has asked the provider. A request that is not streamed, or that the provider refuses, comes back as it is, without the event. The body may be up to 1 MB, like every body the management API takes. It tries chat only; images, speech, transcriptions and video are not offered here yet.
+  ```
+  event: baserouter.request
+  data: {"id": 12, "route": "…", "requestedModel": "smart", "model": "openai/gpt-5-mini", "provider": "OpenRouter", "promptTokens": 8, "completionTokens": 6, "cost": 0.0000143, "costSource": "provider", "firstTokenMs": 412, "totalMs": 1380, "ok": true, …}
+  ```
+
+- **An answer that is not a stream** (an image, a chat sent without `stream`, a provider's refusal) comes back as it is, with the header `X-BaseRouter-Request: 12`. `GET /api/requests/12` gives the row, with `provider`, the name of the provider that answered.
+
+A cost that is not known when the answer ends is `null`; the row has it once the gateway has asked the provider. Answers at the one address (`/v1`) carry neither the event nor the header. The body may be up to 1 MB, like every body the management API takes. Speech, transcriptions and video are not offered here yet.
 
 ## What is kept, and how
 
@@ -282,7 +294,7 @@ This starts the gateway and its panel in front of the two stand-ins (`test/fake-
 - Providers other than OpenRouter and NanoGPT. What the two differ in is in `src/providers.ts`; it holds what those two needed and nothing more general.
 - For NanoGPT: a signed link in an image answer (`response_format: "url"`) is passed on as NanoGPT wrote it, and holds the account's id. Images from a chat request, and embeddings, are not tried.
 - Changing a route's name after it is made.
-- Trying images, speech, transcriptions or video from the panel. The playground sends chat requests only.
+- Trying speech, transcriptions or video from the panel. The playground sends chat and image requests only.
 - Webhooks for video jobs. A request with `callback_url` is refused (HTTP 400), since OpenRouter would send the job's end, signed links included, straight to it; ask `GET /v1/videos/:id` instead.
 - Embeddings, image edits (`/images/edits`), and OpenRouter's own `/responses` API.
 - With your own provider keys inside OpenRouter (BYOK), `usage.cost` is what OpenRouter charged, not what the provider behind it charged. Only the first is counted.

@@ -256,3 +256,9 @@ a.br-btn{color:inherit;text-decoration:none}
   .br-compose{margin:18px -26px -26px;padding:14px 26px 22px}
 }
 @media (prefers-reduced-motion:reduce){.br-try-more svg{transition:none}}
+
+/* ---- added with images in the playground ---- */
+.br-seg button:disabled{opacity:.6;cursor:default}
+.br-seg + .br-try-who{margin-top:10px}
+.br-try-shot{width:100%;margin:0}
+.br-try-kept{min-height:44px;margin:-8px 0;font-size:14px;font-weight:600;color:var(--br-ink-2);text-decoration-thickness:1px}

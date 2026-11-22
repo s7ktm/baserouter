@@ -32,8 +32,8 @@ URL parameters for `index.html`:
 | `show` | For `activity`: `images`, `sounds` or `videos`, what was kept, instead of the requests |
 | `media` | For `activity`: an image, sound or video id (`i1` to `i5`, `a1` to `a3` and `v1` to `v3` on the default data) opens it; with `edit=delete-media`, on the question before it is deleted |
 | `edit=password` | For `settings`: the password form |
-| `as`, `model` | For `playground`: the route that asks (`as=news` is over its budget, `as=garden` is switched off) and the model it asks for |
-| `step`, `detail=1` | For `playground`, on made-up data: an answer that is `waiting` for its first word, `streaming`, `done`, `stopped` or `fail`; with `detail=1` a finished answer's details are open. `edit=system` shows the system message field. `state=empty&screen=playground` is the playground with no route yet |
+| `as`, `kind`, `model` | For `playground`: the route that asks (`as=news` is over its budget, `as=garden` is switched off, `as=home` has a model that makes images), what is tried (`chat` or `image`), and the model it asks for |
+| `step`, `detail=1` | For `playground`, on made-up data: an answer that is `waiting` for its first word, `streaming`, `done`, `stopped` or `fail` (an image: `waiting`, `done`, `stopped`, `fail`); with `detail=1` a finished one's details are open. `edit=system` shows the system message field. `state=empty&screen=playground` is the playground with no route yet |
 | `bar=0` | Hides the picker bar |
 
 ## What is shared
@@ -95,6 +95,6 @@ This folder is also the panel the gateway ships. Served by the gateway (`cd gate
 
 Served by `bun design/serve.ts`, or opened with `?state=...` anywhere, it runs on the made-up data in `core/data.js` and nothing is saved. A provider test always succeeds, any key is accepted unless it contains `bad`, any password signs in, and the first request to a new route "arrives" by itself after three seconds.
 
-In the playground, on made-up data, every message is answered with the same made-up sentence, word by word, and nothing is sent anywhere.
+In the playground, on made-up data, every message is answered with the same made-up sentence, word by word, every image asked for is the same made-up picture, and nothing is sent anywhere.
 
 On made-up data a new key is always the same, export saves the made-up data, and signing out asks for a password that any password answers.

@@ -184,9 +184,13 @@ Four tabs above the filter: requests, images, sounds and videos. Images is a gri
 
 ### Playground
 
-Approved in scope by the maintainer on 2026-11-22: chat only, sent as a chosen route, reached from the home screen and from a route.
+Approved in scope by the maintainer: on 2026-11-22 chat, sent as a chosen route, reached from the home screen and from a route; on 2026-11-23 images, as a second kind on the same screen.
 
 A shared screen, built once, called "Try a model" on the surface ("Try" where a skin has room for one word). It answers one question: what does an app on this route get back. Every skin offers it from its home screen, and a route's Connect section opens it as that route.
+
+**How far it goes.** The playground is a basic test, not a studio. It asks only for what every model of a kind needs: a message for a chat, a description for an image. Everything else a provider takes (sizes, masks, reference images, its own parameters) is the provider's: the gateway sends a request on as written, so those are sent with a client, and BaseRouter models none of them, here or anywhere. A new kind is added to this screen by the same rule.
+
+- **What is tried** is a row of tabs above the drop-downs, the segmented control activity uses: Chat, Image. A tab is there only when the chosen route has a model of that kind, and a route with one kind has no tabs. The models in the drop-down follow the tab. Each kind keeps its own list of what was asked and its own unsent text.
 
 - **Who asks, and for what.** Two plain drop-downs at the top: the route, and one of the models that route may use that write text. They sit side by side from 980 px. While an answer is arriving they cannot be changed.
 - **The conversation.** What the person wrote sits to the right in a field; the answer is plain text on the sheet, with no label. It can go on for several turns, and the route or the model can be changed between them. A system message is one quiet control away and is not shown until asked for.
@@ -194,6 +198,7 @@ A shared screen, built once, called "Try a model" on the surface ("Try" where a 
 - **What is known about an answer** is one quiet underlined line under it, how long it took and what it cost: `1.8 s, $0.00041`. Pressing it opens the rest in place: the model that answered, the provider it came from, tokens read and written, cost, time to the first word, time for the whole answer. Nothing else about the request is on the screen. A cost not known when the answer ended is filled in when the gateway learns it.
 - **The message field** stays at the bottom of the sheet under a long conversation. Enter sends and Shift+Enter starts a new line; on a touch keyboard Enter is a new line and the button sends. "Send" becomes "Stop" while an answer is arriving; "Start over" forgets the conversation.
 - **What stands in the way is said before anything is sent,** in place of the message field: a route over its budget ("Raise budget"), a route switched off ("Switch it on"), a route with no model that writes text ("Authorize a model"). With no route at all the sheet says so and leads to a new route.
+- **An image** is asked for with one field and "Make image". What was asked sits to the right, as in a chat; under it "Making the image" with the busy mark, then the image, whole. The quiet line under it opens the model that answered, the provider, the cost and the time. Below that, whether it was kept: "See its images", which opens activity on that route's images, or a sentence saying the route does not keep what it makes, so it is shown here only. A request that failed has the same banner as a chat; an answer with no image in it says so.
 - The request is the route's in every way: it counts towards the budget, appears in its requests and in activity, and lights the route as busy on the home screen. The conversation lives in the page only. Closing the sheet stops an answer that is still arriving and keeps the conversation; leaving the page ends it.
 
 ### Settings
@@ -321,7 +326,9 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **The mascots have no names.**
 - **The flying pigeon's raised wing** is one plain shape and reads less clearly than the other poses.
 - **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the screens after it, the playground included, needed no more.
-- **The playground tries chat only.** Images, speech, transcriptions and video go through the same address and could follow as kinds of the same screen. It has no controls for temperature or other parameters, shows text only (not a model's reasoning, not images in an answer), and does not show the request as curl; a route's Connect section has the snippet.
+- **The playground tries chat and images.** Speech, transcriptions and video go through the same address and could follow as kinds of the same screen. It has no controls for parameters, by its rule; a chat shows text only (not a model's reasoning, not images in an answer); the request is not shown as curl, a route's Connect section has the snippet.
+- **A model whose kind the provider does not say counts as one that writes text,** so it is offered under Chat and never under Image.
+- **Reference images and masks cannot be tried anywhere yet:** they need `/images/edits`, which the gateway does not have.
 - **Display's function keys are two rows of three on every screen size,** since six words do not fit beside each other on a phone. "New route" lost its full-width key from 980 px; it is still the one blue key.
 - **A route's name cannot be changed** after it is made.
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
