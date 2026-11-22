@@ -71,6 +71,22 @@ const MIGRATIONS: string[] = [
    ALTER TABLE routes ADD COLUMN color TEXT NOT NULL DEFAULT '#2B62D9';`,
   // 3: what a request made: text, an image, speech, or a transcription
   `ALTER TABLE requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'image', 'speech', 'transcription'));`,
+  // 4: the images routes make, kept as files; whether a route keeps them
+  `CREATE TABLE images (
+     id         TEXT PRIMARY KEY,
+     request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+     route_id   TEXT REFERENCES routes(id) ON DELETE SET NULL,
+     created_at INTEGER NOT NULL,
+     model      TEXT,
+     prompt     TEXT,
+     media_type TEXT NOT NULL,
+     bytes      INTEGER NOT NULL,
+     file       TEXT NOT NULL
+   ) STRICT;
+   CREATE INDEX images_by_time ON images (created_at);
+   CREATE INDEX images_by_route ON images (route_id, created_at);
+   CREATE INDEX images_by_file ON images (file);
+   ALTER TABLE routes ADD COLUMN keep_images INTEGER NOT NULL DEFAULT 1;`,
 ];
 
 export type CostSource = "provider" | "computed" | "unknown";
@@ -102,8 +118,24 @@ export interface RouteRow {
   models: string;
   icon: string;
   color: string;
+  keep_images: number;
   created_at: number;
 }
+
+export interface ImageRow {
+  id: string;
+  request_id: number | null;
+  route_id: string | null;
+  created_at: number;
+  model: string | null;
+  prompt: string | null;
+  media_type: string;
+  bytes: number;
+  file: string; // the file's name in the images folder: <sha256>.<ext>
+}
+
+// An image with what its request cost.
+export type ImageListed = ImageRow & { cost_usd: number | null };
 
 export interface RequestRow {
   id: number;
@@ -205,12 +237,13 @@ export class Store {
 
   addRoute(row: RouteRow): void {
     this.db
-      .query("INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, enabled, models, icon, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.created_at);
+      .query("INSERT INTO routes (id, name, key_hash, key_hint, budget_usd, enabled, models, icon, color, keep_images, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(row.id, row.name, row.key_hash, row.key_hint, row.budget_usd, row.enabled, row.models, row.icon, row.color, row.keep_images, row.created_at);
   }
 
-  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string }): void {
+  updateRoute(id: string, change: { budget_usd?: number; enabled?: boolean; models?: string[]; key_hash?: string; key_hint?: string; keep_images?: boolean }): void {
     this.db.transaction(() => {
+      if (change.keep_images !== undefined) this.db.query("UPDATE routes SET keep_images = ? WHERE id = ?").run(change.keep_images ? 1 : 0, id);
       if (change.budget_usd !== undefined) this.db.query("UPDATE routes SET budget_usd = ? WHERE id = ?").run(change.budget_usd, id);
       if (change.enabled !== undefined) this.db.query("UPDATE routes SET enabled = ? WHERE id = ?").run(change.enabled ? 1 : 0, id);
       if (change.models !== undefined) this.db.query("UPDATE routes SET models = ? WHERE id = ?").run(JSON.stringify(change.models), id);
@@ -301,5 +334,48 @@ export class Store {
       )
       .all(dayStart, monthStart) as { route_id: string; used: number; today: number }[];
     return new Map(rows.map((r) => [r.route_id, { used: r.used, today: r.today }]));
+  }
+
+  addImage(r: ImageRow): void {
+    this.db
+      .query("INSERT INTO images (id, request_id, route_id, created_at, model, prompt, media_type, bytes, file) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(r.id, r.request_id, r.route_id, r.created_at, r.model, r.prompt, r.media_type, r.bytes, r.file);
+  }
+
+  image(id: string): ImageRow | null {
+    return this.db.query("SELECT * FROM images WHERE id = ?").get(id) as ImageRow | null;
+  }
+
+  // Newest first. "before" is the id of the last image of the previous page.
+  images(filter: { route?: string; before?: string; limit: number }): ImageListed[] {
+    const where: string[] = [];
+    const args: (string | number)[] = [];
+    if (filter.route) (where.push("i.route_id = ?"), args.push(filter.route));
+    if (filter.before) {
+      const last = this.image(filter.before);
+      if (last) (where.push("(i.created_at, i.id) < (?, ?)"), args.push(last.created_at, last.id));
+    }
+    const sql = `SELECT i.*, r.cost_usd FROM images i LEFT JOIN requests r ON r.id = i.request_id
+      ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY i.created_at DESC, i.id DESC LIMIT ?`;
+    return this.db.query(sql).all(...args, filter.limit) as ImageListed[];
+  }
+
+  removeImage(id: string): void {
+    this.db.query("DELETE FROM images WHERE id = ?").run(id);
+  }
+
+  fileInUse(file: string): boolean {
+    return this.db.query("SELECT 1 FROM images WHERE file = ? LIMIT 1").get(file) !== null;
+  }
+
+  oldestImage(): ImageRow | null {
+    return this.db.query("SELECT * FROM images ORDER BY created_at, id LIMIT 1").get() as ImageRow | null;
+  }
+
+  // How many images, and the room their files take: the same bytes kept twice count once.
+  imageSpace(): { count: number; bytes: number } {
+    const count = (this.db.query("SELECT COUNT(*) AS n FROM images").get() as { n: number }).n;
+    const bytes = (this.db.query("SELECT COALESCE(SUM(bytes), 0) AS b FROM (SELECT file, MAX(bytes) AS bytes FROM images GROUP BY file)").get() as { b: number }).b;
+    return { count, bytes };
   }
 }

@@ -14,6 +14,7 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
   - `POST /v1/audio/transcriptions`, as JSON or as a form with a file.
 - Each request records what it made: `chat`, `image`, `speech` or `transcription`. The activity list and the route page show it.
 - A limit on the size of a request body, 64 MB by default (`BASEROUTER_MAX_REQUEST_MB`), with a clear HTTP 413 when it is passed.
+- Kept images. The images routes make are kept in `gateway/data/images/`, one file per image, and shown in the panel: activity has an Images tab with a grid, filtered by route, and each image opens with its prompt, model, cost and size, to download or delete. A route can switch it off, and one request can say no with the header `X-BaseRouter-Save: no`. They may take 1 GB by default (`BASEROUTER_IMAGES_MAX_MB`; `0` keeps none), and the oldest go first when that is passed.
 - Running it for good: a `Dockerfile` and `compose.yaml` (reachable from the machine itself, with its data in a volume), an optional Caddy in front for HTTPS (`--profile tls`), a hardened systemd unit in `deploy/`, and [INSTALL.md](INSTALL.md) with backups, updates, hosting services and why serverless is not supported.
 - The gateway stops cleanly on SIGTERM or Ctrl-C.
 
@@ -25,7 +26,7 @@ All notable changes to BaseRouter are listed here. Versions follow [Semantic Ver
 
 - Video, which OpenRouter makes as a job to be asked about later; embeddings; image edits.
 
-Generated images and sound are passed through and not kept.
+Generated sound is passed through and not kept.
 
 ## [0.1.0] — 2026-11-22
 

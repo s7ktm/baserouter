@@ -5,9 +5,10 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
 import { dayStart, monthStart, nextMonthStart, localDate } from "./budget.ts";
 import type { Deps, Env } from "./deps.ts";
+import { ImageKeeper } from "./images.ts";
 import * as openrouter from "./openrouter.ts";
 import { hashKey, keyHint, newRouteKey, newToken, seal, unseal } from "./secrets.ts";
-import type { ProviderRow, RequestRow, RouteRow } from "./store.ts";
+import type { ImageListed, ProviderRow, RequestRow, RouteRow } from "./store.ts";
 
 const COOKIE = "br_session";
 const SESSION_DAYS = 30;
@@ -28,6 +29,14 @@ async function jsonBody(c: Context): Promise<Record<string, unknown>> {
 
 function providerView(p: ProviderRow) {
   return { id: p.id, kind: p.kind, name: p.name, status: p.status, keyHint: p.key_hint, models: p.models, error: p.error, checkedAt: p.checked_at };
+}
+
+// "src" is where the panel loads the image from; it needs the session like the rest of /api.
+function imageView(i: ImageListed) {
+  return {
+    id: i.id, route: i.route_id, at: i.created_at, model: i.model, prompt: i.prompt, mediaType: i.media_type, bytes: i.bytes, cost: i.cost_usd,
+    src: `/api/images/${i.id}`,
+  };
 }
 
 function requestView(r: RequestRow) {
@@ -53,6 +62,7 @@ function requestView(r: RequestRow) {
 
 export function admin(deps: Deps) {
   const { store } = deps;
+  const keeper = new ImageKeeper(deps);
   const app = new Hono<Env>();
   let wrong = 0;
   let lockedUntil = 0;
@@ -71,6 +81,7 @@ export function admin(deps: Deps) {
       models: JSON.parse(r.models) as string[],
       icon: r.icon,
       color: r.color,
+      keepImages: r.keep_images === 1,
     };
   }
 
@@ -160,10 +171,15 @@ export function admin(deps: Deps) {
       exportedAt: new Date(now).toISOString(),
       routes: store.routes().map((r) => ({
         id: r.id, name: r.name, enabled: r.enabled === 1, budget: r.budget_usd, models: JSON.parse(r.models) as string[],
-        icon: r.icon, color: r.color, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
+        icon: r.icon, color: r.color, keepImages: r.keep_images === 1, keyHint: r.key_hint, createdAt: new Date(r.created_at).toISOString(),
       })),
       providers: store.providers().map((p) => ({ ...providerView(p), createdAt: new Date(p.created_at).toISOString() })),
       requests: store.allRequests().map((r) => ({ ...requestView(r), at: new Date(r.started_at).toISOString() })),
+      // The images themselves are files in the images folder; here is what is known about each.
+      images: store.images({ limit: 1_000_000 }).map((i) => {
+        const { src: _, ...rest } = imageView(i);
+        return { ...rest, file: i.file, at: new Date(i.created_at).toISOString() };
+      }),
     };
     c.header("Content-Disposition", `attachment; filename="baserouter-${localDate(new Date(now))}.json"`);
     c.header("Cache-Control", "no-store");
@@ -228,17 +244,18 @@ export function admin(deps: Deps) {
   // Makes a route. The answer is the only time its key is given in full.
   // icon and color are how the panel draws it; the gateway only keeps them.
   app.post("/routes", async (c) => {
-    const { name, budget, models = [], icon = "code", color = "#2B62D9" } = await jsonBody(c);
+    const { name, budget, models = [], icon = "code", color = "#2B62D9", keepImages = true } = await jsonBody(c);
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) return fail(c, 400, "name_invalid", "Give the route a name of up to 120 characters.");
     if (!validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (!validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
     if (typeof icon !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(icon)) return fail(c, 400, "icon_invalid", "Give the icon as a short lowercase name.");
     if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return fail(c, 400, "color_invalid", "Give the colour as #RRGGBB.");
+    if (typeof keepImages !== "boolean") return fail(c, 400, "keep_images_invalid", 'Give "keepImages" as true or false.');
 
     const key = newRouteKey();
     const row: RouteRow = {
       id: newId(), name: name.trim(), key_hash: hashKey(key), key_hint: keyHint(key), budget_usd: budget, enabled: 1,
-      models: JSON.stringify(models.map((m: string) => m.trim())), icon, color, created_at: deps.now(),
+      models: JSON.stringify(models.map((m: string) => m.trim())), icon, color, keep_images: keepImages ? 1 : 0, created_at: deps.now(),
     };
     store.addRoute(row);
     return c.json({ route: routeView(row, new Map()), key }, 201);
@@ -247,11 +264,12 @@ export function admin(deps: Deps) {
   app.patch("/routes/:id", async (c) => {
     const id = c.req.param("id");
     if (!store.route(id)) return fail(c, 404, "not_found", "There is no such route.");
-    const { budget, enabled, models } = await jsonBody(c);
+    const { budget, enabled, models, keepImages } = await jsonBody(c);
     if (budget !== undefined && !validBudget(budget)) return fail(c, 400, "budget_invalid", "Give the monthly budget as a number above zero.");
     if (enabled !== undefined && typeof enabled !== "boolean") return fail(c, 400, "enabled_invalid", 'Give "enabled" as true or false.');
     if (models !== undefined && !validModels(models)) return fail(c, 400, "models_invalid", "Give the models as a list of different model names.");
-    store.updateRoute(id, { budget_usd: budget, enabled, models: (models as string[] | undefined)?.map((m) => m.trim()) });
+    if (keepImages !== undefined && typeof keepImages !== "boolean") return fail(c, 400, "keep_images_invalid", 'Give "keepImages" as true or false.');
+    store.updateRoute(id, { budget_usd: budget, enabled, models: (models as string[] | undefined)?.map((m) => m.trim()), keep_images: keepImages });
     return c.json({ route: routeView(store.route(id)!, spendNow()) });
   });
 
@@ -290,6 +308,8 @@ export function admin(deps: Deps) {
       routes: routes.map((r) => routeView(r, spend)),
       requests,
       last,
+      images: store.images({ limit: 60 }).map(imageView),
+      imageSpace: { ...store.imageSpace(), keeping: keeper.on, max: deps.imagesMaxBytes },
       budgetsStartAgainOn: localDate(nextMonthStart(date)),
     });
   });
@@ -321,6 +341,36 @@ export function admin(deps: Deps) {
     const before = Number(c.req.query("before")) || undefined;
     const rows = store.requests({ route: c.req.query("route") || undefined, before, limit });
     return c.json({ requests: rows.map(requestView) });
+  });
+
+  // Kept images, newest first. ?route=<id> filters; ?before=<image id> gets the next page.
+  app.get("/images", (c) => {
+    const limit = Math.min(Math.max(Number(c.req.query("limit")) || 60, 1), 200);
+    const rows = store.images({ route: c.req.query("route") || undefined, before: c.req.query("before") || undefined, limit });
+    return c.json({ images: rows.map(imageView), space: { ...store.imageSpace(), keeping: keeper.on, max: deps.imagesMaxBytes } });
+  });
+
+  // One image's bytes. Its type was decided from its bytes when it was kept. It is sent so
+  // that the browser cannot run anything in it (an SVG can hold a script).
+  app.get("/images/:id", async (c) => {
+    const row = store.image(c.req.param("id"));
+    const file = row && deps.imagesDir ? Bun.file(keeper.path(row)) : null;
+    if (!row || !file || !(await file.exists())) return fail(c, 404, "not_found", "There is no such image.");
+    const name = `baserouter-${localDate(new Date(row.created_at))}-${row.id}.${row.file.split(".").pop()}`;
+    return new Response(file, {
+      headers: {
+        "Content-Type": row.media_type,
+        "Content-Disposition": `${c.req.query("download") ? "attachment" : "inline"}; filename="${name}"`,
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, max-age=31536000, immutable",
+      },
+    });
+  });
+
+  app.delete("/images/:id", (c) => {
+    if (!keeper.remove(c.req.param("id"))) return fail(c, 404, "not_found", "There is no such image.");
+    return c.body(null, 204);
   });
 
   return app;

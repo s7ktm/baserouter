@@ -82,7 +82,16 @@ Where a cost is filled in afterwards it is still OpenRouter's own figure, so `co
 
 A route with several models sends them as a fallback list only on chat requests; OpenRouter's image and audio endpoints do not take one.
 
-**What BaseRouter keeps of generated media: nothing.** Images and sound pass through to the client, the way answers do, and are not written to disk, logged or cached. Only the request's row is kept. Nothing here needs storage: OpenRouter sends images as base64 by default, and with `response_format: "url"` sends links that it keeps for up to 24 hours, which the client must fetch in that time; the gateway passes them on as they are. A video job, which has to be asked about again later, may change this; see below.
+**Kept images.** The images a route makes are kept, so they can be looked at again in the panel (activity, Images). The answer still goes to the client unchanged and at once; the image is written afterwards.
+
+- Each image is a file in `gateway/data/images/`, named after the SHA-256 of its bytes, so the same image made twice is stored once. The database has a row per image: request, route, model, the words that asked for it (the `prompt` of `/images/generations`, or the last thing the user said in a chat; up to 2,000 characters), type and size.
+- Which images: the finished ones of a request that worked, from `/v1/images/generations` (plain or streamed; partial images of a stream are not kept) and from chat requests that ask for images. An image given as a link (`response_format: "url"`) is fetched once, within 30 seconds and up to 50 MB.
+- What an image is comes from its first bytes, not from what the answer says. Only PNG, JPEG, WebP, GIF and SVG are kept; anything else is not. The panel gets them through `/api`, with the session, and with headers that stop a browser from running anything inside them (an SVG can hold a script).
+- A route can switch keeping off (in the panel, or `PATCH /api/routes/:id {"keepImages": false}`). One request can say no with the header `X-BaseRouter-Save: no` (also `false`, `0`, `off`). A header and not a body field, so the body still goes to OpenRouter exactly as written; OpenAI clients send one with `extra_headers`. The header is not sent on to OpenRouter.
+- They may take `BASEROUTER_IMAGES_MAX_MB` together, 1 GB by default. When that is passed, the oldest images are removed first. `0` keeps none.
+- When a route is removed, its images stay, without a route. Deleting an image removes its file once no other image has the same bytes.
+
+Sound is not kept: it passes through to the client, the way answers do.
 
 **A model list per route.** A route made with `models` may only use those, and only sees those in `/v1/models`. A route with an empty list may use any model. When a route has more than one model, the request is sent with OpenRouter's `models` fallback list: the model asked for first, then the route's other models in order, so OpenRouter tries the next one when a model fails (rate limit, outage, a request it cannot take). A model id OpenRouter does not know is refused, not skipped. The cost recorded is that of the model that answered.
 
@@ -115,16 +124,19 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `POST /api/providers` `{kind: "openrouter", key}` | Tests the key, then adds the provider |
 | `POST /api/providers/:id/test` | Tests it again |
 | `DELETE /api/providers/:id` | Removes it |
-| `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests |
+| `GET /api/state` | Everything the panel draws, in one answer: spend today, this month and per day for the week, providers, routes, the last 100 requests, the last 60 kept images |
 | `GET /api/models` | The provider's model ids, for choosing a route's model |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
-| `PATCH /api/routes/:id` `{budget?, enabled?, models?}` | Changes the budget, switches it on or off, changes its models |
+| `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepImages?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images |
 | `POST /api/routes/:id/key` | Replaces its key; the old one stops working at once. Gives the new key, once |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
+| `GET /api/images?route=&limit=&before=` | Lists kept images, newest first, with what each request cost, and the room they take (`space`) |
+| `GET /api/images/:id` | One image's bytes; `?download=1` to save it |
+| `DELETE /api/images/:id` | Deletes it |
 | `POST /api/password` `{current, password}` | Changes the password; every other session ends |
-| `GET /api/export` | Routes, providers without their keys, and every request, as one JSON file |
+| `GET /api/export` | Routes, providers without their keys, every request, and what is known about each kept image (not the images themselves: those are the files in `data/images/`), as one JSON file |
 
 ## What is kept, and how
 
@@ -135,7 +147,8 @@ Everything is in `gateway/data/`, which git ignores.
 - A provider's key is stored encrypted (AES-256-GCM) and is never given back by the API.
 - `secret.key` is the key that encryption uses. It is made on the first start and only its owner can read it. Back it up together with the database: without it, providers have to be added again. Keeping it beside the database protects a copied or backed-up database file; it does not protect against someone who can read the whole folder.
 - The admin password is stored as an Argon2 hash.
-- Prompts and answers are not stored or logged, and neither are images, sound or files, sent or generated.
+- `images/` holds the images routes made, unless switched off (see "Kept images" above). The words that asked for each are kept with it.
+- Other prompts and answers are not stored or logged, and neither are sound or files, sent or generated.
 
 ## Settings
 
@@ -148,6 +161,7 @@ All optional, as environment variables.
 | `BASEROUTER_DATA_DIR` | `gateway/data` | |
 | `BASEROUTER_PANEL_DIR` | `design/prototype` | The folder the panel is served from |
 | `BASEROUTER_MAX_REQUEST_MB` | `64` | The largest request body the one address takes, in megabytes. Files travel inside requests as base64, which is a third larger than the file. |
+| `BASEROUTER_IMAGES_MAX_MB` | `1024` | The most room kept images may take, in megabytes; past it the oldest go first. `0` keeps no images. |
 | `BASEROUTER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | For trying the gateway without a real key, below |
 
 ## Tests

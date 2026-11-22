@@ -1,4 +1,6 @@
-// Reads what a response cost, without holding on to the response.
+// Reads what a response cost, without holding on to the response. When asked, it also
+// picks out the finished images, so they can be kept.
+import { imagesIn, mayCarryImages, type Found } from "./images.ts";
 
 export interface Usage {
   promptTokens: number | null;
@@ -71,6 +73,8 @@ export function readPlain(body: unknown): Reading {
 // only the unfinished last line and the few facts it is looking for. Lines starting
 // with ":" are keep-alives and are not looked at.
 export class StreamScanner implements Reading {
+  images: Found[] = [];
+  constructor(private readonly collectImages = false) {}
   id: string | null = null;
   model: string | null = null;
   usage: Usage | null = null;
@@ -114,7 +118,8 @@ export class StreamScanner implements Reading {
     // Once the first token is known (and with it the id and the model, which come in every
     // chunk), only a line that mentions usage or an error is worth parsing.
     const settled = this.firstTokenAt !== null;
-    if (settled && !data.includes('"usage"') && !data.includes('"error"')) return;
+    const images = this.collectImages && mayCarryImages(data);
+    if (settled && !images && !data.includes('"usage"') && !data.includes('"error"')) return;
 
     let event: Record<string, unknown> | null;
     try {
@@ -129,5 +134,6 @@ export class StreamScanner implements Reading {
     if (failed(event)) this.failed = true;
     const usage = readUsage(event.usage);
     if (usage) this.usage = usage;
+    if (images) this.images.push(...imagesIn(event));
   }
 }
