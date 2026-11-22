@@ -24,7 +24,7 @@ bun test
 bun run typecheck
 ```
 
-The tests need no network and no key. To run the few live tests against the real OpenRouter, put `OPENROUTER_API_KEY=...` in `.env` at the top of the repository (git ignores it) and run `bun --env-file=../.env test live`. Never commit, log or paste a real key, in code, tests, issues or pull requests.
+The tests need no network and no key. They also run on every pull request (`.github/workflows/test.yml`), together with a check that the Docker image builds and starts; a pull request is merged once they pass. To run the few live tests against the real OpenRouter, put `OPENROUTER_API_KEY=...` in `.env` at the top of the repository (git ignores it) and run `bun --env-file=../.env test live`. Never commit, log or paste a real key, in code, tests, issues or pull requests.
 
 ## Change it
 

@@ -12,20 +12,20 @@ It comes in three looks. They share everything underneath; pick the one you like
 
 ## Status
 
-Version 0.1.0, the first release. It is young: try it, but do not bet a business on it yet.
+Young: try it, but do not bet a business on it yet. The latest release is on the [releases page](https://github.com/s7ktm/baserouter/releases); `main` may already have more, listed under "Unreleased" in [CHANGELOG.md](CHANGELOG.md). This list describes `main`.
 
 **Works today**
 
-- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Generated images are kept and shown in the panel, unless a route or a request says no; sound is passed through, not kept.
+- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. The images and speech routes make are kept and shown in the panel, unless a route or a request says no.
 - Routes: a named key per agent, a monthly budget enforced before a request is sent, an on/off switch, a list of allowed models with OpenRouter's fallback between them.
-- A record of every request: models, tokens, cost, timings, what went wrong.
+- A record of every request: what it made, models, tokens, cost, timings, what went wrong. Prompts and answers are not stored, except the images and speech that are kept.
 - The panel in three skins (Socket, Display, Home), in English and Turkish, light and dark, behind an admin password.
 
 **Not yet**
 
 - Any provider other than OpenRouter.
 - Renaming a route after it is made.
-- Video and embeddings.
+- Video (generated as a job to ask about later) and embeddings.
 - Users, teams, SSO, caching and routing strategies are not planned; see [PRODUCT.md](PRODUCT.md).
 
 ## Get started
