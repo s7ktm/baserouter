@@ -453,7 +453,9 @@ export function admin(deps: Deps) {
     if (places === null) return fail(c, 400, "places_invalid", badPlaces);
     const renamed = typeof name === "string" ? name.trim() : name === undefined ? undefined : null;
     if (renamed === null || (renamed !== undefined && (!MODEL_NAME.test(renamed) || (renamed !== before.name && store.modelByName(renamed))))) return fail(c, 400, "name_invalid", badName);
-    store.updateModel(id, { name: renamed, places });
+    // A new first source may make something else: its kind follows, when the provider's list says.
+    const makes = places ? offerOf(places[0]!.model)?.makes : undefined;
+    store.updateModel(id, { name: renamed, places, makes: makes?.length ? makes : undefined });
     return c.json({ model: modelView(store.model(id)!) });
   });
 

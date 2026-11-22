@@ -312,8 +312,8 @@ const actions = {
   close,
   async edit(control) {
     const editing = control.dataset.edit || null;
-    if (live && ["model", "add", "place"].includes(editing)) loadModels().then(() => drawPicker(true));
-    ui.place = editing === "via" ? Number(control.dataset.place) : null;
+    if (live && ["model", "add", "place", "replace"].includes(editing)) loadModels().then(() => drawPicker(true));
+    ui.place = editing === "via" || editing === "replace" ? Number(control.dataset.place) : null;
     if (editing === "via") loadProviders();
     ui.editing = editing;
     Object.assign(ui, { find: "", makes: "", more: 0, where: null });
@@ -445,6 +445,20 @@ const actions = {
     const mode = picker?.dataset.mode;
     const value = control.dataset.model;
     const offer = value.includes("|") ? context().offers.find((o) => `${o.provider}|${o.id}` === value) : null;
+    // A source changed: the pick takes its place, in its position. The model's name stays.
+    if (mode === "replace") {
+      const model = data.models.find((m) => m.name === picker.dataset.for);
+      const at = ui.place;
+      if (!model || !offer || !model.from[at]) return;
+      if (model.from.some((p, i) => i !== at && p.provider === offer.provider && p.model === offer.id && !p.via)) return;
+      model.from = model.from.map((p, i) => (i === at ? { provider: offer.provider, model: offer.id, via: null } : p));
+      if (at === 0 && offer.makes?.length) model.makes = offer.makes;
+      ui.editing = null;
+      render();
+      app.querySelector(`.br-change[data-place="${at}"]`)?.focus();
+      if (live) send(api.updateModel(model.id, { from: model.from }));
+      return;
+    }
     if (mode === "place") {
       const model = data.models.find((m) => m.name === picker.dataset.for);
       if (!model || !offer || model.from.some((p) => p.provider === offer.provider && p.model === offer.id && !p.via)) return;

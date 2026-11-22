@@ -125,6 +125,11 @@ test("models are made, renamed (their routes follow), given places, and deleted 
   expect((await call(auth, "POST", "/models", { name: "openai/gpt-5-mini", from: [{ provider: OR, model: "x/y" }] })).status).toBe(400); // name taken
   expect((await call(auth, "POST", "/models", { from: [{ provider: "nope", model: "x/y" }] })).status).toBe(400);
 
+  // A source changed in place, its name unchanged; the kind follows the provider's list once it is known.
+  await call(auth, "GET", "/offers");
+  const changed = await call(auth, "PATCH", `/models/${id}`, { from: [{ provider: OR, model: "google/gemini-2.5-flash" }] });
+  expect(changed.body!.model).toMatchObject({ name: "openai/gpt-5-mini", makes: ["text"], from: [{ model: "google/gemini-2.5-flash" }] });
+
   const renamed = await call(auth, "PATCH", `/models/${id}`, { name: "mini", from: [{ provider: OR, model: "openai/gpt-5-mini", via: "azure" }, { provider: OR, model: "openai/gpt-5-mini" }] });
   expect(renamed.body!.model).toMatchObject({ name: "mini", from: [{ via: "azure" }, { via: null }] });
   expect((await call(auth, "GET", "/routes")).body!.routes.find((r: { id: string }) => r.id === routeId).models).toEqual(["mini"]);

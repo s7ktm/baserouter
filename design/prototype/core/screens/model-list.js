@@ -67,18 +67,25 @@ function oneModel(ctx, ui, m, routes) {
   const places = `<ol class="br-list">${m.from.map((p, i) => `<li><b class="br-n">${i + 1}</b>
       <span><strong class="br-keep">${esc(providerName(ctx, p.provider))}${i > 0 && !sameModel(p.model, first) ? ` <span class="br-tier">${t("differentModel")}</span>` : ""}</strong>
         <code class="br-keep">${esc(p.model)}</code>
-        ${isOpenRouter(ctx, p.provider)
+        <span class="br-source-acts">${isOpenRouter(ctx, p.provider)
           ? `<button class="br-from" data-action="edit" data-edit="via" data-place="${i}" aria-pressed="${ui.editing === "via" && ui.place === i}">${p.via ? `<span class="br-keep">${esc(p.via)}</span>` : t("anyProvider")}</button>`
-          : ""}</span>
+          : ""}<button class="br-from br-change" data-action="edit" data-edit="replace" data-place="${i}" aria-pressed="${ui.editing === "replace" && ui.place === i}" aria-label="${t("changeNamed", { n: i + 1 })}">${t("changeSource")}</button></span></span>
       ${m.from.length > 1 ? `<button class="br-x small" data-action="remove-place" data-place="${i}" aria-label="${t("remove", { name: esc(`${providerName(ctx, p.provider)} ${p.model}`) })}">${cross}</button>` : "<span></span>"}</li>`).join("")}</ol>`;
 
   const via = ui.editing === "via" && m.from[ui.place] ? viaChoice(ctx, ui, m, ui.place) : "";
+  // Changing one source: the picker on the providers' offers; the pick takes that source's place.
+  const replace = ui.editing === "replace" && m.from[ui.place]
+    ? `<form class="br-form br-where" data-form="find">
+        ${modelPicker(ctx, ui, { mode: "replace", forModel: m.name })}
+        <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
+      </form>`
+    : "";
   const addPlace = ui.editing === "place"
     ? `<form class="br-form" data-form="find">
         ${modelPicker(ctx, ui, { mode: "place", forModel: m.name })}
         <p class="br-actions" style="margin-top:12px"><button class="br-btn" type="button" data-action="edit" data-edit="">${t("cancel")}</button></p>
       </form>`
-    : ui.editing === "via" ? "" : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="place">+ ${t("addPlace")}</button></p>`;
+    : ui.editing === "via" || ui.editing === "replace" ? "" : `<p class="br-actions"><button class="br-btn" data-action="edit" data-edit="place">+ ${t("addPlace")}</button></p>`;
 
   const lose = routes.map((r) => `<span class="br-keep">${ctx.name(r)}</span>`).join(", ");
   return `
@@ -92,6 +99,7 @@ function oneModel(ctx, ui, m, routes) {
       <p class="br-note">${t("comesFromNote")}</p>
       ${places}
       ${via}
+      ${replace}
       ${addPlace}
     </section>
     <section class="br-sec">

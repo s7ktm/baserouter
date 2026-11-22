@@ -155,22 +155,22 @@ From the decision in PRODUCT.md ("Providers, models and routes"); approved by th
 
 A shared screen, built once, and the only place models are added: "Manage models". Every skin offers it from its home screen, as it offers providers (Socket beside its plugs, Display as a function key, Home in its bar), and Providers and a route link to it. A route never takes a model straight from a provider; it authorizes models that are already here.
 
-- **The list.** Each model on one row: the name apps send, what it makes, where it comes from ("OpenAI, then OpenRouter"), and how many routes use it. The main action is "Add a model", which opens the model picker; picking one a provider offers makes it a model here, with that one place.
+- **The list.** Each model on one row: the name apps send, what it makes, where it comes from ("OpenAI, then OpenRouter"), and how many routes use it. The main action is "Add a model", which opens the model picker; picking one a provider offers makes it a model here, with that one source.
 - **One model,** opened in the same sheet:
   1. **Name apps use.** Shown as code, with "Rename". Routes that use the model follow the new name; apps that send the old one are refused, which the rename says first.
-  2. **Comes from.** A numbered list, because the order is real: each place is a provider and that provider's id for the model, and, for OpenRouter, which of its own providers ("Any provider", or one named). Each place but the last can be removed. "Add a fallback" opens the picker on every provider; a place that is a different model says so.
+  2. **Sources.** A numbered list, because the order is real: each source is a provider and that provider's id for the model, and, for OpenRouter, which of its own providers ("Any provider", or one named). Each source but the last can be removed. "Add a backup source" opens the picker on every provider; "Change" on a source opens it too, and the pick takes that source's place, in its position, while the model keeps its name. A source that is a different model says so.
   3. **Used by.** The routes that may use it, each opening its route.
   4. **Delete model.** Last and quiet; it asks first and names the routes that lose it.
 
 ### Choosing a model### Choosing a model
 
-Built once and used wherever a model is chosen: adding one to BaseRouter, allowing one on a route, a new route's first model, and a fallback place on a model. Everything in it is what the provider says about its models, as it says it; nothing is ranked or recommended.
+Built once and used wherever a model is chosen: adding one to BaseRouter, allowing one on a route, a new route's first model, and a fallback source on a model. Everything in it is what the provider says about its models, as it says it; nothing is ranked or recommended.
 
 - **A search,** by name or id. Every word typed must appear. Enter picks the first model found.
 - **What it lists** depends on where it is. On a route and in a new route: only BaseRouter's models, by their own names, with "Manage models" below for more. In Manage models: what the providers offer, with a chip per provider when there is more than one.
 - **Kinds,** as chips under it: All, Text, Image, Speech, Transcription, Video, each with how many models match the search. They are what the model makes, from OpenRouter's own description of each model. A kind with no match is not shown. Models that make only embeddings, rankings or moderation decisions are not listed, because the gateway has no way to use them yet.
 - **The list,** in the provider's own order, thirty at a time with "Show more". A row is the model's name, its id, and one line of plain facts: its kind (under All), its price (per million tokens read and written for text models, "from $x a second" for video, "Free"), how much it reads at once, and what else it reads (images, files, sound, video). A fact the provider does not give is left out, not guessed.
-- On a route, every row allows its model. On a model, a row adds a fallback place. In a new route the field shows the chosen model with "Change"; opened, a row becomes the choice and the field folds back. Typing in the search, choosing a kind or showing more redraws only the picker, so a route name being typed is never lost.
+- On a route, every row allows its model. On a model, a row adds a fallback source. In a new route the field shows the chosen model with "Change"; opened, a row becomes the choice and the field folds back. Typing in the search, choosing a kind or showing more redraws only the picker, so a route name being typed is never lost.
 
 ### First run
 
@@ -312,7 +312,7 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **A video's tile is its first moment,** asked of the browser (`#t=0.1`), not a picture the gateway makes. Each tile loads a little of its video to show it; with many videos that is many small requests. A still made by the gateway would need a video decoder it does not have.
 - **A video plays with the browser's own controls,** in every skin, like sound. Skins cannot restyle them.
 - **A model shows only what fits on one line.** Its description, its prices for images or sound, and its other parameters are on OpenRouter's page, not here. A model detail view would be the next step if picking turns out to need more.
-- **A place shows its OpenRouter provider by tag** ("google-vertex", "google-ai-studio/flex"), not its name, so the route list needs nothing more than the route itself. The provider's name, tier and prices are in the choice that opens.
+- **A source shows its OpenRouter provider by tag** ("google-vertex", "google-ai-studio/flex"), not its name, so the route list needs nothing more than the route itself. The provider's name, tier and prices are in the choice that opens.
 - **No sort or saved favourites in the model picker.** The provider's order is newest first. A sort (by price, by how much it reads) can follow if search and kinds turn out not to be enough.
 - **No screen for a single request.** A row in activity does not open. An image or a sound does, since it can only be seen or heard by opening it.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.

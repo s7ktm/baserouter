@@ -8,7 +8,8 @@
 // mode "allow"  a route: a row authorizes its model
 //      "choose" a new route: a row becomes the field's value, and the field folds back
 //      "add"    Manage models: a row adds a provider's model to BaseRouter
-//      "place"  one model: a row adds a fallback place
+//      "place"  one model: a row adds a backup source
+//      "replace" one model: a row takes the place of the source being changed
 //
 // ui: where ("mine" or a provider id), find, makes, more, picking and chosen (new route).
 
@@ -84,7 +85,7 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "", forModel 
   const count = (k) => matching(list, { ...ui, makes: k }).length;
   const chip = (k) => `<button type="button" class="br-chip" data-action="makes" data-makes="${k}" aria-pressed="${(ui.makes ?? "") === k}">${t(k ? `makes_${k}` : "makes_all")} <span class="br-count">${ctx.num(count(k), 0)}</span></button>`;
   const placeChip = (p) => `<button type="button" class="br-chip br-keep" data-action="where" data-where="${esc(p)}" aria-pressed="${where === p}">${p === "mine" ? t("inBaseRouter") : esc(providerName(ctx, p))}</button>`;
-  const label = { allow: "allowModel", choose: "firstModel", add: "addModel", place: "addPlace" }[mode];
+  const label = { allow: "allowModel", choose: "firstModel", add: "addModel", place: "addPlace", replace: "newSource" }[mode];
 
   const rows = shown.map((m) => {
     if (own) {
@@ -94,7 +95,7 @@ export function modelPicker(ctx, ui, { mode, taken = [], routeId = "", forModel 
       });
     }
     const already = modelOf(ctx, m);
-    const note = already && mode !== "place" ? ` · ${t("alreadyAs", { name: esc(already.name) })}` : "";
+    const note = already && mode !== "place" && mode !== "replace" ? ` · ${t("alreadyAs", { name: esc(already.name) })}` : "";
     return row(ctx, { value: `${m.provider}|${m.id}`, name: m.name, code: m.id, small: facts(ctx, m, !ui.makes) + note, picked: false, adding: true, label: t("addNamed", { name: m.name }) });
   });
 
