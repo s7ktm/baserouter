@@ -16,7 +16,7 @@ Young: try it, but do not bet a business on it yet. The latest release is on the
 
 **Works today**
 
-- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/videos`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Video is made as a job that the gateway watches until it is done. The images, speech and video routes make are kept, unless a route or a request says no; images and speech are shown in the panel.
+- One provider, OpenRouter, behind one OpenAI-compatible address (`/v1/chat/completions`, `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/videos`, `/v1/models`), streamed or not. Images, PDFs and sound can go into a chat request, and images can come out of one. Video is made as a job that the gateway watches until it is done. The images, speech and video routes make are kept and shown in the panel, unless a route or a request says no.
 - Routes: a named key per agent, a monthly budget enforced before a request is sent, an on/off switch, a list of allowed models with OpenRouter's fallback between them.
 - A record of every request: what it made, models, tokens, cost, timings, what went wrong. Prompts and answers are not stored, except the images, speech and video that are kept.
 - The panel in three skins (Socket, Display, Home), in English and Turkish, light and dark, behind an admin password.
@@ -25,7 +25,7 @@ Young: try it, but do not bet a business on it yet. The latest release is on the
 
 - Any provider other than OpenRouter.
 - Renaming a route after it is made.
-- Videos in the panel (they are kept, and listed by the management API); embeddings.
+- Embeddings.
 - Users, teams, SSO, caching and routing strategies are not planned; see [PRODUCT.md](PRODUCT.md).
 
 ## Get started

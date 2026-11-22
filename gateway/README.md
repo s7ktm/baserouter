@@ -96,7 +96,7 @@ A route with several models sends them as a fallback list only on chat requests;
 - The cost of a video is known only when its job is done: it is not in the first answer, and OpenRouter's `/generation` does not know video jobs. So the gateway asks about every job itself (after 5, 10, 20, 35 seconds, then every 30 seconds) until it ends, whether or not the client does, and records its cost on the request's row then; whichever learns first that the job ended records it, once. The row's total time becomes the time from start to end. A job that fails is recorded as failed. Jobs still open when the gateway stops are asked about again when it starts; one still not done three hours after it started is given up on, with its cost unknown.
 - Until a job is done its cost counts as nothing towards the budget, so a route can start several videos before the first one's cost is counted.
 
-**Kept images, sound and video.** The images, speech and video a route makes are kept, so they can be looked at and listened to again in the panel (activity, Images and Sounds). Videos are kept and listed by the management API, but the panel does not show them yet. The answer still goes to the client unchanged and at once.
+**Kept images, sound and video.** The images, speech and video a route makes are kept, so they can be looked at, listened to and watched again in the panel (activity: Images, Sounds and Videos). The answer still goes to the client unchanged and at once.
 
 - Each one is a file in `gateway/data/media/`, named after the SHA-256 of its bytes, so the same image or sound made twice is stored once. The database has a row each: request, route, model, the words that asked for it (the `prompt` of `/images/generations`, the `input` of `/audio/speech`, or the last thing the user said in a chat; up to 2,000 characters), type and size.
 - Files are written as they arrive, through a temporary file in the same folder, and are never held in memory whole: the sound of `/audio/speech` is written while it streams to the client, and an image given as a link (`response_format: "url"`) is fetched once, in pieces, within 30 seconds and up to 50 MB. A file that is cut off (the client left, the provider broke off) or would pass the room allowed is dropped. Parts left by a gateway that stopped mid-write are removed when it starts.
@@ -143,7 +143,7 @@ Everything under `/api` except `status`, `setup` and `login` needs a session: th
 | `GET /api/models` | The provider's model ids, for choosing a route's model |
 | `GET /api/routes` | Lists routes with what each spent today and this month |
 | `POST /api/routes` `{name, budget, models?, icon?, color?}` | Makes a route and gives its key, once. `icon` and `color` are how the panel draws it |
-| `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images and sound |
+| `PATCH /api/routes/:id` `{budget?, enabled?, models?, keepMedia?}` | Changes the budget, switches it on or off, changes its models, switches keeping its images, sound and video |
 | `POST /api/routes/:id/key` | Replaces its key; the old one stops working at once. Gives the new key, once |
 | `DELETE /api/routes/:id` | Removes it; its requests stay in the list |
 | `GET /api/requests?route=&limit=&before=` | Lists requests, newest first |
@@ -163,7 +163,7 @@ Everything is in `gateway/data/`, which git ignores.
 - The folder and everything in it can be read by BaseRouter's own user only (it sets this on every start).
 - `secret.key` is the key that encryption uses. It is made on the first start and only its owner can read it. Back it up together with the database: without it, providers have to be added again. Keeping it beside the database protects a copied or backed-up database file; it does not protect against someone who can read the whole folder.
 - The admin password is stored as an Argon2 hash.
-- `media/` holds the images, sound and video routes made, unless switched off (see "Kept images and sound" above). The words that asked for each are kept with it. Before sound was kept this folder was `images/`; it is renamed on the first start.
+- `media/` holds the images, sound and video routes made, unless switched off (see "Kept images, sound and video" above). The words that asked for each are kept with it. Before sound was kept this folder was `images/`; it is renamed on the first start.
 - Other prompts and answers are not stored or logged, and neither are sound or files, sent or generated.
 
 ## Settings
@@ -212,7 +212,6 @@ This starts the gateway and its panel in front of the stand-in, with a new, empt
 
 - Providers other than OpenRouter. There is no provider interface on purpose; it will grow out of the second provider.
 - Changing a route's name after it is made.
-- Videos in the panel. They are kept and listed by the management API; showing and playing them in the three skins is still to be designed.
 - Webhooks for video jobs. A request with `callback_url` is refused (HTTP 400), since OpenRouter would send the job's end, signed links included, straight to it; ask `GET /v1/videos/:id` instead.
 - Embeddings, image edits (`/images/edits`), and OpenRouter's own `/responses` API.
 - With your own provider keys inside OpenRouter (BYOK), `usage.cost` is what OpenRouter charged, not what the provider behind it charged. Only the first is counted.

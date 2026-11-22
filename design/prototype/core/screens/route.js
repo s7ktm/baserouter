@@ -65,6 +65,8 @@ export function routeSheet(ctx, ui) {
   const code = snippets(route, data);
   const tab = ui.tab in code ? ui.tab : "curl";
   const recent = data.requests.filter((q) => q.route === route.id).slice(0, 5);
+  // The kinds of kept media this route has made, each with a way to them in activity.
+  const kept = [["images", "seeImages"], ["sounds", "seeSounds"], ["videos", "seeVideos"]].filter(([show]) => data[show]?.some((i) => i.route === route.id));
 
   const body = `
     ${ui.error ? `<p class="br-banner" role="alert" style="margin:16px 0 0">${t("actionFailed", { error: esc(ui.error) })}</p>` : ""}
@@ -108,10 +110,8 @@ export function routeSheet(ctx, ui) {
         <span><h3>${t("keepMedia")}</h3><span class="br-note">${t("keepMediaNote")}</span></span>
         <button class="br-switch" data-action="keep-media" data-id="${route.id}" aria-pressed="${route.keepMedia !== false}" aria-label="${t("keepMedia")}"></button>
       </div>
-      ${data.images?.some((i) => i.route === route.id) || data.sounds?.some((i) => i.route === route.id)
-        ? `<p class="br-actions">${data.images.some((i) => i.route === route.id)
-            ? `<button class="br-btn quiet" data-action="go" data-screen="activity" data-show="images" data-filter="${route.id}">${t("seeImages")}</button>` : ""}${data.sounds.some((i) => i.route === route.id)
-            ? `<button class="br-btn quiet" data-action="go" data-screen="activity" data-show="sounds" data-filter="${route.id}">${t("seeSounds")}</button>` : ""}</p>`
+      ${kept.length
+        ? `<p class="br-actions">${kept.map(([show, words]) => `<button class="br-btn quiet" data-action="go" data-screen="activity" data-show="${show}" data-filter="${route.id}">${t(words)}</button>`).join("")}</p>`
         : ""}
     </section>
 

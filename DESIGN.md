@@ -127,7 +127,7 @@ The first shared screen. It rises from the bottom on a phone and sits in the mid
 2. **Budget.** Spent and limit, a meter, the date it starts again, and one button: "Change budget", or "Raise budget" as the main action when the route is stopped.
 3. **Connect.** The address, the route's key, and a snippet for curl and Python. The key is shown in full only once, when it is made; afterwards only its last four characters are shown and a lost key is replaced with a new one. "Make a new key" first says that the old key stops working at once, then shows the new key in full, this once.
 4. **Models.** A numbered list, because the order is real: the first is used, the next is tried if it fails. Each model but the last can be removed; "Add model" picks one of the provider's models.
-5. **Keep images and sound.** A switch, on unless turned off: the images and speech this route makes are kept, to look at and listen to again in activity. Below it, when there are any, a way to this route's images and to its sounds.
+5. **Keep images, sound and video.** A switch, on unless turned off: the images, speech and video this route makes are kept, to look at, listen to and watch again in activity. Below it, when there are any, a way to this route's images, to its sounds and to its videos.
 6. **Recent requests.** Five rows. A request that worked has a filled dot and its cost; one that failed has a hollow ring and the word "failed".
 7. **Delete route.** Last, and quiet. It asks before it deletes, with the answer that keeps the route under the cursor.
 
@@ -157,7 +157,7 @@ Not a screen of its own. When nothing is set up, adding the first provider turns
 
 Every request, newest first: which route, which model, how long ago, how long it took, what it cost. One filter, by route. Opening it from a route arrives already filtered to that route.
 
-Three tabs above the filter: requests, images and sounds. Images is a grid of the images routes made and the gateway kept; sounds is a list, each row with a play mark, the words that were spoken, the model, route, when and cost. Both are newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, or a player for the sound, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images" or "All sounds" goes back. One whose route was removed stays, and says so. While a sound plays, the panel does not redraw itself.
+Four tabs above the filter: requests, images, sounds and videos. Images is a grid of the images routes made and the gateway kept; sounds is a list, each row with a play mark, the words that were spoken, the model, route, when and cost; videos is a grid of wide frames, two across on a phone and three from 980 px, each showing the video's first moment with a play mark on it. All three are newest first, under the same route filter, with how many there are and how much room they take of the most they may. Pressing one opens it in the same sheet: the image whole, a player for the sound, or a player for the video, the words that asked for it, then route, model, when, cost and size, and two controls: download, and delete, which asks first. "All images", "All sounds" or "All videos" goes back. One whose route was removed stays, and says so. While a sound or a video plays, the panel does not redraw itself.
 
 ### Settings
 
@@ -286,7 +286,8 @@ BaseRouter has one identity outside the product, whichever skin a person picks i
 - **All planned screens exist.** Route detail added two tokens (`--br-code-size`, `--br-case`); the five screens after it needed no more.
 - **A route's name cannot be changed** after it is made.
 - **A change that does not go through on the home screen is undone without a word.** Switching a route on or off redraws it at once; if the gateway refuses, the switch flips back at the next look. Forms in sheets do say what went wrong.
-- **Kept videos are not shown in the panel.** The gateway keeps the videos routes make and lists them (`/api/media?kind=video`, `videos` in `/api/state`); activity names a video request "Video" but has no Videos tab beside Images and Sounds. How a video is shown and played in three skins is a design change still to be made.
+- **A video's tile is its first moment,** asked of the browser (`#t=0.1`), not a picture the gateway makes. Each tile loads a little of its video to show it; with many videos that is many small requests. A still made by the gateway would need a video decoder it does not have.
+- **A video plays with the browser's own controls,** in every skin, like sound. Skins cannot restyle them.
 - **No screen for a single request.** A row in activity does not open. An image or a sound does, since it can only be seen or heard by opening it.
 - **A provider cannot be switched off,** only removed. PRODUCT.md calls a provider "on or off"; drawing an off provider in three skins is not done.
 - **The list of providers to add** shows six kinds on made-up data. A panel served by a gateway offers only what that gateway can add, which today is OpenRouter, and says so once it is added.
